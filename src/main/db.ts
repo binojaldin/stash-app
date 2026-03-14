@@ -305,6 +305,12 @@ export function isAlreadyIndexed(originalPath: string): boolean {
   return !!row
 }
 
+export function clearAllAttachments(): void {
+  const d = initDb()
+  d.exec('DELETE FROM attachments')
+  d.exec("DELETE FROM attachments_fts WHERE attachments_fts MATCH '*'")
+}
+
 export function closeDb(): void {
   if (db) {
     db.close()

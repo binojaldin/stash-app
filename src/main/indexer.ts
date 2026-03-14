@@ -14,7 +14,8 @@ import {
   updateThumbnail,
   markFullyIndexed,
   getMetadataOnlyByPath,
-  getIdByPath
+  getIdByPath,
+  clearAllAttachments
 } from './db'
 import { compileOcrHelper, runOcr } from './ocr'
 import { compileContactsHelper, resolveContact } from './contacts'
@@ -150,26 +151,45 @@ export function getSavedPriorityChats(): string[] | null {
   return loadPriorityChats()
 }
 
-export async function startIndexing(win: BrowserWindow | null, priorityChats?: string[]): Promise<void> {
+export function resetIndexing(): void {
+  clearAllAttachments()
+  const prefsPath = getPrefsPath()
+  if (existsSync(prefsPath)) {
+    try {
+      const prefs = JSON.parse(readFileSync(prefsPath, 'utf-8'))
+      delete prefs.priorityChats
+      writeFileSync(prefsPath, JSON.stringify(prefs, null, 2))
+    } catch { /* ignore */ }
+  }
+}
+
+export async function startIndexing(win: BrowserWindow | null, selectedChats?: string[]): Promise<void> {
   if (isIndexing) return
   isIndexing = true
 
   initDb()
   compileOcrHelper()
 
-  // Save priority chats if provided
-  if (priorityChats) {
-    savePriorityChats(priorityChats)
+  // Save selected chats if provided
+  if (selectedChats) {
+    savePriorityChats(selectedChats)
   }
-  const savedPriority = priorityChats ?? loadPriorityChats() ?? []
+  const savedSelection = selectedChats ?? loadPriorityChats() ?? []
+  const selectionSet = new Set(savedSelection)
+  const hasSelection = selectionSet.size > 0
 
   const allAttachments = readAllAttachments()
 
-  // ── Phase 1: Metadata-only insert for ALL attachments ──
-  indexingProgress = { total: allAttachments.length, processed: 0, currentFile: '', phase: 'Cataloging metadata' }
+  // Filter to only selected conversations (if any were selected)
+  const targetAttachments = hasSelection
+    ? allAttachments.filter((a) => a.chat_name && selectionSet.has(a.chat_name))
+    : allAttachments
+
+  // ── Phase 1: Metadata-only insert for selected attachments ──
+  indexingProgress = { total: targetAttachments.length, processed: 0, currentFile: '', phase: 'Cataloging metadata' }
   sendProgress(win)
 
-  for (const att of allAttachments) {
+  for (const att of targetAttachments) {
     if (!att.original_path || isAlreadyIndexed(att.original_path)) {
       indexingProgress.processed++
       if (indexingProgress.processed % 100 === 0) sendProgress(win)
@@ -210,19 +230,11 @@ export async function startIndexing(win: BrowserWindow | null, priorityChats?: s
   }
 
   // Collect items that still need enrichment (metadata_only=1)
-  const toEnrich = allAttachments.filter((a) => {
+  const toEnrich = targetAttachments.filter((a) => {
     if (!a.original_path) return false
     const row = getMetadataOnlyByPath(a.original_path)
     return !!row
   })
-
-  // Sort priority chats first
-  const prioritySet = new Set(savedPriority)
-  const sortByPriority = (a: MessageAttachment, b: MessageAttachment): number => {
-    const aP = a.chat_name && prioritySet.has(a.chat_name) ? 0 : 1
-    const bP = b.chat_name && prioritySet.has(b.chat_name) ? 0 : 1
-    return aP - bP
-  }
 
   // Classify into phases
   const sixMonthsAgo = new Date()
@@ -250,12 +262,6 @@ export async function startIndexing(win: BrowserWindow | null, priorityChats?: s
       videosAndAudio.push(att)
     }
   }
-
-  // Sort each group by priority chats
-  documents.sort(sortByPriority)
-  recentImages.sort(sortByPriority)
-  olderImages.sort(sortByPriority)
-  videosAndAudio.sort(sortByPriority)
 
   const phases: { name: string; items: MessageAttachment[]; doOcr: boolean; doThumbnail: boolean }[] = [
     { name: 'Documents', items: documents, doOcr: false, doThumbnail: true },

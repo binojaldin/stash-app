@@ -5,7 +5,8 @@ import {
   Music,
   Layers,
   Calendar,
-  MessageSquare
+  MessageSquare,
+  Settings
 } from 'lucide-react'
 import type { Stats, Filters } from '../types'
 
@@ -13,6 +14,7 @@ interface Props {
   stats: Stats
   filters: Filters
   onFilterChange: (filters: Filters) => void
+  onManageConversations?: () => void
 }
 
 const typeFilters = [
@@ -42,9 +44,9 @@ function getCount(stats: Stats, key: string): number {
   }
 }
 
-export function Sidebar({ stats, filters, onFilterChange }: Props): JSX.Element {
+export function Sidebar({ stats, filters, onFilterChange, onManageConversations }: Props): JSX.Element {
   return (
-    <div className="w-56 flex-shrink-0 border-r border-[#262626] overflow-y-auto p-3">
+    <div className="w-56 flex-shrink-0 border-r border-[#262626] overflow-y-auto p-3 flex flex-col">
       {/* Type filters */}
       <div className="mb-6">
         <h3 className="text-[10px] font-semibold text-[#636363] uppercase tracking-wider px-2 mb-2">
@@ -130,6 +132,19 @@ export function Sidebar({ stats, filters, onFilterChange }: Props): JSX.Element 
               )
             })}
           </div>
+        </div>
+      )}
+
+      {/* Manage conversations */}
+      {onManageConversations && (
+        <div className="mt-auto pt-3 border-t border-[#262626]">
+          <button
+            onClick={onManageConversations}
+            className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-[#636363] hover:bg-[#141414] hover:text-[#a3a3a3] transition-colors"
+          >
+            <Settings className="w-3.5 h-3.5" />
+            Manage conversations
+          </button>
         </div>
       )}
     </div>

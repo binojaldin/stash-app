@@ -85,6 +85,15 @@ export default function App(): JSX.Element {
     window.api.startIndexing(priorityChats)
   }, [])
 
+  const handleManageConversations = useCallback(async () => {
+    await window.api.resetIndexing()
+    const summaries = await window.api.getChatSummaries()
+    setChatSummaries(summaries)
+    setAttachments([])
+    setStats({ total: 0, images: 0, videos: 0, documents: 0, audio: 0, chatNames: [] })
+    setShowChatPriority(true)
+  }, [])
+
   // Listen for indexing progress
   useEffect(() => {
     const unsub = window.api.onIndexingProgress((data) => {
@@ -217,6 +226,7 @@ export default function App(): JSX.Element {
           stats={stats}
           filters={filters}
           onFilterChange={setFilters}
+          onManageConversations={!isIndexing ? handleManageConversations : undefined}
         />
 
         <div className="flex-1 min-w-0 overflow-y-auto p-4">

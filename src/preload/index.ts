@@ -37,6 +37,7 @@ const api = {
   }[]> => ipcRenderer.invoke('get-chat-summaries'),
   saveChatPriorities: (chats: string[]): Promise<void> => ipcRenderer.invoke('save-chat-priorities', chats),
   getSavedPriorityChats: (): Promise<string[] | null> => ipcRenderer.invoke('get-saved-priority-chats'),
+  resetIndexing: (): Promise<void> => ipcRenderer.invoke('reset-indexing'),
   getFileUrl: (path: string): Promise<string | null> => ipcRenderer.invoke('get-file-url', path),
   onIndexingProgress: (
     callback: (data: { total: number; processed: number; currentFile: string; phase?: string }) => void
