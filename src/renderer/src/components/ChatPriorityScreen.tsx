@@ -9,7 +9,12 @@ interface Props {
 type SortMode = 'recent' | 'attachments'
 
 export function ChatPriorityScreen({ chats, onStart }: Props): JSX.Element {
-  const [selected, setSelected] = useState<Set<string>>(() => new Set(chats.slice(0, 10).map((c) => c.chat_name)))
+  // Use raw_chat_identifier as the unique key for selection (chat_name can have duplicates)
+  const [selected, setSelected] = useState<Record<string, boolean>>(() => {
+    const init: Record<string, boolean> = {}
+    chats.slice(0, 10).forEach((c) => { init[c.raw_chat_identifier] = true })
+    return init
+  })
   const [sortMode, setSortMode] = useState<SortMode>('recent')
   const [search, setSearch] = useState('')
   const searchRef = useRef<HTMLInputElement>(null)
@@ -39,8 +44,12 @@ export function ChatPriorityScreen({ chats, onStart }: Props): JSX.Element {
     })
   }, [chats, sortMode, search])
 
-  const selectAll = (): void => setSelected(new Set(chats.map((c) => c.chat_name)))
-  const selectNone = (): void => setSelected(new Set())
+  const selectAll = (): void => {
+    const next: Record<string, boolean> = {}
+    chats.forEach((c) => { next[c.raw_chat_identifier] = true })
+    setSelected(next)
+  }
+  const selectNone = (): void => setSelected({})
 
   const isRawIdentifier = (s: string): boolean => {
     if (!s) return true
@@ -62,6 +71,13 @@ export function ChatPriorityScreen({ chats, onStart }: Props): JSX.Element {
     if (diffDays < 30) return `${Math.floor(diffDays / 7)}w ago`
     if (diffDays < 365) return `${Math.floor(diffDays / 30)}mo ago`
     return `${Math.floor(diffDays / 365)}y ago`
+  }
+
+  const handleStart = (): void => {
+    const selectedChatNames = chats
+      .filter((c) => selected[c.raw_chat_identifier])
+      .map((c) => c.chat_name)
+    onStart(selectedChatNames)
   }
 
   return (
@@ -129,31 +145,31 @@ export function ChatPriorityScreen({ chats, onStart }: Props): JSX.Element {
           {sorted.length === 0 && (
             <div className="px-4 py-6 text-center text-sm text-[#636363]">No conversations match your search</div>
           )}
-          {sorted.map((chat) => {
+          {sorted.map((chat, idx) => {
             const name = chat.display_name?.trim() || 'Unknown'
             const rawSub = name !== chat.chat_name ? chat.chat_name : null
             const subtitle = rawSub && !isRawIdentifier(rawSub) ? rawSub : null
-            const chatName = chat.chat_name
+            const id = chat.raw_chat_identifier || `chat-${idx}`
+            const isChecked = !!selected[id]
             return (
               <div
-                key={chatName}
-                onClick={(e) => {
-                  e.stopPropagation()
+                key={id}
+                onClick={() => {
                   setSelected((prev) => {
-                    const next = new Set(prev)
-                    if (next.has(chatName)) {
-                      next.delete(chatName)
+                    const next = { ...prev }
+                    if (next[id]) {
+                      delete next[id]
                     } else {
-                      next.add(chatName)
+                      next[id] = true
                     }
                     return next
                   })
                 }}
-                className="flex items-center gap-3 px-4 py-2.5 hover:bg-[#141414] cursor-pointer border-b border-[#1c1c1c] last:border-b-0"
+                className="flex items-center gap-3 px-4 py-2.5 hover:bg-[#141414] cursor-pointer border-b border-[#1c1c1c] last:border-b-0 select-none"
               >
                 <input
                   type="checkbox"
-                  checked={selected.has(chatName)}
+                  checked={isChecked}
                   onChange={() => {}}
                   className="w-4 h-4 rounded border-[#333] bg-[#1c1c1c] accent-teal-500 flex-shrink-0 pointer-events-none"
                 />
@@ -177,7 +193,7 @@ export function ChatPriorityScreen({ chats, onStart }: Props): JSX.Element {
         <p className="text-[10px] text-[#4a4a4a] mb-4 text-center">Contact names are resolved locally and never leave your device.</p>
 
         <button
-          onClick={() => onStart(Array.from(selected))}
+          onClick={handleStart}
           className="w-full py-2.5 rounded-lg bg-teal-600 text-sm font-medium text-white hover:bg-teal-500 transition-colors"
         >
           Start indexing
