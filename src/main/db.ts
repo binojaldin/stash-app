@@ -1,0 +1,282 @@
+import Database from 'better-sqlite3'
+import { app } from 'electron'
+import { join } from 'path'
+import { mkdirSync } from 'fs'
+
+let db: Database.Database | null = null
+
+export interface StashAttachment {
+  id?: number
+  filename: string
+  original_path: string
+  stash_path: string | null
+  file_size: number
+  mime_type: string | null
+  created_at: string
+  chat_name: string | null
+  sender_handle: string | null
+  thumbnail_path: string | null
+  file_extension: string | null
+  is_image: number
+  is_video: number
+  is_document: number
+  ocr_text: string | null
+}
+
+export function getDbPath(): string {
+  const dir = join(app.getPath('appData'), 'Stash')
+  mkdirSync(dir, { recursive: true })
+  return join(dir, 'stash.db')
+}
+
+export function getThumbnailDir(): string {
+  const dir = join(app.getPath('appData'), 'Stash', 'thumbnails')
+  mkdirSync(dir, { recursive: true })
+  return dir
+}
+
+export function initDb(): Database.Database {
+  if (db) return db
+  db = new Database(getDbPath())
+
+  db.pragma('journal_mode = WAL')
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS attachments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      filename TEXT NOT NULL,
+      original_path TEXT NOT NULL UNIQUE,
+      stash_path TEXT,
+      file_size INTEGER DEFAULT 0,
+      mime_type TEXT,
+      created_at TEXT,
+      chat_name TEXT,
+      sender_handle TEXT,
+      thumbnail_path TEXT,
+      file_extension TEXT,
+      is_image INTEGER DEFAULT 0,
+      is_video INTEGER DEFAULT 0,
+      is_document INTEGER DEFAULT 0,
+      ocr_text TEXT
+    );
+
+    CREATE VIRTUAL TABLE IF NOT EXISTS attachments_fts USING fts5(
+      filename,
+      chat_name,
+      sender_handle,
+      ocr_text,
+      content='attachments',
+      content_rowid='id'
+    );
+
+    CREATE TRIGGER IF NOT EXISTS attachments_ai AFTER INSERT ON attachments BEGIN
+      INSERT INTO attachments_fts(rowid, filename, chat_name, sender_handle, ocr_text)
+      VALUES (new.id, new.filename, new.chat_name, new.sender_handle, new.ocr_text);
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS attachments_ad AFTER DELETE ON attachments BEGIN
+      INSERT INTO attachments_fts(attachments_fts, rowid, filename, chat_name, sender_handle, ocr_text)
+      VALUES ('delete', old.id, old.filename, old.chat_name, old.sender_handle, old.ocr_text);
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS attachments_au AFTER UPDATE ON attachments BEGIN
+      INSERT INTO attachments_fts(attachments_fts, rowid, filename, chat_name, sender_handle, ocr_text)
+      VALUES ('delete', old.id, old.filename, old.chat_name, old.sender_handle, old.ocr_text);
+      INSERT INTO attachments_fts(rowid, filename, chat_name, sender_handle, ocr_text)
+      VALUES (new.id, new.filename, new.chat_name, new.sender_handle, new.ocr_text);
+    END;
+  `)
+
+  return db
+}
+
+export function insertAttachment(att: StashAttachment): number | null {
+  const d = initDb()
+  try {
+    const stmt = d.prepare(`
+      INSERT OR IGNORE INTO attachments
+      (filename, original_path, stash_path, file_size, mime_type, created_at, chat_name, sender_handle, thumbnail_path, file_extension, is_image, is_video, is_document, ocr_text)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `)
+    const result = stmt.run(
+      att.filename,
+      att.original_path,
+      att.stash_path,
+      att.file_size,
+      att.mime_type,
+      att.created_at,
+      att.chat_name,
+      att.sender_handle,
+      att.thumbnail_path,
+      att.file_extension,
+      att.is_image,
+      att.is_video,
+      att.is_document,
+      att.ocr_text
+    )
+    return result.changes > 0 ? Number(result.lastInsertRowid) : null
+  } catch (err) {
+    console.error('Insert error:', err)
+    return null
+  }
+}
+
+export function updateOcrText(id: number, ocrText: string): void {
+  const d = initDb()
+  d.prepare('UPDATE attachments SET ocr_text = ? WHERE id = ?').run(ocrText, id)
+}
+
+export function searchAttachments(
+  query: string,
+  filters: {
+    type?: string
+    chatName?: string
+    dateRange?: string
+  },
+  page = 0,
+  limit = 50
+): StashAttachment[] {
+  const d = initDb()
+  const conditions: string[] = []
+  const params: (string | number)[] = []
+
+  let sql: string
+  if (query && query.trim()) {
+    sql = `
+      SELECT a.* FROM attachments a
+      JOIN attachments_fts fts ON a.id = fts.rowid
+      WHERE attachments_fts MATCH ?
+    `
+    params.push(query.trim().split(/\s+/).map((w) => `"${w}"*`).join(' '))
+  } else {
+    sql = 'SELECT * FROM attachments WHERE 1=1'
+  }
+
+  if (filters.type && filters.type !== 'all') {
+    switch (filters.type) {
+      case 'images':
+        conditions.push('is_image = 1')
+        break
+      case 'videos':
+        conditions.push('is_video = 1')
+        break
+      case 'documents':
+        conditions.push('is_document = 1')
+        break
+      case 'audio':
+        conditions.push("mime_type LIKE 'audio/%'")
+        break
+    }
+  }
+
+  if (filters.chatName) {
+    conditions.push('chat_name = ?')
+    params.push(filters.chatName)
+  }
+
+  if (filters.dateRange) {
+    const now = new Date()
+    let dateStr: string
+    switch (filters.dateRange) {
+      case 'week': {
+        const d = new Date(now)
+        d.setDate(d.getDate() - 7)
+        dateStr = d.toISOString()
+        break
+      }
+      case 'month': {
+        const d = new Date(now)
+        d.setMonth(d.getMonth() - 1)
+        dateStr = d.toISOString()
+        break
+      }
+      case 'year': {
+        const d = new Date(now)
+        d.setFullYear(d.getFullYear() - 1)
+        dateStr = d.toISOString()
+        break
+      }
+      default:
+        dateStr = ''
+    }
+    if (dateStr) {
+      conditions.push('created_at >= ?')
+      params.push(dateStr)
+    }
+    if (filters.dateRange === 'older') {
+      const d = new Date(now)
+      d.setFullYear(d.getFullYear() - 1)
+      conditions.push('created_at < ?')
+      params.push(d.toISOString())
+    }
+  }
+
+  if (conditions.length > 0) {
+    sql += ' AND ' + conditions.join(' AND ')
+  }
+
+  sql += ' ORDER BY created_at DESC LIMIT ? OFFSET ?'
+  params.push(limit, page * limit)
+
+  try {
+    return d.prepare(sql).all(...params) as StashAttachment[]
+  } catch (err) {
+    console.error('Search error:', err)
+    return []
+  }
+}
+
+export function getStats(): {
+  total: number
+  images: number
+  videos: number
+  documents: number
+  audio: number
+  chatNames: string[]
+} {
+  const d = initDb()
+  const total = (d.prepare('SELECT COUNT(*) as c FROM attachments').get() as { c: number }).c
+  const images = (
+    d.prepare('SELECT COUNT(*) as c FROM attachments WHERE is_image = 1').get() as { c: number }
+  ).c
+  const videos = (
+    d.prepare('SELECT COUNT(*) as c FROM attachments WHERE is_video = 1').get() as { c: number }
+  ).c
+  const documents = (
+    d.prepare('SELECT COUNT(*) as c FROM attachments WHERE is_document = 1').get() as { c: number }
+  ).c
+  const audio = (
+    d.prepare("SELECT COUNT(*) as c FROM attachments WHERE mime_type LIKE 'audio/%'").get() as {
+      c: number
+    }
+  ).c
+  const chatNames = (
+    d
+      .prepare(
+        'SELECT DISTINCT chat_name FROM attachments WHERE chat_name IS NOT NULL ORDER BY chat_name'
+      )
+      .all() as { chat_name: string }[]
+  ).map((r) => r.chat_name)
+
+  return { total, images, videos, documents, audio, chatNames }
+}
+
+export function getAttachmentById(id: number): StashAttachment | null {
+  const d = initDb()
+  return (d.prepare('SELECT * FROM attachments WHERE id = ?').get(id) as StashAttachment) || null
+}
+
+export function isAlreadyIndexed(originalPath: string): boolean {
+  const d = initDb()
+  const row = d
+    .prepare('SELECT id FROM attachments WHERE original_path = ?')
+    .get(originalPath) as { id: number } | undefined
+  return !!row
+}
+
+export function closeDb(): void {
+  if (db) {
+    db.close()
+    db = null
+  }
+}
