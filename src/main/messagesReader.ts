@@ -16,6 +16,15 @@ export interface MessageAttachment {
   sender_handle: string | null
 }
 
+export interface ChatSummary {
+  chat_name: string
+  display_name: string
+  raw_chat_identifier: string
+  attachment_count: number
+  last_message_date: string
+  participant_handles: string[]
+}
+
 export function checkFullDiskAccess(): boolean {
   try {
     const db = new Database(CHAT_DB_PATH, { readonly: true })
@@ -23,6 +32,66 @@ export function checkFullDiskAccess(): boolean {
     return true
   } catch {
     return false
+  }
+}
+
+export function getChatSummaries(): ChatSummary[] {
+  if (!existsSync(CHAT_DB_PATH)) return []
+
+  const db = new Database(CHAT_DB_PATH, { readonly: true })
+  try {
+    const rows = db.prepare(`
+      SELECT
+        COALESCE(c.display_name, c.chat_identifier) as chat_name,
+        c.display_name as display_name,
+        c.chat_identifier as raw_chat_identifier,
+        COUNT(DISTINCT a.ROWID) as attachment_count,
+        datetime(MAX(m.date) / 1000000000 + 978307200, 'unixepoch', 'localtime') as last_message_date
+      FROM attachment a
+      JOIN message_attachment_join maj ON a.ROWID = maj.attachment_id
+      JOIN message m ON maj.message_id = m.ROWID
+      LEFT JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
+      LEFT JOIN chat c ON cmj.chat_id = c.ROWID
+      WHERE a.filename IS NOT NULL AND c.ROWID IS NOT NULL
+      GROUP BY c.ROWID
+      ORDER BY last_message_date DESC
+    `).all() as (Omit<ChatSummary, 'participant_handles'> & { display_name: string | null; raw_chat_identifier: string | null })[]
+
+    // Get participant handles for each chat
+    const chatParticipants = new Map<string, string[]>()
+    try {
+      const participantRows = db.prepare(`
+        SELECT
+          COALESCE(c.display_name, c.chat_identifier) as chat_name,
+          h.id as handle_id
+        FROM chat c
+        JOIN chat_handle_join chj ON c.ROWID = chj.chat_id
+        JOIN handle h ON chj.handle_id = h.ROWID
+      `).all() as { chat_name: string; handle_id: string }[]
+
+      for (const row of participantRows) {
+        if (!chatParticipants.has(row.chat_name)) {
+          chatParticipants.set(row.chat_name, [])
+        }
+        chatParticipants.get(row.chat_name)!.push(row.handle_id)
+      }
+    } catch {
+      // chat_handle_join may not exist in all versions
+    }
+
+    db.close()
+    return rows.map((row) => ({
+      chat_name: row.chat_name,
+      display_name: row.display_name || '',
+      raw_chat_identifier: row.raw_chat_identifier || '',
+      attachment_count: row.attachment_count,
+      last_message_date: row.last_message_date,
+      participant_handles: chatParticipants.get(row.chat_name) || []
+    }))
+  } catch (err) {
+    console.error('Error getting chat summaries:', err)
+    db.close()
+    return []
   }
 }
 

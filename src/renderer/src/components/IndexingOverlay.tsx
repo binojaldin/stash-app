@@ -8,7 +8,7 @@ interface Props {
 export function IndexingOverlay({ progress, onBrowse }: Props): JSX.Element {
   const percent = progress.total > 0 ? Math.round((progress.processed / progress.total) * 100) : 0
   const remaining = progress.total - progress.processed
-  const avgTimePerItem = 0.15 // seconds estimate
+  const avgTimePerItem = 0.15
   const etaSeconds = Math.round(remaining * avgTimePerItem)
   const etaMinutes = Math.floor(etaSeconds / 60)
   const etaSecondsRemainder = etaSeconds % 60
@@ -23,6 +23,10 @@ export function IndexingOverlay({ progress, onBrowse }: Props): JSX.Element {
           </p>
         </div>
 
+        {progress.phase && (
+          <p className="text-xs text-teal-400 mb-3 font-medium">{progress.phase}</p>
+        )}
+
         <div className="mb-4">
           <div className="flex justify-between text-sm mb-2">
             <span className="text-[#a3a3a3]">{progress.processed.toLocaleString()} of {progress.total.toLocaleString()}</span>
@@ -30,7 +34,7 @@ export function IndexingOverlay({ progress, onBrowse }: Props): JSX.Element {
           </div>
           <div className="h-2 bg-[#1c1c1c] rounded-full overflow-hidden">
             <div
-              className="h-full bg-blue-500 rounded-full transition-all duration-300"
+              className="h-full bg-teal-500 rounded-full transition-all duration-300"
               style={{ width: `${percent}%` }}
             />
           </div>

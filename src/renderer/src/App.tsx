@@ -1,16 +1,19 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { PermissionScreen } from './components/PermissionScreen'
+import { ChatPriorityScreen } from './components/ChatPriorityScreen'
 import { IndexingOverlay } from './components/IndexingOverlay'
 import { SearchBar } from './components/SearchBar'
 import { Sidebar } from './components/Sidebar'
 import { AttachmentGrid } from './components/AttachmentGrid'
 import { DetailPanel } from './components/DetailPanel'
-import type { Attachment, Filters, IndexingProgress, Stats } from './types'
+import type { Attachment, ChatSummary, Filters, IndexingProgress, Stats } from './types'
 
 export default function App(): JSX.Element {
   const [hasAccess, setHasAccess] = useState<boolean | null>(null)
   const [isIndexing, setIsIndexing] = useState(false)
   const [showIndexing, setShowIndexing] = useState(true)
+  const [showChatPriority, setShowChatPriority] = useState(false)
+  const [chatSummaries, setChatSummaries] = useState<ChatSummary[]>([])
   const [indexingProgress, setIndexingProgress] = useState<IndexingProgress>({
     total: 0,
     processed: 0,
@@ -46,20 +49,47 @@ export default function App(): JSX.Element {
     return () => clearInterval(interval)
   }, [])
 
-  // Start indexing once access is granted
+  // Once access is granted, check if we need to show priority screen
   useEffect(() => {
     if (hasAccess && !initialIndexDone.current) {
-      initialIndexDone.current = true
-      setIsIndexing(true)
-      window.api.startIndexing()
+      // Check if user already has saved preferences (returning user)
+      window.api.getSavedPriorityChats().then((saved) => {
+        if (saved !== null) {
+          // Returning user — start indexing directly
+          initialIndexDone.current = true
+          setIsIndexing(true)
+          window.api.startIndexing()
+        } else {
+          // First time — show chat priority screen
+          window.api.getChatSummaries().then((summaries) => {
+            if (summaries.length > 0) {
+              setChatSummaries(summaries)
+              setShowChatPriority(true)
+            } else {
+              // No chats found, just start
+              initialIndexDone.current = true
+              setIsIndexing(true)
+              window.api.startIndexing()
+            }
+          })
+        }
+      })
     }
   }, [hasAccess])
+
+  const handleStartWithPriority = useCallback((priorityChats: string[]) => {
+    setShowChatPriority(false)
+    initialIndexDone.current = true
+    setIsIndexing(true)
+    setShowIndexing(true)
+    window.api.startIndexing(priorityChats)
+  }, [])
 
   // Listen for indexing progress
   useEffect(() => {
     const unsub = window.api.onIndexingProgress((data) => {
       setIndexingProgress(data)
-      if (data.total > 0 && data.processed >= data.total) {
+      if (data.total > 0 && data.processed >= data.total && data.phase === 'Complete') {
         setIsIndexing(false)
       }
       // Refresh results periodically during indexing
@@ -142,13 +172,17 @@ export default function App(): JSX.Element {
   if (hasAccess === null) {
     return (
       <div className="flex items-center justify-center h-screen bg-[#0a0a0a]">
-        <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+        <div className="w-6 h-6 border-2 border-teal-500 border-t-transparent rounded-full animate-spin" />
       </div>
     )
   }
 
   if (!hasAccess) {
     return <PermissionScreen />
+  }
+
+  if (showChatPriority) {
+    return <ChatPriorityScreen chats={chatSummaries} onStart={handleStartWithPriority} />
   }
 
   return (

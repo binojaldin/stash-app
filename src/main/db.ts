@@ -21,6 +21,7 @@ export interface StashAttachment {
   is_video: number
   is_document: number
   ocr_text: string | null
+  metadata_only?: number
 }
 
 export function getDbPath(): string {
@@ -57,7 +58,8 @@ export function initDb(): Database.Database {
       is_image INTEGER DEFAULT 0,
       is_video INTEGER DEFAULT 0,
       is_document INTEGER DEFAULT 0,
-      ocr_text TEXT
+      ocr_text TEXT,
+      metadata_only INTEGER DEFAULT 0
     );
 
     CREATE VIRTUAL TABLE IF NOT EXISTS attachments_fts USING fts5(
@@ -87,6 +89,13 @@ export function initDb(): Database.Database {
     END;
   `)
 
+  // Add metadata_only column if missing (migration for existing DBs)
+  try {
+    db.prepare('SELECT metadata_only FROM attachments LIMIT 1').get()
+  } catch {
+    db.exec('ALTER TABLE attachments ADD COLUMN metadata_only INTEGER DEFAULT 0')
+  }
+
   return db
 }
 
@@ -95,8 +104,8 @@ export function insertAttachment(att: StashAttachment): number | null {
   try {
     const stmt = d.prepare(`
       INSERT OR IGNORE INTO attachments
-      (filename, original_path, stash_path, file_size, mime_type, created_at, chat_name, sender_handle, thumbnail_path, file_extension, is_image, is_video, is_document, ocr_text)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (filename, original_path, stash_path, file_size, mime_type, created_at, chat_name, sender_handle, thumbnail_path, file_extension, is_image, is_video, is_document, ocr_text, metadata_only)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
     const result = stmt.run(
       att.filename,
@@ -112,7 +121,8 @@ export function insertAttachment(att: StashAttachment): number | null {
       att.is_image,
       att.is_video,
       att.is_document,
-      att.ocr_text
+      att.ocr_text,
+      att.metadata_only ?? 0
     )
     return result.changes > 0 ? Number(result.lastInsertRowid) : null
   } catch (err) {
@@ -124,6 +134,27 @@ export function insertAttachment(att: StashAttachment): number | null {
 export function updateOcrText(id: number, ocrText: string): void {
   const d = initDb()
   d.prepare('UPDATE attachments SET ocr_text = ? WHERE id = ?').run(ocrText, id)
+}
+
+export function updateThumbnail(id: number, thumbnailPath: string): void {
+  const d = initDb()
+  d.prepare('UPDATE attachments SET thumbnail_path = ? WHERE id = ?').run(thumbnailPath, id)
+}
+
+export function markFullyIndexed(id: number): void {
+  const d = initDb()
+  d.prepare('UPDATE attachments SET metadata_only = 0 WHERE id = ?').run(id)
+}
+
+export function getMetadataOnlyByPath(originalPath: string): { id: number } | undefined {
+  const d = initDb()
+  return d.prepare('SELECT id FROM attachments WHERE original_path = ? AND metadata_only = 1').get(originalPath) as { id: number } | undefined
+}
+
+export function getIdByPath(originalPath: string): number | null {
+  const d = initDb()
+  const row = d.prepare('SELECT id FROM attachments WHERE original_path = ?').get(originalPath) as { id: number } | undefined
+  return row ? row.id : null
 }
 
 export function searchAttachments(

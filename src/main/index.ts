@@ -3,7 +3,7 @@ import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import { checkFullDiskAccess } from './messagesReader'
 import { initDb, searchAttachments, getStats, getAttachmentById, closeDb } from './db'
-import { startIndexing, getIndexingProgress } from './indexer'
+import { startIndexing, getIndexingProgress, fetchChatSummaries, saveChatPriorities, getSavedPriorityChats } from './indexer'
 import { copyFileSync, existsSync } from 'fs'
 
 let mainWindow: BrowserWindow | null = null
@@ -89,8 +89,20 @@ function setupIpc(): void {
     return getIndexingProgress()
   })
 
-  ipcMain.handle('start-indexing', () => {
-    startIndexing(mainWindow)
+  ipcMain.handle('start-indexing', (_event, priorityChats?: string[]) => {
+    startIndexing(mainWindow, priorityChats)
+  })
+
+  ipcMain.handle('get-chat-summaries', () => {
+    return fetchChatSummaries()
+  })
+
+  ipcMain.handle('save-chat-priorities', (_event, chats: string[]) => {
+    saveChatPriorities(chats)
+  })
+
+  ipcMain.handle('get-saved-priority-chats', () => {
+    return getSavedPriorityChats()
   })
 
   ipcMain.handle('get-file-url', (_event, filePath: string) => {

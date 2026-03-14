@@ -24,14 +24,24 @@ const api = {
   getAttachment: (id: number): Promise<unknown> => ipcRenderer.invoke('get-attachment', id),
   openInFinder: (path: string): Promise<boolean> => ipcRenderer.invoke('open-in-finder', path),
   exportFile: (id: number): Promise<boolean> => ipcRenderer.invoke('export-file', id),
-  getIndexingProgress: (): Promise<{ total: number; processed: number; currentFile: string }> =>
+  getIndexingProgress: (): Promise<{ total: number; processed: number; currentFile: string; phase?: string }> =>
     ipcRenderer.invoke('get-indexing-progress'),
-  startIndexing: (): Promise<void> => ipcRenderer.invoke('start-indexing'),
+  startIndexing: (priorityChats?: string[]): Promise<void> => ipcRenderer.invoke('start-indexing', priorityChats),
+  getChatSummaries: (): Promise<{
+    chat_name: string
+    display_name: string
+    raw_chat_identifier: string
+    attachment_count: number
+    last_message_date: string
+    participant_handles: string[]
+  }[]> => ipcRenderer.invoke('get-chat-summaries'),
+  saveChatPriorities: (chats: string[]): Promise<void> => ipcRenderer.invoke('save-chat-priorities', chats),
+  getSavedPriorityChats: (): Promise<string[] | null> => ipcRenderer.invoke('get-saved-priority-chats'),
   getFileUrl: (path: string): Promise<string | null> => ipcRenderer.invoke('get-file-url', path),
   onIndexingProgress: (
-    callback: (data: { total: number; processed: number; currentFile: string }) => void
+    callback: (data: { total: number; processed: number; currentFile: string; phase?: string }) => void
   ): (() => void) => {
-    const handler = (_event: unknown, data: { total: number; processed: number; currentFile: string }): void => callback(data)
+    const handler = (_event: unknown, data: { total: number; processed: number; currentFile: string; phase?: string }): void => callback(data)
     ipcRenderer.on('indexing-progress', handler)
     return () => ipcRenderer.removeListener('indexing-progress', handler)
   },

@@ -1,20 +1,33 @@
 import { BrowserWindow } from 'electron'
-import { existsSync } from 'fs'
-import { basename, extname } from 'path'
+import { existsSync, readFileSync, writeFileSync } from 'fs'
+import { basename, extname, join } from 'path'
 import sharp from 'sharp'
 import { watch } from 'chokidar'
-import { readAllAttachments, MessageAttachment } from './messagesReader'
-import { initDb, insertAttachment, isAlreadyIndexed, getThumbnailDir, updateOcrText } from './db'
+import { readAllAttachments, MessageAttachment, getChatSummaries } from './messagesReader'
+import type { ChatSummary } from './messagesReader'
+import {
+  initDb,
+  insertAttachment,
+  isAlreadyIndexed,
+  getThumbnailDir,
+  updateOcrText,
+  updateThumbnail,
+  markFullyIndexed,
+  getMetadataOnlyByPath,
+  getIdByPath
+} from './db'
 import { compileOcrHelper, runOcr } from './ocr'
-import { join } from 'path'
+import { compileContactsHelper, resolveContact } from './contacts'
 import { homedir } from 'os'
+import { app } from 'electron'
 
 const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.heic', '.tiff', '.bmp'])
 const VIDEO_EXTENSIONS = new Set(['.mp4', '.mov', '.avi', '.mkv', '.webm', '.m4v'])
+const AUDIO_EXTENSIONS = new Set(['.mp3', '.m4a', '.wav', '.aac', '.ogg', '.flac', '.aiff'])
 const DOCUMENT_EXTENSIONS = new Set(['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.txt', '.rtf', '.csv'])
 
 let isIndexing = false
-let indexingProgress = { total: 0, processed: 0, currentFile: '' }
+let indexingProgress = { total: 0, processed: 0, currentFile: '', phase: '' }
 
 function classifyFile(ext: string, mime: string | null): { is_image: number; is_video: number; is_document: number } {
   const lExt = ext.toLowerCase()
@@ -24,10 +37,14 @@ function classifyFile(ext: string, mime: string | null): { is_image: number; is_
   return { is_image: 0, is_video: 0, is_document: 0 }
 }
 
+function isAudio(ext: string, mime: string | null): boolean {
+  return AUDIO_EXTENSIONS.has(ext.toLowerCase()) || !!mime?.startsWith('audio/')
+}
+
 async function generateThumbnail(filePath: string, ext: string): Promise<string | null> {
   const lExt = ext.toLowerCase()
   if (!IMAGE_EXTENSIONS.has(lExt)) return null
-  if (lExt === '.heic') return null // sharp may not support HEIC without additional deps
+  if (lExt === '.heic') return null
 
   try {
     const thumbDir = getThumbnailDir()
@@ -47,37 +64,123 @@ function sendProgress(win: BrowserWindow | null): void {
   }
 }
 
-export async function startIndexing(win: BrowserWindow | null): Promise<void> {
+function getPrefsPath(): string {
+  return join(app.getPath('appData'), 'Stash', 'prefs.json')
+}
+
+function loadPriorityChats(): string[] | null {
+  const prefsPath = getPrefsPath()
+  if (!existsSync(prefsPath)) return null
+  try {
+    const prefs = JSON.parse(readFileSync(prefsPath, 'utf-8'))
+    return prefs.priorityChats ?? null
+  } catch {
+    return null
+  }
+}
+
+function savePriorityChats(chats: string[]): void {
+  const prefsPath = getPrefsPath()
+  let prefs: Record<string, unknown> = {}
+  if (existsSync(prefsPath)) {
+    try {
+      prefs = JSON.parse(readFileSync(prefsPath, 'utf-8'))
+    } catch { /* ignore */ }
+  }
+  prefs.priorityChats = chats
+  writeFileSync(prefsPath, JSON.stringify(prefs, null, 2))
+}
+
+export interface ResolvedChatSummary {
+  chat_name: string
+  display_name: string
+  raw_chat_identifier: string
+  attachment_count: number
+  last_message_date: string
+  participant_handles: string[]
+}
+
+function isGroupChatIdentifier(identifier: string): boolean {
+  return /^chat\d+/.test(identifier)
+}
+
+function resolveDisplayName(summary: ChatSummary): string {
+  // If there's already a proper display name (not a phone/email/chat ID), use it
+  if (summary.display_name && !summary.display_name.startsWith('+') && !summary.display_name.includes('@') && !isGroupChatIdentifier(summary.display_name)) {
+    return summary.display_name
+  }
+
+  // For group chats, resolve participant handles
+  if (isGroupChatIdentifier(summary.raw_chat_identifier) && summary.participant_handles.length > 0) {
+    const names = summary.participant_handles.slice(0, 4).map((h) => resolveContact(h))
+    const label = names.join(', ')
+    if (summary.participant_handles.length > 4) {
+      return `Group: ${label} +${summary.participant_handles.length - 4}`
+    }
+    return `Group: ${label}`
+  }
+
+  // Single chat — resolve the chat_identifier as a handle
+  const identifier = summary.raw_chat_identifier || summary.chat_name
+  if (identifier && (identifier.startsWith('+') || identifier.includes('@'))) {
+    return resolveContact(identifier)
+  }
+
+  return summary.chat_name
+}
+
+export function fetchChatSummaries(): ResolvedChatSummary[] {
+  compileContactsHelper()
+  const summaries = getChatSummaries()
+  return summaries.map((s) => ({
+    chat_name: s.chat_name,
+    display_name: resolveDisplayName(s),
+    raw_chat_identifier: s.raw_chat_identifier,
+    attachment_count: s.attachment_count,
+    last_message_date: s.last_message_date,
+    participant_handles: s.participant_handles
+  }))
+}
+
+export function saveChatPriorities(chats: string[]): void {
+  savePriorityChats(chats)
+}
+
+export function getSavedPriorityChats(): string[] | null {
+  return loadPriorityChats()
+}
+
+export async function startIndexing(win: BrowserWindow | null, priorityChats?: string[]): Promise<void> {
   if (isIndexing) return
   isIndexing = true
 
   initDb()
   compileOcrHelper()
 
-  const attachments = readAllAttachments()
-  const toProcess = attachments.filter(
-    (a) => a.original_path && !isAlreadyIndexed(a.original_path)
-  )
+  // Save priority chats if provided
+  if (priorityChats) {
+    savePriorityChats(priorityChats)
+  }
+  const savedPriority = priorityChats ?? loadPriorityChats() ?? []
 
-  indexingProgress = { total: toProcess.length, processed: 0, currentFile: '' }
+  const allAttachments = readAllAttachments()
+
+  // ── Phase 1: Metadata-only insert for ALL attachments ──
+  indexingProgress = { total: allAttachments.length, processed: 0, currentFile: '', phase: 'Cataloging metadata' }
   sendProgress(win)
 
-  for (const att of toProcess) {
-    if (!att.original_path || !existsSync(att.original_path)) {
+  for (const att of allAttachments) {
+    if (!att.original_path || isAlreadyIndexed(att.original_path)) {
       indexingProgress.processed++
-      sendProgress(win)
+      if (indexingProgress.processed % 100 === 0) sendProgress(win)
       continue
     }
 
     const ext = extname(att.filename || att.original_path || '')
     const fname = basename(att.filename || att.original_path || 'unknown')
-    indexingProgress.currentFile = fname
-    sendProgress(win)
-
     const classification = classifyFile(ext, att.mime_type)
-    const thumbnailPath = await generateThumbnail(att.original_path, ext)
 
-    const id = insertAttachment({
+    insertAttachment({
       filename: fname,
       original_path: att.original_path,
       stash_path: null,
@@ -86,27 +189,152 @@ export async function startIndexing(win: BrowserWindow | null): Promise<void> {
       created_at: att.created_at,
       chat_name: att.chat_name,
       sender_handle: att.sender_handle,
-      thumbnail_path: thumbnailPath,
+      thumbnail_path: null,
       file_extension: ext,
       ...classification,
-      ocr_text: null
+      ocr_text: null,
+      metadata_only: 1
     })
 
-    // Run OCR in background for images
-    if (id && classification.is_image && att.original_path) {
-      const ocrPath = att.original_path
-      runOcr(ocrPath).then((text) => {
-        if (text) updateOcrText(id, text)
-      })
-    }
-
     indexingProgress.processed++
+    if (indexingProgress.processed % 100 === 0) {
+      indexingProgress.currentFile = fname
+      sendProgress(win)
+    }
+  }
+
+  // Notify renderer that phase 1 is done — all records are searchable
+  sendProgress(win)
+  if (win && !win.isDestroyed()) {
+    win.webContents.send('new-attachment-indexed')
+  }
+
+  // Collect items that still need enrichment (metadata_only=1)
+  const toEnrich = allAttachments.filter((a) => {
+    if (!a.original_path) return false
+    const row = getMetadataOnlyByPath(a.original_path)
+    return !!row
+  })
+
+  // Sort priority chats first
+  const prioritySet = new Set(savedPriority)
+  const sortByPriority = (a: MessageAttachment, b: MessageAttachment): number => {
+    const aP = a.chat_name && prioritySet.has(a.chat_name) ? 0 : 1
+    const bP = b.chat_name && prioritySet.has(b.chat_name) ? 0 : 1
+    return aP - bP
+  }
+
+  // Classify into phases
+  const sixMonthsAgo = new Date()
+  sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6)
+  const sixMonthsStr = sixMonthsAgo.toISOString()
+
+  const documents: MessageAttachment[] = []
+  const recentImages: MessageAttachment[] = []
+  const olderImages: MessageAttachment[] = []
+  const videosAndAudio: MessageAttachment[] = []
+
+  for (const att of toEnrich) {
+    const ext = extname(att.filename || att.original_path || '').toLowerCase()
+    const cls = classifyFile(ext, att.mime_type)
+
+    if (cls.is_document) {
+      documents.push(att)
+    } else if (cls.is_image) {
+      if (att.created_at && att.created_at >= sixMonthsStr) {
+        recentImages.push(att)
+      } else {
+        olderImages.push(att)
+      }
+    } else if (cls.is_video || isAudio(ext, att.mime_type)) {
+      videosAndAudio.push(att)
+    }
+  }
+
+  // Sort each group by priority chats
+  documents.sort(sortByPriority)
+  recentImages.sort(sortByPriority)
+  olderImages.sort(sortByPriority)
+  videosAndAudio.sort(sortByPriority)
+
+  const phases: { name: string; items: MessageAttachment[]; doOcr: boolean; doThumbnail: boolean }[] = [
+    { name: 'Documents', items: documents, doOcr: false, doThumbnail: true },
+    { name: 'Recent images', items: recentImages, doOcr: true, doThumbnail: true },
+    { name: 'Older images', items: olderImages, doOcr: true, doThumbnail: true },
+    { name: 'Videos & audio', items: videosAndAudio, doOcr: false, doThumbnail: true }
+  ]
+
+  const totalEnrich = documents.length + recentImages.length + olderImages.length + videosAndAudio.length
+  let enrichProcessed = 0
+
+  for (const phase of phases) {
+    if (phase.items.length === 0) continue
+
+    indexingProgress = {
+      total: totalEnrich,
+      processed: enrichProcessed,
+      currentFile: '',
+      phase: phase.name
+    }
     sendProgress(win)
+
+    for (const att of phase.items) {
+      if (!att.original_path) {
+        enrichProcessed++
+        indexingProgress.processed = enrichProcessed
+        sendProgress(win)
+        continue
+      }
+
+      const id = getIdByPath(att.original_path)
+      if (!id) {
+        enrichProcessed++
+        indexingProgress.processed = enrichProcessed
+        sendProgress(win)
+        continue
+      }
+
+      const ext = extname(att.filename || att.original_path || '')
+      const fname = basename(att.filename || att.original_path || 'unknown')
+      indexingProgress.currentFile = fname
+      sendProgress(win)
+
+      // Generate thumbnail if file exists
+      if (phase.doThumbnail && existsSync(att.original_path)) {
+        const thumbPath = await generateThumbnail(att.original_path, ext)
+        if (thumbPath) {
+          updateThumbnail(id, thumbPath)
+        }
+      }
+
+      // Run OCR for images
+      if (phase.doOcr && existsSync(att.original_path)) {
+        const text = await runOcr(att.original_path)
+        if (text) {
+          updateOcrText(id, text)
+        }
+      }
+
+      markFullyIndexed(id)
+
+      enrichProcessed++
+      indexingProgress.processed = enrichProcessed
+      if (enrichProcessed % 5 === 0) {
+        sendProgress(win)
+        if (win && !win.isDestroyed()) {
+          win.webContents.send('new-attachment-indexed')
+        }
+      }
+    }
   }
 
   isIndexing = false
-  indexingProgress.currentFile = ''
+  indexingProgress = { total: totalEnrich, processed: totalEnrich, currentFile: '', phase: 'Complete' }
   sendProgress(win)
+
+  if (win && !win.isDestroyed()) {
+    win.webContents.send('new-attachment-indexed')
+  }
 
   // Watch for new attachments
   const attachmentsDir = join(homedir(), 'Library/Messages/Attachments')
@@ -119,7 +347,6 @@ export async function startIndexing(win: BrowserWindow | null): Promise<void> {
 
     watcher.on('add', async (filePath) => {
       if (isAlreadyIndexed(filePath)) return
-      // Re-read messages DB to get metadata for this file
       const allAtts = readAllAttachments()
       const match = allAtts.find((a) => a.original_path === filePath)
       if (!match) return
@@ -141,7 +368,8 @@ export async function startIndexing(win: BrowserWindow | null): Promise<void> {
         thumbnail_path: thumbnailPath,
         file_extension: ext,
         ...classification,
-        ocr_text: null
+        ocr_text: null,
+        metadata_only: 0
       })
 
       if (id && classification.is_image) {

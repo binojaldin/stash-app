@@ -14,6 +14,7 @@ export interface Attachment {
   is_video: number
   is_document: number
   ocr_text: string | null
+  metadata_only: number
 }
 
 export interface Filters {
@@ -26,6 +27,7 @@ export interface IndexingProgress {
   total: number
   processed: number
   currentFile: string
+  phase?: string
 }
 
 export interface Stats {
@@ -35,4 +37,13 @@ export interface Stats {
   documents: number
   audio: number
   chatNames: string[]
+}
+
+export interface ChatSummary {
+  chat_name: string
+  display_name: string
+  raw_chat_identifier: string
+  attachment_count: number
+  last_message_date: string
+  participant_handles: string[]
 }
