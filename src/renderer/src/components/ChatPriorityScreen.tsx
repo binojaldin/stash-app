@@ -130,31 +130,36 @@ export function ChatPriorityScreen({ chats, onStart }: Props): JSX.Element {
           {sorted.length === 0 && (
             <div className="px-4 py-6 text-center text-sm text-[#636363]">No conversations match your search</div>
           )}
-          {sorted.map((chat) => (
-            <label
-              key={chat.chat_name}
-              className="flex items-center gap-3 px-4 py-2.5 hover:bg-[#141414] cursor-pointer border-b border-[#1c1c1c] last:border-b-0"
-            >
-              <input
-                type="checkbox"
-                checked={selected.has(chat.chat_name)}
-                onChange={() => toggle(chat.chat_name)}
-                className="w-4 h-4 rounded border-[#333] bg-[#1c1c1c] accent-teal-500 flex-shrink-0"
-              />
-              <div className="flex-1 min-w-0">
-                <span className="text-sm text-white block truncate">{chat.display_name}</span>
-                {chat.display_name !== chat.chat_name && (
-                  <span className="text-xs text-[#4a4a4a] block truncate">{chat.chat_name}</span>
-                )}
+          {sorted.map((chat) => {
+            const name = chat.display_name?.trim() || 'Unknown'
+            const subtitle = name !== chat.chat_name ? chat.chat_name : (chat.raw_chat_identifier || null)
+            return (
+              <div
+                key={chat.chat_name}
+                onClick={() => toggle(chat.chat_name)}
+                className="flex items-center gap-3 px-4 py-2.5 hover:bg-[#141414] cursor-pointer border-b border-[#1c1c1c] last:border-b-0"
+              >
+                <input
+                  type="checkbox"
+                  checked={selected.has(chat.chat_name)}
+                  readOnly
+                  className="w-4 h-4 rounded border-[#333] bg-[#1c1c1c] accent-teal-500 flex-shrink-0 pointer-events-none"
+                />
+                <div className="flex-1 min-w-0">
+                  <span className="text-sm text-white block truncate">{name}</span>
+                  {subtitle && (
+                    <span className="text-xs text-[#4a4a4a] block truncate">{subtitle}</span>
+                  )}
+                </div>
+                <div className="flex flex-col items-end flex-shrink-0 gap-0.5">
+                  <span className="text-xs text-[#636363] tabular-nums">{chat.attachment_count.toLocaleString()}</span>
+                  {chat.last_message_date && (
+                    <span className="text-[10px] text-[#4a4a4a]">{formatDate(chat.last_message_date)}</span>
+                  )}
+                </div>
               </div>
-              <div className="flex flex-col items-end flex-shrink-0 gap-0.5">
-                <span className="text-xs text-[#636363] tabular-nums">{chat.attachment_count.toLocaleString()}</span>
-                {chat.last_message_date && (
-                  <span className="text-[10px] text-[#4a4a4a]">{formatDate(chat.last_message_date)}</span>
-                )}
-              </div>
-            </label>
-          ))}
+            )
+          })}
         </div>
 
         <p className="text-[10px] text-[#4a4a4a] mb-4 text-center">Contact names are resolved locally and never leave your device.</p>
