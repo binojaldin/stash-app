@@ -39,17 +39,16 @@ export function ChatPriorityScreen({ chats, onStart }: Props): JSX.Element {
     })
   }, [chats, sortMode, search])
 
-  const toggle = (name: string): void => {
-    setSelected((prev) => {
-      const next = new Set(prev)
-      if (next.has(name)) next.delete(name)
-      else next.add(name)
-      return next
-    })
-  }
-
   const selectAll = (): void => setSelected(new Set(chats.map((c) => c.chat_name)))
   const selectNone = (): void => setSelected(new Set())
+
+  const isRawIdentifier = (s: string): boolean => {
+    if (!s) return true
+    if (/^[0-9a-f]{20,}$/i.test(s)) return true
+    if (/^chat\d+/i.test(s)) return true
+    if (/^iMessage;/.test(s)) return true
+    return false
+  }
 
   const formatDate = (dateStr: string): string => {
     if (!dateStr) return ''
@@ -132,17 +131,30 @@ export function ChatPriorityScreen({ chats, onStart }: Props): JSX.Element {
           )}
           {sorted.map((chat) => {
             const name = chat.display_name?.trim() || 'Unknown'
-            const subtitle = name !== chat.chat_name ? chat.chat_name : (chat.raw_chat_identifier || null)
+            const rawSub = name !== chat.chat_name ? chat.chat_name : null
+            const subtitle = rawSub && !isRawIdentifier(rawSub) ? rawSub : null
+            const chatName = chat.chat_name
             return (
               <div
-                key={chat.chat_name}
-                onClick={() => toggle(chat.chat_name)}
+                key={chatName}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setSelected((prev) => {
+                    const next = new Set(prev)
+                    if (next.has(chatName)) {
+                      next.delete(chatName)
+                    } else {
+                      next.add(chatName)
+                    }
+                    return next
+                  })
+                }}
                 className="flex items-center gap-3 px-4 py-2.5 hover:bg-[#141414] cursor-pointer border-b border-[#1c1c1c] last:border-b-0"
               >
                 <input
                   type="checkbox"
-                  checked={selected.has(chat.chat_name)}
-                  readOnly
+                  checked={selected.has(chatName)}
+                  onChange={() => {}}
                   className="w-4 h-4 rounded border-[#333] bg-[#1c1c1c] accent-teal-500 flex-shrink-0 pointer-events-none"
                 />
                 <div className="flex-1 min-w-0">
