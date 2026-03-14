@@ -335,7 +335,8 @@ export async function startIndexing(win: BrowserWindow | null, selectedChats?: s
   }
 
   isIndexing = false
-  indexingProgress = { total: totalEnrich, processed: totalEnrich, currentFile: '', phase: 'Complete' }
+  const finalTotal = totalEnrich > 0 ? totalEnrich : targetAttachments.length
+  indexingProgress = { total: Math.max(finalTotal, 1), processed: Math.max(finalTotal, 1), currentFile: '', phase: 'Complete' }
   sendProgress(win)
 
   if (win && !win.isDestroyed()) {

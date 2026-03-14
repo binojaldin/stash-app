@@ -42,7 +42,7 @@ export function getChatSummaries(): ChatSummary[] {
   try {
     const rows = db.prepare(`
       SELECT
-        COALESCE(c.display_name, c.chat_identifier) as chat_name,
+        COALESCE(NULLIF(c.display_name, ''), c.chat_identifier) as chat_name,
         c.display_name as display_name,
         c.chat_identifier as raw_chat_identifier,
         COUNT(DISTINCT a.ROWID) as attachment_count,
@@ -62,7 +62,7 @@ export function getChatSummaries(): ChatSummary[] {
     try {
       const participantRows = db.prepare(`
         SELECT
-          COALESCE(c.display_name, c.chat_identifier) as chat_name,
+          COALESCE(NULLIF(c.display_name, ''), c.chat_identifier) as chat_name,
           h.id as handle_id
         FROM chat c
         JOIN chat_handle_join chj ON c.ROWID = chj.chat_id
@@ -108,7 +108,7 @@ export function readAllAttachments(): MessageAttachment[] {
       a.total_bytes as file_size,
       a.mime_type as mime_type,
       datetime(m.date / 1000000000 + 978307200, 'unixepoch', 'localtime') as created_at,
-      COALESCE(c.display_name, c.chat_identifier) as chat_name,
+      COALESCE(NULLIF(c.display_name, ''), c.chat_identifier) as chat_name,
       h.id as sender_handle
     FROM attachment a
     JOIN message_attachment_join maj ON a.ROWID = maj.attachment_id
