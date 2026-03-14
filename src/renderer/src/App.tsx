@@ -10,6 +10,7 @@ import type { Attachment, Filters, IndexingProgress, Stats } from './types'
 export default function App(): JSX.Element {
   const [hasAccess, setHasAccess] = useState<boolean | null>(null)
   const [isIndexing, setIsIndexing] = useState(false)
+  const [showIndexing, setShowIndexing] = useState(true)
   const [indexingProgress, setIndexingProgress] = useState<IndexingProgress>({
     total: 0,
     processed: 0,
@@ -152,8 +153,18 @@ export default function App(): JSX.Element {
 
   return (
     <div className="flex flex-col h-screen bg-[#0a0a0a]">
-      {isIndexing && indexingProgress.total > 0 && (
-        <IndexingOverlay progress={indexingProgress} />
+      {isIndexing && showIndexing && indexingProgress.total > 0 && (
+        <IndexingOverlay progress={indexingProgress} onBrowse={() => setShowIndexing(false)} />
+      )}
+
+      {/* Persistent progress bar while indexing in background */}
+      {isIndexing && !showIndexing && indexingProgress.total > 0 && (
+        <div className="fixed top-0 left-0 right-0 z-50 h-[3px] bg-[#1c1c1c]">
+          <div
+            className="h-full bg-teal-500 transition-all duration-300"
+            style={{ width: `${Math.round((indexingProgress.processed / indexingProgress.total) * 100)}%` }}
+          />
+        </div>
       )}
 
       {/* Drag region for title bar */}

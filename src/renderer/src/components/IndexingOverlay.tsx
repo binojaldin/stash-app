@@ -2,9 +2,10 @@ import type { IndexingProgress } from '../types'
 
 interface Props {
   progress: IndexingProgress
+  onBrowse: () => void
 }
 
-export function IndexingOverlay({ progress }: Props): JSX.Element {
+export function IndexingOverlay({ progress, onBrowse }: Props): JSX.Element {
   const percent = progress.total > 0 ? Math.round((progress.processed / progress.total) * 100) : 0
   const remaining = progress.total - progress.processed
   const avgTimePerItem = 0.15 // seconds estimate
@@ -48,12 +49,8 @@ export function IndexingOverlay({ progress }: Props): JSX.Element {
         )}
 
         <button
-          onClick={() => {
-            const overlay = document.querySelector('[data-indexing-overlay]')
-            if (overlay) (overlay as HTMLElement).style.display = 'none'
-          }}
+          onClick={onBrowse}
           className="mt-6 w-full py-2 rounded-lg bg-[#1c1c1c] text-sm text-[#a3a3a3] hover:bg-[#262626] hover:text-white transition-colors"
-          data-indexing-overlay
         >
           Browse while indexing
         </button>
