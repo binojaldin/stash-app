@@ -42,6 +42,7 @@ export interface ChatNameEntry {
   initiationCount: number
   laughsGenerated: number
   laughsReceived: number
+  isGroup: boolean
 }
 
 export interface Stats {

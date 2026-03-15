@@ -237,13 +237,13 @@ export function searchAttachments(
   let sql: string
   if (query && query.trim()) {
     sql = `
-      SELECT a.* FROM attachments a
+      SELECT DISTINCT a.* FROM attachments a
       JOIN attachments_fts fts ON a.id = fts.rowid
       WHERE attachments_fts MATCH ?
     `
     params.push(query.trim().split(/\s+/).map((w) => `"${w}"*`).join(' '))
   } else {
-    sql = 'SELECT * FROM attachments WHERE 1=1'
+    sql = 'SELECT DISTINCT * FROM attachments WHERE 1=1'
   }
 
   // Use table-qualified column names to work with both plain and FTS queries
@@ -303,6 +303,7 @@ export interface ChatNameEntry {
   initiationCount: number
   laughsGenerated: number
   laughsReceived: number
+  isGroup: boolean
 }
 
 export function getStats(chatNameFilter?: string): {
@@ -326,6 +327,7 @@ export function getStats(chatNameFilter?: string): {
 
   // Enrich with message counts from chat.db
   let msgStats = new Map<string, { messageCount: number; sentCount: number; receivedCount: number; initiationCount: number; laughsGenerated: number; laughsReceived: number }>()
+  let participantMap = new Map<string, number>()
   try {
     const { homedir } = require('os')
     const { join } = require('path')
@@ -359,6 +361,15 @@ export function getStats(chatNameFilter?: string): {
       `).all() as { chat_name: string; init_days: number }[]
 
       const initMap = new Map(initRows.map((r) => [r.chat_name, r.init_days]))
+
+      // Participant counts to identify group chats
+      try {
+        const partRows = chatDb.prepare(`
+          SELECT COALESCE(NULLIF(c.display_name, ''), c.chat_identifier) as chat_name, COUNT(chj.handle_id) as participant_count
+          FROM chat c LEFT JOIN chat_handle_join chj ON c.ROWID = chj.chat_id GROUP BY c.ROWID
+        `).all() as { chat_name: string; participant_count: number }[]
+        for (const r of partRows) participantMap.set(r.chat_name, r.participant_count)
+      } catch { /* fallback to heuristic */ }
 
       // Laugh detection
       const laughMap = new Map<string, { generated: number; received: number }>()
@@ -420,7 +431,8 @@ export function getStats(chatNameFilter?: string): {
       receivedCount: ms?.receivedCount || 0,
       initiationCount: ms?.initiationCount || 0,
       laughsGenerated: ms?.laughsGenerated || 0,
-      laughsReceived: ms?.laughsReceived || 0
+      laughsReceived: ms?.laughsReceived || 0,
+      isGroup: (participantMap.get(r.chat_name) ?? 0) > 1 || /^chat\d+/i.test(r.chat_name || '')
     }
   })
 

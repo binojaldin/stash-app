@@ -80,14 +80,8 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation }: Props): 
   const currentMonth = MONTH_NAMES[new Date().getMonth()]
   const chats = stats.chatNames as ChatNameEntry[]
 
-  // isGroup heuristic
-  const isGroup = (c: ChatNameEntry): boolean => {
-    const n = c.rawName
-    return /^chat\d+/i.test(n) || (!n.startsWith('+') && !n.includes('@') && n.length > 20)
-  }
-
-  const individuals = chats.filter((c) => !isGroup(c))
-  const groups = chats.filter((c) => isGroup(c))
+  const individuals = chats.filter((c) => !c.isGroup)
+  const groups = chats.filter((c) => c.isGroup)
 
   // Sorted lists — individuals only for person-level tiles
   const byLaughsGenerated = [...individuals].sort((a, b) => b.laughsGenerated - a.laughsGenerated)
