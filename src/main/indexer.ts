@@ -230,7 +230,7 @@ export async function startIndexing(win: BrowserWindow | null, selectedChats?: s
     : allAttachments
 
   // ── Phase 1: Metadata-only insert (all records, regardless of file existence) ──
-  indexingProgress = { total: targetAttachments.length, processed: 0, currentFile: '', phase: 'Cataloging metadata' }
+  indexingProgress = { total: targetAttachments.length, processed: 0, currentFile: '', phase: 'Cataloging files' }
   sendProgress(win)
 
   for (const att of targetAttachments) {
@@ -299,10 +299,10 @@ export async function startIndexing(win: BrowserWindow | null, selectedChats?: s
   }
 
   const phases: { name: string; items: MessageAttachment[]; doOcr: boolean; doThumbnail: boolean }[] = [
-    { name: 'Documents', items: documents, doOcr: false, doThumbnail: true },
-    { name: 'Recent images', items: recentImages, doOcr: true, doThumbnail: true },
-    { name: 'Older images', items: olderImages, doOcr: true, doThumbnail: true },
-    { name: 'Videos & audio', items: videosAndAudio, doOcr: false, doThumbnail: true }
+    { name: 'Processing documents', items: documents, doOcr: false, doThumbnail: true },
+    { name: 'Processing recent photos', items: recentImages, doOcr: true, doThumbnail: true },
+    { name: 'Processing older photos', items: olderImages, doOcr: true, doThumbnail: true },
+    { name: 'Processing videos & audio', items: videosAndAudio, doOcr: false, doThumbnail: true }
   ]
 
   const totalEnrich = documents.length + recentImages.length + olderImages.length + videosAndAudio.length
@@ -385,7 +385,7 @@ export async function startIndexing(win: BrowserWindow | null, selectedChats?: s
 
   isIndexing = false
   const finalTotal = Math.max(totalEnrich, targetAttachments.length, 1)
-  indexingProgress = { total: finalTotal, processed: finalTotal, currentFile: '', phase: 'Complete' }
+  indexingProgress = { total: finalTotal, processed: finalTotal, currentFile: '', phase: 'Up to date' }
   sendProgress(win)
   if (win && !win.isDestroyed()) win.webContents.send('new-attachment-indexed')
 

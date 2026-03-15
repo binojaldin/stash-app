@@ -106,7 +106,7 @@ export default function App(): JSX.Element {
   useEffect(() => {
     const unsub = window.api.onIndexingProgress((data) => {
       setIndexingProgress(data)
-      if (data.total > 0 && data.processed >= data.total && data.phase === 'Complete') {
+      if (data.total > 0 && data.processed >= data.total && data.phase === 'Up to date') {
         setIsIndexing(false)
       }
       if (data.processed > 0 && data.processed % 20 === 0) {
