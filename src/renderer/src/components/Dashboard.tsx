@@ -15,14 +15,14 @@ function resolveName(raw: string, map: Record<string, string>): string {
 }
 
 function TileLabel({ text }: { text: string }): JSX.Element {
-  return <div style={{ fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase', color: '#b7b0ab', marginBottom: 14 }}>{text}</div>
+  return <div style={{ fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase', color: '#6f6a65', marginBottom: 14 }}>{text}</div>
 }
 
 function Metric({ value, sub }: { value: string; sub: string }): JSX.Element {
   return (
     <>
       <div style={{ fontFamily: "'Unbounded', sans-serif", fontWeight: 200, fontSize: 32, letterSpacing: '0.01em', color: '#E8604A', marginBottom: 6 }}>{value}</div>
-      <div style={{ color: '#8c8781', fontSize: 14, lineHeight: 1.6 }}>{sub}</div>
+      <div style={{ color: '#6f6a65', fontSize: 14, lineHeight: 1.6 }}>{sub}</div>
     </>
   )
 }
@@ -48,7 +48,7 @@ function BarTrack({ pct }: { pct: number }): JSX.Element {
 function LeaderRow({ rank, name, sub, value }: { rank: number; name: string; sub: string; value: string }): JSX.Element {
   return (
     <div style={{ display: 'flex', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
-      <span style={{ width: 24, fontSize: 14, color: '#b7b0ab', fontWeight: 500 }}>{rank}</span>
+      <span style={{ width: 24, fontSize: 14, color: '#6f6a65', fontWeight: 500 }}>{rank}</span>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 15, color: '#272420', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</div>
         <div style={{ fontSize: 12, color: '#9a948f', marginTop: 3 }}>{sub}</div>
@@ -80,12 +80,22 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation }: Props): 
   const currentMonth = MONTH_NAMES[new Date().getMonth()]
   const chats = stats.chatNames as ChatNameEntry[]
 
-  // Sorted lists
-  const byLaughsGenerated = [...chats].sort((a, b) => b.laughsGenerated - a.laughsGenerated)
-  const byLaughsReceived = [...chats].sort((a, b) => b.laughsReceived - a.laughsReceived)
-  const byMessages = [...chats].sort((a, b) => b.messageCount - a.messageCount)
+  // isGroup heuristic
+  const isGroup = (c: ChatNameEntry): boolean => {
+    const n = c.rawName
+    return /^chat\d+/i.test(n) || (!n.startsWith('+') && !n.includes('@') && n.length > 20)
+  }
+
+  const individuals = chats.filter((c) => !isGroup(c))
+  const groups = chats.filter((c) => isGroup(c))
+
+  // Sorted lists — individuals only for person-level tiles
+  const byLaughsGenerated = [...individuals].sort((a, b) => b.laughsGenerated - a.laughsGenerated)
+  const byLaughsReceived = [...individuals].sort((a, b) => b.laughsReceived - a.laughsReceived)
+  const byMessages = [...chats].sort((a, b) => b.messageCount - a.messageCount) // all for most active
   const byAttachments = [...chats].sort((a, b) => b.attachmentCount - a.attachmentCount)
-  const byInitiation = [...chats].sort((a, b) => b.initiationCount - a.initiationCount)
+  const byInitiation = [...individuals].sort((a, b) => b.initiationCount - a.initiationCount)
+  const topGroup = [...groups].sort((a, b) => b.messageCount - a.messageCount)[0]
 
   const topFunny = byLaughsGenerated[0]
   const topChat = byMessages[0]
@@ -101,9 +111,10 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation }: Props): 
 
   return (
     <div style={{ flex: 1, overflowY: 'auto', padding: '0 28px 40px', fontFamily: "'DM Sans', sans-serif" }}>
+    <div style={{ maxWidth: 1180, margin: '0 auto', width: '100%' }}>
       {/* Topbar */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 44, marginBottom: 8 }}>
-        <span style={{ fontSize: 12, letterSpacing: '0.22em', textTransform: 'uppercase', color: '#b8b2ad' }}>
+        <span style={{ fontSize: 12, letterSpacing: '0.22em', textTransform: 'uppercase', color: '#8a8480' }}>
           {currentMonth} Wrap · surfaced automatically
         </span>
         <span style={{ color: '#9a948f', letterSpacing: '0.2em', fontSize: 20 }}>•••</span>
@@ -128,7 +139,7 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation }: Props): 
       </div>
 
       {/* Insight tile grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 24 }}>
         {/* Tile 1 — Funniest person */}
         <div style={{ ...tileBase, gridColumn: 'span 4' }}>
           <TileLabel text="Funniest person" />
@@ -137,7 +148,7 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation }: Props): 
               <Metric value={resolveName(topFunny.rawName, chatNameMap)} sub={`${topFunny.laughsGenerated.toLocaleString()} laugh responses`} />
               <CtaPill text="See why → Pro" />
             </>
-          ) : <div style={{ color: '#b7b0ab' }}>No data yet</div>}
+          ) : <div style={{ color: '#6f6a65' }}>No data yet</div>}
         </div>
 
         {/* Tile 2 — Initiation balance */}
@@ -155,7 +166,7 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation }: Props): 
               <Metric value={resolveName(topChat.rawName, chatNameMap)} sub={`${topChat.messageCount.toLocaleString()} messages exchanged`} />
               <CtaPill text="Open conversation" onClick={() => onSelectConversation(topChat.rawName)} />
             </>
-          ) : <div style={{ color: '#b7b0ab' }}>No data yet</div>}
+          ) : <div style={{ color: '#6f6a65' }}>No data yet</div>}
         </div>
 
         {/* Tile 4 — Who makes you laugh most (leaderboard) */}
@@ -172,14 +183,19 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation }: Props): 
           <TileLabel text="Most attachments" />
           {topAttach ? (
             <Metric value={topAttach.attachmentCount.toLocaleString()} sub={`${resolveName(topAttach.rawName, chatNameMap)} sent the most photos, screenshots, and files.`} />
-          ) : <div style={{ color: '#b7b0ab' }}>No data yet</div>}
+          ) : <div style={{ color: '#6f6a65' }}>No data yet</div>}
         </div>
 
         {/* Tile 6 — Late night (coming soon) */}
         <ComingSoonTile label="After 11pm" span={4} />
 
-        {/* Tile 7 — Top moment (coming soon) */}
-        <ComingSoonTile label="Top moment" span={4} />
+        {/* Tile 7 — Most active group */}
+        <div style={{ ...tileBase, gridColumn: 'span 4' }}>
+          <TileLabel text="Most active group" />
+          {topGroup ? (
+            <Metric value={resolveName(topGroup.rawName, chatNameMap)} sub={`${topGroup.messageCount.toLocaleString()} messages exchanged`} />
+          ) : <div style={{ color: '#6f6a65' }}>No group chats indexed</div>}
+        </div>
 
         {/* Tile 8 — Who you reach out to most (full width leaderboard) */}
         <div style={{ ...tileBase, gridColumn: 'span 12' }}>
@@ -189,6 +205,7 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation }: Props): 
           ))}
         </div>
       </div>
+    </div>
     </div>
   )
 }

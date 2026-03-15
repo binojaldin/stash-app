@@ -18,6 +18,12 @@ function resolveName(raw: string, map: Record<string, string>): string {
   return n.startsWith('#') ? 'Group chat' : n
 }
 
+function compactNum(n: number): string {
+  if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`
+  if (n >= 1000) return `${Math.round(n / 1000)}k`
+  return String(n)
+}
+
 export function Sidebar({ stats, filters, onFilterChange, onManageConversations, onHideChat, isIndexing, indexingProgress, onGoHome }: Props): JSX.Element {
   const [chatFilter, setChatFilter] = useState('')
   const [chatSort, setChatSort] = useState<string>('most-messages')
@@ -73,7 +79,7 @@ export function Sidebar({ stats, filters, onFilterChange, onManageConversations,
   return (
     <div style={{ width: 240, minWidth: 240, flexShrink: 0, height: '100%', background: '#0F0F0F', borderRight: '1px solid #1A1A1A', display: 'flex', flexDirection: 'column', fontFamily: "'DM Sans', sans-serif" }} onClick={() => setContextMenu(null)}>
       {/* Wordmark */}
-      <div style={{ padding: '16px 18px 14px', cursor: 'pointer' }} onClick={onGoHome}>
+      <div style={{ padding: '16px 18px 20px', cursor: 'pointer' }} onClick={onGoHome}>
         <span style={{ fontFamily: "'Unbounded', sans-serif", fontSize: 18, letterSpacing: '0.22em' }}>
           <span style={{ fontWeight: 200, color: '#FFFFFF' }}>ST</span>
           <span style={{ fontWeight: 400, color: '#E8604A' }}>ASH</span>
@@ -89,7 +95,7 @@ export function Sidebar({ stats, filters, onFilterChange, onManageConversations,
         </div>
 
         {/* Sort pill */}
-        <button onClick={cycleSort} style={{ borderRadius: 999, border: '1px solid rgba(255,255,255,0.12)', color: '#b9b9b9', padding: '8px 12px', fontSize: 12, background: 'transparent', cursor: 'pointer', marginBottom: 20, fontFamily: "'DM Sans'" }}>
+        <button onClick={cycleSort} style={{ borderRadius: 999, border: '1px solid rgba(255,255,255,0.12)', color: '#b9b9b9', padding: '8px 16px', fontSize: 12, background: 'transparent', cursor: 'pointer', marginBottom: 20, fontFamily: "'DM Sans'" }}>
           {sortLabels[chatSort]}
         </button>
 
@@ -124,7 +130,7 @@ export function Sidebar({ stats, filters, onFilterChange, onManageConversations,
               }}>
               <div style={{ fontSize: 14, color: '#d8d8d8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{dn}</div>
               <div style={{ fontSize: 12, color: '#7c7c7c', marginTop: 3 }}>
-                {chat.messageCount.toLocaleString()} messages <span style={{ color: '#E8604A' }}>·</span> {chat.attachmentCount.toLocaleString()} attachments
+                {compactNum(chat.messageCount)} messages <span style={{ color: '#E8604A' }}>·</span> {compactNum(chat.attachmentCount)} attachments
               </div>
             </button>
           )

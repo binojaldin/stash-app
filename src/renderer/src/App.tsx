@@ -280,12 +280,6 @@ export default function App(): JSX.Element {
 
       {/* Sidebar */}
       <div className="flex flex-col" style={{ background: '#0F0F0F' }}>
-        {/* Sidebar title bar */}
-        <div className="flex items-center justify-between flex-shrink-0" style={{ height: 44, padding: '0 14px', borderBottom: '1px solid #1A1A1A', WebkitAppRegion: 'drag' } as React.CSSProperties}>
-          <span style={{ fontFamily: "'Unbounded', sans-serif", fontWeight: 200, fontSize: 11, letterSpacing: '0.24em', color: '#FFFFFF' }}>
-            ST<span style={{ fontWeight: 400, color: '#E8604A', opacity: wordmarkReady ? 1 : 0, transform: wordmarkReady ? 'translateY(0)' : 'translateY(4px)', transition: 'opacity 0.4s cubic-bezier(0.16,1,0.3,1), transform 0.4s cubic-bezier(0.16,1,0.3,1)', transitionDelay: '0ms', display: 'inline-block' }}>A</span><span style={{ fontWeight: 400, color: '#E8604A', opacity: wordmarkReady ? 1 : 0, transform: wordmarkReady ? 'translateY(0)' : 'translateY(4px)', transition: 'opacity 0.4s cubic-bezier(0.16,1,0.3,1), transform 0.4s cubic-bezier(0.16,1,0.3,1)', transitionDelay: '150ms', display: 'inline-block' }}>S</span><span style={{ fontWeight: 400, color: '#E8604A', opacity: wordmarkReady ? 1 : 0, transform: wordmarkReady ? 'translateY(0)' : 'translateY(4px)', transition: 'opacity 0.4s cubic-bezier(0.16,1,0.3,1), transform 0.4s cubic-bezier(0.16,1,0.3,1)', transitionDelay: '300ms', display: 'inline-block' }}>H</span>
-          </span>
-        </div>
 
         {showSidebar && (
           <Sidebar
@@ -302,9 +296,9 @@ export default function App(): JSX.Element {
       </div>
 
       {/* Main content */}
-      <div className="flex-1 min-w-0 flex flex-col" style={{ background: '#F5F0EA' }}>
+      <div className="flex-1 min-w-0 flex flex-col" style={{ background: '#F2EDE8' }}>
         {/* Title bar drag region */}
-        <div className="flex-shrink-0 flex items-center justify-end pr-4" style={{ height: 44, borderBottom: '1px solid #EAE5DF', WebkitAppRegion: 'drag' } as React.CSSProperties}>
+        <div className="flex-shrink-0 flex items-center justify-end pr-4" style={{ height: 44, borderBottom: '1px solid #EAE5DF', background: '#F6F3EF', WebkitAppRegion: 'drag' } as React.CSSProperties}>
           <button
             onClick={() => setShowWrapped(true)}
             style={{ background: '#E8604A', color: '#FFFFFF', borderRadius: 6, padding: '5px 14px', fontSize: 11, fontWeight: 500, border: 'none', cursor: 'pointer', WebkitAppRegion: 'no-drag' } as React.CSSProperties}
@@ -316,18 +310,19 @@ export default function App(): JSX.Element {
           </button>
         </div>
 
-        {/* Media summary cards */}
+        {/* Media summary cards — 2x2 grid */}
         {stats.total > 0 && (
-          <div className="flex gap-1.5 flex-shrink-0" style={{ padding: '8px 14px 6px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, padding: '12px 14px', background: '#F6F3EF' }} className="flex-shrink-0">
             {mediaCards.map(({ icon: Icon, label, count, bg, color, type }) => (
               <button key={type} onClick={() => { setFilters({ ...filters, type }); setUserActivated(true); setDashboardView(false) }}
-                className="flex-1 transition-all"
-                style={{ background: '#FFFFFF', border: '1px solid #EAE5DF', borderRadius: 8, padding: '10px 12px', cursor: 'pointer', textAlign: 'left', maxHeight: 72 }}>
-                <div style={{ width: 20, height: 20, borderRadius: '50%', background: bg, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 3 }}>
-                  <Icon style={{ width: 10, height: 10, stroke: color }} />
+                style={{ background: '#FFFFFF', border: '1px solid rgba(0,0,0,0.06)', borderRadius: 14, padding: '16px 18px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 14, textAlign: 'left', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
+                <div style={{ width: 48, height: 48, borderRadius: 12, background: bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <Icon style={{ width: 22, height: 22, stroke: color }} />
                 </div>
-                <div style={{ fontSize: 9, color: '#AAAAAA', fontFamily: 'DM Sans' }}>{label}</div>
-                <div style={{ fontSize: 13, fontWeight: 500, color, fontFamily: 'DM Sans' }}>{count.toLocaleString()}</div>
+                <div>
+                  <div style={{ fontSize: 13, color: '#9a948f', marginBottom: 4, fontFamily: "'DM Sans'" }}>{label}</div>
+                  <div style={{ fontSize: 32, fontWeight: 500, color, lineHeight: 1, fontFamily: "'DM Sans'" }}>{count.toLocaleString()}</div>
+                </div>
               </button>
             ))}
           </div>
@@ -341,17 +336,17 @@ export default function App(): JSX.Element {
         {/* Toolbar */}
         <div className="flex items-center justify-between flex-shrink-0" style={{ padding: '8px 14px' }}>
           <div className="flex items-center gap-1">
-            <button onClick={() => setViewMode('grid')} style={{ padding: 6, borderRadius: 6, background: viewMode === 'grid' ? '#E8E3DC' : 'transparent', color: viewMode === 'grid' ? '#1A1A1A' : '#AAAAAA' }}>
+            <button onClick={() => setViewMode('grid')} style={{ padding: 6, borderRadius: 6, background: viewMode === 'grid' ? '#E8E3DC' : 'transparent', color: viewMode === 'grid' ? '#1A1A1A' : '#8a8480' }}>
               <Grid style={{ width: 14, height: 14 }} />
             </button>
-            <button onClick={() => setViewMode('list')} style={{ padding: 6, borderRadius: 6, background: viewMode === 'list' ? '#E8E3DC' : 'transparent', color: viewMode === 'list' ? '#1A1A1A' : '#AAAAAA' }}>
+            <button onClick={() => setViewMode('list')} style={{ padding: 6, borderRadius: 6, background: viewMode === 'list' ? '#E8E3DC' : 'transparent', color: viewMode === 'list' ? '#1A1A1A' : '#8a8480' }}>
               <List style={{ width: 14, height: 14 }} />
             </button>
           </div>
 
           <div className="relative">
             <button onClick={(e) => { e.stopPropagation(); setShowSortMenu(!showSortMenu) }}
-              className="flex items-center gap-1.5" style={{ fontSize: 11, fontWeight: 300, color: '#AAAAAA', background: 'transparent', border: 'none', cursor: 'pointer' }}>
+              className="flex items-center gap-1.5" style={{ fontSize: 11, fontWeight: 300, color: '#6f6a65', background: 'transparent', border: 'none', cursor: 'pointer' }}>
               {SORT_OPTIONS.find((o) => o.value === sortOrder)?.label}
               <ChevronDown style={{ width: 12, height: 12 }} />
             </button>
@@ -359,7 +354,7 @@ export default function App(): JSX.Element {
               <div className="absolute right-0 top-full mt-1 w-40 rounded-lg shadow-lg z-20 overflow-hidden" style={{ background: '#FFFFFF', border: '1px solid #EAE5DF' }}>
                 {SORT_OPTIONS.map((opt) => (
                   <button key={opt.value} onClick={() => { setSortOrder(opt.value); setShowSortMenu(false) }}
-                    className="w-full text-left px-3 py-2 transition-colors" style={{ fontSize: 11, color: sortOrder === opt.value ? '#1A1A1A' : '#AAAAAA', background: sortOrder === opt.value ? '#F5F0EA' : 'transparent' }}>
+                    className="w-full text-left px-3 py-2 transition-colors" style={{ fontSize: 11, color: sortOrder === opt.value ? '#1A1A1A' : '#6f6a65', background: sortOrder === opt.value ? '#F5F0EA' : 'transparent' }}>
                     {opt.label}
                   </button>
                 ))}
@@ -367,6 +362,13 @@ export default function App(): JSX.Element {
             )}
           </div>
         </div>
+
+        {/* Insights label above dashboard */}
+        {showDash && (
+          <div style={{ padding: '12px 28px 6px', fontSize: 11, letterSpacing: '0.2em', textTransform: 'uppercase', color: '#b8b2ad' }}>
+            Insights · surfaced automatically
+          </div>
+        )}
 
         {/* Content */}
         {showDash ? (
