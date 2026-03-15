@@ -4,6 +4,7 @@ import { is } from '@electron-toolkit/utils'
 import { checkFullDiskAccess } from './messagesReader'
 import { initDb, searchAttachments, getStats, getAttachmentById, closeDb } from './db'
 import { startIndexing, getIndexingProgress, fetchChatSummaries, saveChatPriorities, getSavedPriorityChats, resetIndexing, recoverAttachment, resolveNamesInBackground } from './indexer'
+import { compileContactsHelper, resolveContact, resolveContactsBatch } from './contacts'
 import { generateWrapped, getAvailableYears } from './wrapped'
 import { copyFileSync, existsSync, readFileSync } from 'fs'
 import { extname } from 'path'
@@ -147,9 +148,7 @@ function setupIpc(): void {
     const stats = getStats()
     const chatNameMap: Record<string, string> = {}
     try {
-      const { compileContactsHelper, resolveContact, resolveContactsBatch } = require('./contacts')
       compileContactsHelper()
-      // Batch resolve all handles at once (fast if already cached)
       const handles = stats.chatNames.filter((n: string) => n && (n.startsWith('+') || n.includes('@')))
       if (handles.length > 0) resolveContactsBatch(handles)
       for (const name of stats.chatNames) {
@@ -211,10 +210,12 @@ function setupIpc(): void {
     if (!filePath || !existsSync(filePath)) return null
     try {
       const ext = extname(filePath).toLowerCase()
+      // Skip HEIC/HEIF — browsers can't render them, need thumbnail
+      if (ext === '.heic' || ext === '.heif') return null
       const mimeMap: Record<string, string> = {
         '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
         '.gif': 'image/gif', '.webp': 'image/webp', '.bmp': 'image/bmp',
-        '.tiff': 'image/tiff', '.heic': 'image/heic', '.heif': 'image/heif'
+        '.tiff': 'image/tiff'
       }
       const mime = mimeMap[ext] || 'image/jpeg'
       const data = readFileSync(filePath)

@@ -266,7 +266,7 @@ export default function App(): JSX.Element {
         </div>
       )}
 
-      <div className="h-12 flex-shrink-0 flex items-center justify-between px-20" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
+      <div className="h-12 flex-shrink-0 flex items-center justify-between pr-5" style={{ WebkitAppRegion: 'drag', paddingLeft: '80px' } as React.CSSProperties}>
         <span className="text-xs font-medium text-[#636363] tracking-wide uppercase">Stash</span>
         <button
           onClick={() => setShowWrapped(true)}
