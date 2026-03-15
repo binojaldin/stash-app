@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { ChevronDown, X, TrendingUp, TrendingDown, Minus, Sparkles, Star } from 'lucide-react'
+import { ChevronDown, X, TrendingUp, TrendingDown, Minus, Sparkles, Star, Crown, Users } from 'lucide-react'
 
 interface WrappedData {
   year: number
@@ -49,6 +49,21 @@ interface WrappedData {
     lastYearMessages: number
     changePercent: number
     arc: 'new' | 'growing' | 'fading' | 'rekindled' | 'steady'
+  }[]
+  groupStats: {
+    chatName: string
+    totalMessages: number
+    activeDays: number
+    memberCount: number
+    members: { handle: string; displayName: string; messageCount: number; percentOfGroup: number }[]
+    primaryContributor: { handle: string; displayName: string; messageCount: number }
+    quietestMember: { handle: string; displayName: string; messageCount: number }
+    mostActiveMonth: string
+    mostActiveDay: string
+    avgMessagesPerDay: number
+    yourContribution: { messageCount: number; percentOfGroup: number }
+    firstMessageDate: string
+    longestStreakDays: number
   }[]
   narrative: {
     headline: string
@@ -239,6 +254,61 @@ export function WrappedView({ onClose }: Props): JSX.Element {
                     <span className="text-[10px] text-[#4a4a4a] w-16 text-right">{ARC_LABELS[r.arc]}</span>
                   </div>
                 ))}
+              </div>
+            </Section>
+          )}
+
+          {/* Group chats */}
+          {data.groupStats && data.groupStats.length > 0 && (
+            <Section title="Your group chats">
+              <div className="space-y-4">
+                {data.groupStats.map((g) => {
+                  const MEMBER_COLORS = ['bg-teal-500', 'bg-blue-500', 'bg-purple-500', 'bg-amber-500', 'bg-pink-500', 'bg-green-500', 'bg-red-400', 'bg-cyan-500']
+                  return (
+                    <div key={g.chatName} className="p-4 rounded-lg bg-[#141414] border border-[#1c1c1c]">
+                      <div className="flex items-center gap-2 mb-3">
+                        <Users className="w-4 h-4 text-[#636363]" />
+                        <h4 className="text-sm font-medium text-white flex-1 truncate">{g.chatName}</h4>
+                        <span className="text-xs text-[#636363]">{g.memberCount} members</span>
+                      </div>
+
+                      <div className="flex gap-4 mb-4 text-center">
+                        <div><p className="text-lg font-bold text-white">{g.totalMessages.toLocaleString()}</p><p className="text-[10px] text-[#636363]">messages</p></div>
+                        <div><p className="text-lg font-bold text-white">{g.activeDays}</p><p className="text-[10px] text-[#636363]">active days</p></div>
+                        <div><p className="text-lg font-bold text-white">{g.avgMessagesPerDay}</p><p className="text-[10px] text-[#636363]">msgs/day</p></div>
+                        <div><p className="text-lg font-bold text-white">{g.longestStreakDays}</p><p className="text-[10px] text-[#636363]">day streak</p></div>
+                      </div>
+
+                      {/* Member contribution bars */}
+                      <div className="mb-3">
+                        <div className="flex h-3 rounded-full overflow-hidden gap-px">
+                          {g.yourContribution.percentOfGroup > 0 && (
+                            <div className="bg-teal-400 rounded-sm" style={{ width: `${g.yourContribution.percentOfGroup}%` }} title={`You: ${g.yourContribution.percentOfGroup}%`} />
+                          )}
+                          {g.members.map((m, i) => (
+                            <div key={m.handle} className={`${MEMBER_COLORS[(i + 1) % MEMBER_COLORS.length]} rounded-sm`} style={{ width: `${m.percentOfGroup}%` }} title={`${m.displayName}: ${m.percentOfGroup}%`} />
+                          ))}
+                        </div>
+                        <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2">
+                          <span className="flex items-center gap-1 text-[10px] text-[#a3a3a3]">
+                            <span className="w-2 h-2 rounded-sm bg-teal-400 inline-block" /> You {g.yourContribution.percentOfGroup}%
+                          </span>
+                          {g.members.slice(0, 6).map((m, i) => (
+                            <span key={m.handle} className="flex items-center gap-1 text-[10px] text-[#636363]">
+                              <span className={`w-2 h-2 rounded-sm ${MEMBER_COLORS[(i + 1) % MEMBER_COLORS.length]} inline-block`} /> {m.displayName} {m.percentOfGroup}%
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-4 text-xs text-[#636363]">
+                        <span className="flex items-center gap-1"><Crown className="w-3 h-3 text-amber-400" /> {g.primaryContributor.displayName}</span>
+                        <span>Most active: {g.mostActiveMonth} · {g.mostActiveDay}s</span>
+                      </div>
+                      <p className="text-[10px] text-teal-400 mt-1">You contributed {g.yourContribution.percentOfGroup}% of this conversation</p>
+                    </div>
+                  )
+                })}
               </div>
             </Section>
           )}

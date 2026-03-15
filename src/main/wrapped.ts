@@ -92,6 +92,27 @@ export interface WrappedData {
     arc: 'new' | 'growing' | 'fading' | 'rekindled' | 'steady'
   }[]
 
+  groupStats: {
+    chatName: string
+    totalMessages: number
+    activeDays: number
+    memberCount: number
+    members: {
+      handle: string
+      displayName: string
+      messageCount: number
+      percentOfGroup: number
+    }[]
+    primaryContributor: { handle: string; displayName: string; messageCount: number }
+    quietestMember: { handle: string; displayName: string; messageCount: number }
+    mostActiveMonth: string
+    mostActiveDay: string
+    avgMessagesPerDay: number
+    yourContribution: { messageCount: number; percentOfGroup: number }
+    firstMessageDate: string
+    longestStreakDays: number
+  }[]
+
   narrative: {
     headline: string
     topRelationshipLine: string
@@ -519,6 +540,122 @@ export function generateWrapped(year: number): WrappedData {
     // Sort arcs by absolute change
     relationshipArcs.sort((a, b) => Math.abs(b.changePercent) - Math.abs(a.changePercent))
 
+    // ── Group chat stats ──
+    const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+
+    const groupChatsRaw = db.prepare(`
+      SELECT
+        c.ROWID as chat_id,
+        COALESCE(NULLIF(c.display_name, ''), c.chat_identifier) as chat_name,
+        COUNT(*) as total_messages,
+        COUNT(DISTINCT date(datetime(m.date/1000000000 + 978307200, 'unixepoch', 'localtime'))) as active_days,
+        MIN(datetime(m.date/1000000000 + 978307200, 'unixepoch', 'localtime')) as first_date
+      FROM message m
+      JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
+      JOIN chat c ON cmj.chat_id = c.ROWID
+      WHERE m.date >= ? AND m.date < ?
+        AND (m.text IS NOT NULL OR m.cache_has_attachments = 1)
+      GROUP BY c.ROWID
+      HAVING total_messages >= 10
+      ORDER BY total_messages DESC
+    `).all(start, end) as { chat_id: number; chat_name: string; total_messages: number; active_days: number; first_date: string }[]
+
+    // Filter to only group chats (>2 participants)
+    const groupStats = groupChatsRaw.filter((gc) => {
+      const memberCount = (db.prepare(`
+        SELECT COUNT(*) as c FROM chat_handle_join WHERE chat_id = ?
+      `).get(gc.chat_id) as { c: number }).c
+      return memberCount > 1 // >1 handle + you = >2 participants
+    }).slice(0, 10).map((gc) => {
+      // Members and their message counts
+      const memberMessages = db.prepare(`
+        SELECT
+          COALESCE(h.id, '__me__') as handle,
+          m.is_from_me,
+          COUNT(*) as msg_count
+        FROM message m
+        JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
+        LEFT JOIN handle h ON m.handle_id = h.ROWID
+        WHERE cmj.chat_id = ? AND m.date >= ? AND m.date < ?
+          AND (m.text IS NOT NULL OR m.cache_has_attachments = 1)
+        GROUP BY CASE WHEN m.is_from_me = 1 THEN '__me__' ELSE h.id END
+      `).all(gc.chat_id, start, end) as { handle: string; is_from_me: number; msg_count: number }[]
+
+      // Aggregate: combine is_from_me entries
+      const handleCounts = new Map<string, number>()
+      let myCount = 0
+      for (const mm of memberMessages) {
+        if (mm.is_from_me === 1) {
+          myCount += mm.msg_count
+        } else {
+          handleCounts.set(mm.handle, (handleCounts.get(mm.handle) || 0) + mm.msg_count)
+        }
+      }
+
+      const members = [...handleCounts.entries()]
+        .map(([handle, count]) => ({
+          handle,
+          displayName: getContactName(handle),
+          messageCount: count,
+          percentOfGroup: Math.round((count / gc.total_messages) * 100)
+        }))
+        .sort((a, b) => b.messageCount - a.messageCount)
+
+      const primaryContributor = members[0] || { handle: '', displayName: 'You', messageCount: myCount }
+      const quietestMember = members.length > 0 ? members[members.length - 1] : { handle: '', displayName: 'You', messageCount: myCount }
+
+      // If you're the top contributor, reflect that
+      if (myCount > (primaryContributor?.messageCount || 0)) {
+        Object.assign(primaryContributor, { handle: '__me__', displayName: 'You', messageCount: myCount })
+      }
+
+      // Most active month
+      const groupMonth = db.prepare(`
+        SELECT CAST(strftime('%m', datetime(m.date/1000000000 + 978307200, 'unixepoch', 'localtime')) AS INTEGER) as month, COUNT(*) as c
+        FROM message m JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
+        WHERE cmj.chat_id = ? AND m.date >= ? AND m.date < ?
+        GROUP BY month ORDER BY c DESC LIMIT 1
+      `).get(gc.chat_id, start, end) as { month: number; c: number } | undefined
+
+      // Most active day of week
+      const groupDay = db.prepare(`
+        SELECT CAST(strftime('%w', datetime(m.date/1000000000 + 978307200, 'unixepoch', 'localtime')) AS INTEGER) as dow, COUNT(*) as c
+        FROM message m JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
+        WHERE cmj.chat_id = ? AND m.date >= ? AND m.date < ?
+        GROUP BY dow ORDER BY c DESC LIMIT 1
+      `).get(gc.chat_id, start, end) as { dow: number; c: number } | undefined
+
+      // Streak
+      const groupDates = db.prepare(`
+        SELECT DISTINCT date(datetime(m.date/1000000000 + 978307200, 'unixepoch', 'localtime')) as d
+        FROM message m JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
+        WHERE cmj.chat_id = ? AND m.date >= ? AND m.date < ?
+        ORDER BY d
+      `).all(gc.chat_id, start, end) as { d: string }[]
+
+      // Member count from chat_handle_join
+      const memberCount = (db.prepare(`SELECT COUNT(*) as c FROM chat_handle_join WHERE chat_id = ?`).get(gc.chat_id) as { c: number }).c + 1 // +1 for you
+
+      return {
+        chatName: gc.chat_name,
+        totalMessages: gc.total_messages,
+        activeDays: gc.active_days,
+        memberCount,
+        members,
+        primaryContributor,
+        quietestMember,
+        mostActiveMonth: groupMonth ? MONTH_NAMES[groupMonth.month - 1] : 'Unknown',
+        mostActiveDay: groupDay ? DAY_NAMES[groupDay.dow] : 'Unknown',
+        avgMessagesPerDay: gc.active_days > 0 ? Math.round(gc.total_messages / gc.active_days) : 0,
+        yourContribution: {
+          messageCount: myCount,
+          percentOfGroup: Math.round((myCount / gc.total_messages) * 100)
+        },
+        firstMessageDate: gc.first_date,
+        longestStreakDays: computeStreak(groupDates.map((d) => d.d))
+      }
+    })
+
     // ── Narrative ──
     const topContact = topRelationships[0]
     const topContactPercent = topContact ? Math.round((topContact.totalMessages / (topLine.total || 1)) * 100) : 0
@@ -562,6 +699,7 @@ export function generateWrapped(year: number): WrappedData {
       momentClusters,
       personality,
       relationshipArcs: relationshipArcs.slice(0, 15),
+      groupStats,
       narrative: {
         headline,
         topRelationshipLine,
