@@ -102,6 +102,57 @@ export function initDb(): Database.Database {
   addColumnIfMissing('is_available', 'INTEGER DEFAULT 1')
   addColumnIfMissing('source', "TEXT DEFAULT 'messages'")
 
+  // Backfill null chat_name from Messages chat.db
+  try {
+    const nullCount = (db.prepare("SELECT COUNT(*) as c FROM attachments WHERE chat_name IS NULL OR chat_name = ''").get() as { c: number }).c
+    if (nullCount > 0) {
+      console.log(`[DB] Backfilling chat_name for ${nullCount} records...`)
+      const { homedir } = require('os')
+      const { join } = require('path')
+      const { existsSync } = require('fs')
+      const chatDbPath = join(homedir(), 'Library/Messages/chat.db')
+      if (existsSync(chatDbPath)) {
+        const chatDb = new Database(chatDbPath, { readonly: true })
+        try {
+          // Build a map: original_path (with ~) -> chat_name
+          const rows = chatDb.prepare(`
+            SELECT
+              a.filename as original_path,
+              COALESCE(NULLIF(c.display_name, ''), c.chat_identifier, h.id, 'Unknown') as chat_name
+            FROM attachment a
+            JOIN message_attachment_join maj ON a.ROWID = maj.attachment_id
+            JOIN message m ON maj.message_id = m.ROWID
+            LEFT JOIN handle h ON m.handle_id = h.ROWID
+            LEFT JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
+            LEFT JOIN chat c ON cmj.chat_id = c.ROWID
+            WHERE a.filename IS NOT NULL
+          `).all() as { original_path: string; chat_name: string }[]
+
+          const pathMap = new Map<string, string>()
+          for (const row of rows) {
+            if (row.original_path && row.chat_name) {
+              const expanded = row.original_path.replace('~', homedir())
+              pathMap.set(expanded, row.chat_name)
+            }
+          }
+
+          const nullRows = db.prepare("SELECT id, original_path FROM attachments WHERE chat_name IS NULL OR chat_name = ''").all() as { id: number; original_path: string }[]
+          const updateStmt = db.prepare('UPDATE attachments SET chat_name = ? WHERE id = ?')
+          let fixed = 0
+          for (const nr of nullRows) {
+            const chatName = pathMap.get(nr.original_path)
+            if (chatName) { updateStmt.run(chatName, nr.id); fixed++ }
+          }
+          console.log(`[DB] Backfilled ${fixed} of ${nullCount} records`)
+          chatDb.close()
+        } catch (err) {
+          console.error('[DB] Backfill error:', err)
+          chatDb.close()
+        }
+      }
+    }
+  } catch { /* ignore backfill errors */ }
+
   return db
 }
 

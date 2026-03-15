@@ -108,7 +108,7 @@ export function readAllAttachments(): MessageAttachment[] {
       a.total_bytes as file_size,
       a.mime_type as mime_type,
       datetime(m.date / 1000000000 + 978307200, 'unixepoch', 'localtime') as created_at,
-      COALESCE(NULLIF(c.display_name, ''), c.chat_identifier) as chat_name,
+      COALESCE(NULLIF(c.display_name, ''), c.chat_identifier, h.id, 'Unknown') as chat_name,
       h.id as sender_handle
     FROM attachment a
     JOIN message_attachment_join maj ON a.ROWID = maj.attachment_id
