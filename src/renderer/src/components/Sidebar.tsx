@@ -47,6 +47,9 @@ export function Sidebar({ stats, filters, onFilterChange, onManageConversations,
   const [finderLoading, setFinderLoading] = useState(false)
   const [finderResults, setFinderResults] = useState<string[] | null>(null)
   const [finderError, setFinderError] = useState<string | null>(null)
+  const [showKeyInput, setShowKeyInput] = useState(false)
+  const [keyInput, setKeyInput] = useState('')
+  const [keySaved, setKeySaved] = useState(false)
   const finderRef = useRef<HTMLTextAreaElement>(null)
 
   const filteredChats = useMemo(() => {
@@ -81,7 +84,12 @@ export function Sidebar({ stats, filters, onFilterChange, onManageConversations,
       }))
       const result = await window.api.searchConversationsAi(finderQuery, conversations)
       if (result.error) {
-        setFinderError(result.error)
+        if (result.error === 'NO_KEY') {
+          setShowKeyInput(true)
+          setFinderError(null)
+        } else {
+          setFinderError(result.error)
+        }
       } else if (result.results && result.results.length > 0) {
         setFinderResults(result.results)
       } else {
@@ -176,6 +184,32 @@ export function Sidebar({ stats, filters, onFilterChange, onManageConversations,
                 )}
               </div>
               {finderError && <p className="text-[10px] text-red-400 mt-1">{finderError}</p>}
+              {showKeyInput && (
+                <div className="mt-2">
+                  <p className="text-[10px] text-[#636363] mb-1">Enter your Anthropic API key:</p>
+                  <div className="flex gap-1">
+                    <input
+                      type="password"
+                      value={keyInput}
+                      onChange={(e) => setKeyInput(e.target.value)}
+                      placeholder="sk-ant-..."
+                      className="flex-1 h-6 px-2 text-[10px] bg-[#141414] border border-[#262626] rounded text-white placeholder-[#4a4a4a] outline-none"
+                    />
+                    <button
+                      onClick={async () => {
+                        if (!keyInput.trim()) return
+                        await window.api.setAnthropicKey(keyInput.trim())
+                        setShowKeyInput(false)
+                        setKeyInput('')
+                        setKeySaved(true)
+                        setTimeout(() => setKeySaved(false), 3000)
+                      }}
+                      className="px-2 h-6 rounded bg-teal-600 text-[10px] text-white hover:bg-teal-500"
+                    >Save</button>
+                  </div>
+                </div>
+              )}
+              {keySaved && <p className="text-[10px] text-teal-400 mt-1">Key saved — try again</p>}
             </div>
           )}
 

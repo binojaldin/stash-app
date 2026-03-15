@@ -190,11 +190,24 @@ function setupIpc(): void {
   ipcMain.handle('reset-indexing', () => { resetIndexing() })
   ipcMain.handle('recover-from-icloud', async (_event, id: number) => recoverAttachment(id))
 
+  ipcMain.handle('set-anthropic-key', (_event, key: string) => {
+    const keyPath = join(app.getPath('userData'), 'anthropic-key.txt')
+    const { writeFileSync } = require('fs')
+    writeFileSync(keyPath, key.trim())
+    console.log('[AI Search] API key saved to', keyPath)
+  })
+
   ipcMain.handle('search-conversations-ai', async (_event, description: string, conversations: { display: string; identifier: string }[]) => {
-    const apiKey = process.env.ANTHROPIC_API_KEY
+    let apiKey = process.env.ANTHROPIC_API_KEY || ''
     if (!apiKey) {
-      console.warn('[AI Search] ANTHROPIC_API_KEY not set in environment')
-      return { error: 'Set ANTHROPIC_API_KEY environment variable to use AI search', results: null }
+      const keyPath = join(app.getPath('userData'), 'anthropic-key.txt')
+      if (existsSync(keyPath)) {
+        apiKey = readFileSync(keyPath, 'utf-8').trim()
+      }
+    }
+    if (!apiKey) {
+      console.warn('[AI Search] No API key found')
+      return { error: 'NO_KEY', results: null }
     }
     try {
       const https = require('https')
