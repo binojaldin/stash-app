@@ -174,6 +174,7 @@ export function generateWrapped(year: number): WrappedData {
   const { start, end } = yearToAppleRange(year)
 
   try {
+    console.log(`[Wrapped] Generating for ${year}...`)
     // ── Top-line stats ──
     const topLine = db.prepare(`
       SELECT
@@ -351,26 +352,29 @@ export function generateWrapped(year: number): WrappedData {
 
     const peakHour = hourCounts.length > 0 ? hourCounts[0].hour : 12
 
-    // Average response time (simplified: time between received and next sent)
-    const responseTimes = db.prepare(`
-      SELECT m1.date as received_date, MIN(m2.date) as reply_date
-      FROM message m1
-      JOIN message m2 ON m2.date > m1.date AND m2.is_from_me = 1
-      JOIN chat_message_join cmj1 ON m1.ROWID = cmj1.message_id
-      JOIN chat_message_join cmj2 ON m2.ROWID = cmj2.message_id AND cmj1.chat_id = cmj2.chat_id
-      WHERE m1.date >= ? AND m1.date < ?
-        AND m1.is_from_me = 0
-        AND m2.date - m1.date < 86400 * 1000000000
-        AND m2.date - m1.date > 0
-      GROUP BY m1.ROWID
-      LIMIT 500
-    `).all(start, end) as { received_date: number; reply_date: number }[]
-
+    // Average response time — sample recent messages, compute in JS to avoid slow self-join
     let avgResponseTimeMinutes = 0
-    if (responseTimes.length > 0) {
-      const totalMins = responseTimes.reduce((sum, r) => sum + (r.reply_date - r.received_date) / NS_TO_S / 60, 0)
-      avgResponseTimeMinutes = Math.round(totalMins / responseTimes.length)
-    }
+    try {
+      const recentMessages = db.prepare(`
+        SELECT date, is_from_me
+        FROM message
+        WHERE date >= ? AND date < ?
+          AND (text IS NOT NULL OR cache_has_attachments = 1)
+        ORDER BY date ASC
+        LIMIT 2000
+      `).all(start, end) as { date: number; is_from_me: number }[]
+
+      const responseTimes: number[] = []
+      for (let i = 1; i < recentMessages.length; i++) {
+        if (recentMessages[i - 1].is_from_me === 0 && recentMessages[i].is_from_me === 1) {
+          const diffMin = (recentMessages[i].date - recentMessages[i - 1].date) / NS_TO_S / 60
+          if (diffMin > 0 && diffMin < 1440) responseTimes.push(diffMin) // within 24h
+        }
+      }
+      if (responseTimes.length > 0) {
+        avgResponseTimeMinutes = Math.round(responseTimes.reduce((a, b) => a + b, 0) / responseTimes.length)
+      }
+    } catch { /* ignore */ }
 
     // Longest conversation day
     const busiestDay = db.prepare(`
@@ -493,6 +497,7 @@ export function generateWrapped(year: number): WrappedData {
       ? `Something big happened in ${topMoment.month} — you shared ${topMoment.attachmentCount} photos that month alone`
       : null
 
+    console.log(`[Wrapped] Done for ${year}: ${topLine.total} messages, ${totalConversations} conversations`)
     db.close()
 
     return {

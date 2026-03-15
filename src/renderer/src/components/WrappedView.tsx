@@ -73,15 +73,15 @@ const ARC_LABELS: Record<string, string> = {
 
 export function WrappedView({ onClose }: Props): JSX.Element {
   const [years, setYears] = useState<number[]>([])
-  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear())
+  const [selectedYear, setSelectedYear] = useState<number | null>(null)
   const [data, setData] = useState<WrappedData | null>(null)
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     window.api.getWrappedYears().then((y) => {
       setYears(y)
-      if (y.length > 0 && !y.includes(selectedYear)) setSelectedYear(y[y.length - 1])
+      if (y.length > 0) setSelectedYear(y[y.length - 1]) // latest year
     })
   }, [])
 
@@ -89,6 +89,7 @@ export function WrappedView({ onClose }: Props): JSX.Element {
     if (!selectedYear) return
     setLoading(true)
     setError(null)
+    setData(null)
     window.api.generateWrapped(selectedYear)
       .then((d) => { setData(d as WrappedData); setLoading(false) })
       .catch((err) => { setError(String(err)); setLoading(false) })
