@@ -74,17 +74,25 @@ export default function App(): JSX.Element {
     return () => clearInterval(interval)
   }, [])
 
-  // Once access is granted, always show priority screen so user chooses what to index
+  // Once access is granted, check if DB has data already
   useEffect(() => {
     if (hasAccess && !initialIndexDone.current) {
-      window.api.getChatSummaries().then((summaries) => {
-        if (summaries.length > 0) {
-          setChatSummaries(summaries)
-          setShowChatPriority(true)
-        } else {
+      window.api.getStats().then((s) => {
+        if (s.total > 0) {
+          // Returning user with indexed data — go straight to main view
           initialIndexDone.current = true
-          setIsIndexing(true)
-          window.api.startIndexing()
+          setStats(s)
+          loadAttachments()
+        } else {
+          // First time or empty DB — show priority screen
+          window.api.getChatSummaries().then((summaries) => {
+            if (summaries.length > 0) {
+              setChatSummaries(summaries)
+              setShowChatPriority(true)
+            } else {
+              initialIndexDone.current = true
+            }
+          })
         }
       })
     }
