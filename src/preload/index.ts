@@ -66,6 +66,8 @@ const api = {
     return () => ipcRenderer.removeListener('menu-manage-conversations', handler)
   },
   resolveChatNames: (): Promise<void> => ipcRenderer.invoke('resolve-chat-names'),
+  generateWrapped: (year: number): Promise<unknown> => ipcRenderer.invoke('generate-wrapped', year),
+  getWrappedYears: (): Promise<number[]> => ipcRenderer.invoke('get-wrapped-years'),
   onChatNamesResolved: (callback: (data: unknown[]) => void): (() => void) => {
     const handler = (_event: unknown, data: unknown[]): void => callback(data)
     ipcRenderer.on('chat-names-resolved', handler)

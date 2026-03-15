@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Grid, List, ChevronDown } from 'lucide-react'
+import { Grid, List, ChevronDown, Sparkles } from 'lucide-react'
 import { PermissionScreen } from './components/PermissionScreen'
 import { ChatPriorityScreen } from './components/ChatPriorityScreen'
 import { IndexingOverlay } from './components/IndexingOverlay'
@@ -7,6 +7,7 @@ import { SearchBar, SearchBarRef } from './components/SearchBar'
 import { Sidebar } from './components/Sidebar'
 import { AttachmentGrid } from './components/AttachmentGrid'
 import { DetailPanel } from './components/DetailPanel'
+import { WrappedView } from './components/WrappedView'
 import type { Attachment, ChatSummary, Filters, IndexingProgress, Stats } from './types'
 
 const SORT_OPTIONS = [
@@ -42,6 +43,7 @@ export default function App(): JSX.Element {
   const [sortOrder, setSortOrder] = useState<SortOrder>('newest')
   const [showSortMenu, setShowSortMenu] = useState(false)
   const [showSidebar, setShowSidebar] = useState(true)
+  const [showWrapped, setShowWrapped] = useState(false)
   const debounceRef = useRef<NodeJS.Timeout>()
   const searchBarRef = useRef<SearchBarRef>(null)
 
@@ -262,9 +264,19 @@ export default function App(): JSX.Element {
         </div>
       )}
 
-      <div className="h-12 flex-shrink-0 flex items-center px-20" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
+      <div className="h-12 flex-shrink-0 flex items-center justify-between px-20" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
         <span className="text-xs font-medium text-[#636363] tracking-wide uppercase">Stash</span>
+        <button
+          onClick={() => setShowWrapped(true)}
+          className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#1c1c1c] border border-[#262626] text-xs text-[#a3a3a3] hover:text-white hover:border-teal-600 transition-colors"
+          style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+        >
+          <Sparkles className="w-3 h-3" />
+          Wrapped
+        </button>
       </div>
+
+      {showWrapped && <WrappedView onClose={() => setShowWrapped(false)} />}
 
       <div className="px-4 pb-3 flex-shrink-0">
         <SearchBar ref={searchBarRef} value={query} onChange={setQuery} />
