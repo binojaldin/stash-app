@@ -2,7 +2,7 @@ import { useState, useRef, useMemo } from 'react'
 import {
   Image, Video, FileText, Music, Layers, Calendar, MessageSquare, Settings, X, Sparkles, Loader2
 } from 'lucide-react'
-import type { Stats, Filters } from '../types'
+import type { Stats, Filters, IndexingProgress } from '../types'
 
 interface Props {
   stats: Stats
@@ -10,6 +10,8 @@ interface Props {
   onFilterChange: (filters: Filters) => void
   onManageConversations?: () => void
   onHideChat?: (rawName: string) => void
+  isIndexing?: boolean
+  indexingProgress?: IndexingProgress
 }
 
 const typeFilters = [
@@ -39,7 +41,16 @@ function getCount(stats: Stats, key: string): number {
   }
 }
 
-export function Sidebar({ stats, filters, onFilterChange, onManageConversations, onHideChat }: Props): JSX.Element {
+export function Sidebar({ stats, filters, onFilterChange, onManageConversations, onHideChat, isIndexing, indexingProgress }: Props): JSX.Element {
+  const [indexComplete, setIndexComplete] = useState(false)
+
+  // Show "complete" message briefly
+  useState(() => {
+    if (!isIndexing && indexingProgress && indexingProgress.phase === 'Up to date' && stats.total > 0) {
+      setIndexComplete(true)
+      setTimeout(() => setIndexComplete(false), 3000)
+    }
+  })
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; rawName: string } | null>(null)
   const [chatFilter, setChatFilter] = useState('')
   const [showFinder, setShowFinder] = useState(false)
@@ -237,15 +248,36 @@ export function Sidebar({ stats, filters, onFilterChange, onManageConversations,
         </div>
       )}
 
-      {/* Manage conversations */}
-      {onManageConversations && (
-        <div className="mt-auto pt-3 border-t border-[#262626]">
+      {/* Sidebar footer */}
+      <div className="mt-auto pt-3 border-t border-[#262626]">
+        {/* Indexing progress */}
+        {isIndexing && indexingProgress && indexingProgress.total > 0 && (
+          <div className="px-2 pb-2">
+            <div className="flex items-center gap-2 mb-1.5">
+              <Loader2 className="w-3 h-3 text-teal-400 animate-spin flex-shrink-0" />
+              <span className="text-[10px] text-[#a3a3a3] truncate">
+                {indexingProgress.phase ? `${indexingProgress.phase}` : 'Indexing'} — {indexingProgress.processed.toLocaleString()} of {indexingProgress.total.toLocaleString()}
+              </span>
+            </div>
+            <div className="h-1 bg-[#1c1c1c] rounded-full overflow-hidden">
+              <div className="h-full bg-teal-500 rounded-full transition-all duration-300" style={{ width: `${Math.round((indexingProgress.processed / indexingProgress.total) * 100)}%` }} />
+            </div>
+          </div>
+        )}
+        {indexComplete && !isIndexing && (
+          <div className="px-2 pb-2">
+            <span className="text-[10px] text-teal-400">Index complete — {stats.total.toLocaleString()} attachments</span>
+          </div>
+        )}
+
+        {/* Manage conversations */}
+        {onManageConversations && (
           <button onClick={onManageConversations}
             className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-[#636363] hover:bg-[#141414] hover:text-[#a3a3a3] transition-colors">
             <Settings className="w-3.5 h-3.5" /> Manage conversations
           </button>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Context menu */}
       {contextMenu && (

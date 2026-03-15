@@ -44,6 +44,7 @@ export default function App(): JSX.Element {
   const [showSortMenu, setShowSortMenu] = useState(false)
   const [showSidebar, setShowSidebar] = useState(true)
   const [showWrapped, setShowWrapped] = useState(false)
+  const [userActivated, setUserActivated] = useState(false)
   const debounceRef = useRef<NodeJS.Timeout>()
   const searchBarRef = useRef<SearchBarRef>(null)
 
@@ -144,16 +145,12 @@ export default function App(): JSX.Element {
     window.api.startIndexing(priorityChats)
   }, [])
 
-  // Listen for indexing progress
+  // Listen for indexing progress — preserve current filters
   useEffect(() => {
     const unsub = window.api.onIndexingProgress((data) => {
       setIndexingProgress(data)
       if (data.total > 0 && data.processed >= data.total && data.phase === 'Up to date') {
         setIsIndexing(false)
-      }
-      if (data.processed > 0 && data.processed % 20 === 0) {
-        loadAttachments()
-        loadStats()
       }
     })
     return unsub
@@ -253,6 +250,7 @@ export default function App(): JSX.Element {
   )
 
   const isImageView = viewMode === 'grid' && (!filters.type || filters.type === 'all' || filters.type === 'images')
+  const showContent = userActivated || !!query || !!filters.chatName || (filters.type && filters.type !== 'all') || !!filters.dateRange
 
   return (
     <div className="flex flex-col h-screen bg-[#0a0a0a]">
@@ -262,14 +260,7 @@ export default function App(): JSX.Element {
         <IndexingOverlay progress={indexingProgress} onBrowse={() => setShowIndexing(false)} />
       )}
 
-      {isIndexing && !showIndexing && indexingProgress.total > 0 && (
-        <div className="fixed top-0 left-0 right-0 z-50 h-[3px] bg-[#1c1c1c]">
-          <div
-            className="h-full bg-teal-500 transition-all duration-300"
-            style={{ width: `${Math.round((indexingProgress.processed / indexingProgress.total) * 100)}%` }}
-          />
-        </div>
-      )}
+      {/* Progress bar removed — now in sidebar footer */}
 
       <div className="h-12 flex-shrink-0 flex items-center justify-between pr-5" style={{ WebkitAppRegion: 'drag', paddingLeft: '80px' } as React.CSSProperties}>
         <span className="text-xs font-medium text-[#636363] tracking-wide uppercase">Stash</span>
@@ -284,7 +275,7 @@ export default function App(): JSX.Element {
       </div>
 
       <div className="px-4 pb-3 flex-shrink-0">
-        <SearchBar ref={searchBarRef} value={query} onChange={setQuery} />
+        <SearchBar ref={searchBarRef} value={query} onChange={(v) => { setQuery(v); if (v) setUserActivated(true) }} />
       </div>
 
       <div className="flex flex-1 min-h-0">
@@ -292,12 +283,14 @@ export default function App(): JSX.Element {
           <Sidebar
             stats={stats}
             filters={filters}
-            onFilterChange={setFilters}
+            onFilterChange={(f) => { setFilters(f); setUserActivated(true) }}
             onManageConversations={!isIndexing ? handleManageConversations : undefined}
             onHideChat={async (rawName) => {
               await window.api.hideChat(rawName)
               loadStats()
             }}
+            isIndexing={isIndexing}
+            indexingProgress={indexingProgress}
           />
         )}
 
@@ -345,15 +338,23 @@ export default function App(): JSX.Element {
           </div>
 
           <div className="flex-1 overflow-y-auto p-4">
-            <AttachmentGrid
-              attachments={attachments}
-              selectedId={selectedAttachment?.id ?? null}
-              onSelect={setSelectedAttachment}
-              onLoadMore={loadMore}
-              hasMore={hasMore}
-              isImageView={isImageView}
-              chatNameMap={stats.chatNameMap}
-            />
+            {showContent ? (
+              <AttachmentGrid
+                attachments={attachments}
+                selectedId={selectedAttachment?.id ?? null}
+                onSelect={setSelectedAttachment}
+                onLoadMore={loadMore}
+                hasMore={hasMore}
+                isImageView={isImageView}
+                chatNameMap={stats.chatNameMap}
+              />
+            ) : (
+              <div className="flex flex-col items-center justify-center h-full text-center">
+                <Grid className="w-10 h-10 text-[#262626] mb-4" />
+                <p className="text-white text-base font-medium">Select a conversation to get started</p>
+                <p className="text-[#636363] text-sm mt-1">or search for something specific above</p>
+              </div>
+            )}
           </div>
         </div>
 
