@@ -2,6 +2,7 @@ import Database from 'better-sqlite3'
 import { homedir } from 'os'
 import { join } from 'path'
 import { existsSync } from 'fs'
+import { compileContactsHelper, resolveContact, resolveContactsBatch } from './contacts'
 
 const CHAT_DB_PATH = join(homedir(), 'Library/Messages/chat.db')
 
@@ -105,7 +106,6 @@ let resolveContactFn: ((handle: string) => string) | null = null
 function getContactName(handle: string): string {
   if (!resolveContactFn) {
     try {
-      const { compileContactsHelper, resolveContact } = require('./contacts')
       compileContactsHelper()
       resolveContactFn = resolveContact
     } catch {
@@ -182,14 +182,13 @@ export function generateWrapped(year: number): WrappedData {
 
     // Pre-resolve all contact handles for this year in one batch
     try {
-      const { compileContactsHelper, resolveContactsBatch } = require('./contacts')
       compileContactsHelper()
       const allHandles = db.prepare(`
         SELECT DISTINCT h.id as handle FROM message m
         LEFT JOIN handle h ON m.handle_id = h.ROWID
         WHERE m.date >= ? AND m.date < ? AND h.id IS NOT NULL
       `).all(start, end) as { handle: string }[]
-      resolveContactsBatch(allHandles.map((r) => r.handle))
+      resolveContactsBatch(allHandles.map((r: { handle: string }) => r.handle))
       console.log(`[Wrapped] Resolved ${allHandles.length} contacts`)
     } catch (err) {
       console.log('[Wrapped] Contact resolution failed:', err)
