@@ -183,7 +183,7 @@ export function getAvailableYears(): number[] {
       ORDER BY year ASC
     `).all() as { year: number }[]
     db.close()
-    return rows.map((r) => r.year).filter((y) => y >= 2026 && y <= 2030)
+    return rows.map((r) => r.year).filter((y) => y >= 2008 && y <= 2030)
   } catch {
     db.close()
     return []
