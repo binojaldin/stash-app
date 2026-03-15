@@ -293,16 +293,18 @@ export function searchAttachments(
   catch (err) { console.error('Search error:', err); return [] }
 }
 
-export function getStats(): {
+export function getStats(chatNameFilter?: string): {
   total: number; images: number; videos: number; documents: number; audio: number; unavailable: number; chatNames: string[]
 } {
   const d = initDb()
-  const total = (d.prepare('SELECT COUNT(*) as c FROM attachments').get() as { c: number }).c
-  const images = (d.prepare('SELECT COUNT(*) as c FROM attachments WHERE is_image = 1').get() as { c: number }).c
-  const videos = (d.prepare('SELECT COUNT(*) as c FROM attachments WHERE is_video = 1').get() as { c: number }).c
-  const documents = (d.prepare('SELECT COUNT(*) as c FROM attachments WHERE is_document = 1').get() as { c: number }).c
-  const audio = (d.prepare("SELECT COUNT(*) as c FROM attachments WHERE mime_type LIKE 'audio/%'").get() as { c: number }).c
-  const unavailable = (d.prepare('SELECT COUNT(*) as c FROM attachments WHERE is_available = 0').get() as { c: number }).c
+  const where = chatNameFilter ? ' WHERE chat_name = ?' : ''
+  const params = chatNameFilter ? [chatNameFilter] : []
+  const total = (d.prepare(`SELECT COUNT(*) as c FROM attachments${where}`).get(...params) as { c: number }).c
+  const images = (d.prepare(`SELECT COUNT(*) as c FROM attachments WHERE is_image = 1${chatNameFilter ? ' AND chat_name = ?' : ''}`).get(...params) as { c: number }).c
+  const videos = (d.prepare(`SELECT COUNT(*) as c FROM attachments WHERE is_video = 1${chatNameFilter ? ' AND chat_name = ?' : ''}`).get(...params) as { c: number }).c
+  const documents = (d.prepare(`SELECT COUNT(*) as c FROM attachments WHERE is_document = 1${chatNameFilter ? ' AND chat_name = ?' : ''}`).get(...params) as { c: number }).c
+  const audio = (d.prepare(`SELECT COUNT(*) as c FROM attachments WHERE mime_type LIKE 'audio/%'${chatNameFilter ? ' AND chat_name = ?' : ''}`).get(...params) as { c: number }).c
+  const unavailable = (d.prepare(`SELECT COUNT(*) as c FROM attachments WHERE is_available = 0${chatNameFilter ? ' AND chat_name = ?' : ''}`).get(...params) as { c: number }).c
   const hidden = new Set(getHiddenChats())
   const chatNames = (d.prepare('SELECT DISTINCT chat_name FROM attachments WHERE chat_name IS NOT NULL ORDER BY chat_name').all() as { chat_name: string }[])
     .map((r) => r.chat_name)

@@ -144,8 +144,8 @@ function setupIpc(): void {
     return searchAttachments('', filters, page, limit, sortOrder)
   })
 
-  ipcMain.handle('get-stats', () => {
-    const stats = getStats()
+  ipcMain.handle('get-stats', (_event, chatNameFilter?: string) => {
+    const stats = getStats(chatNameFilter)
     const chatNameMap: Record<string, string> = {}
     try {
       compileContactsHelper()

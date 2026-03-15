@@ -164,8 +164,8 @@ export default function App(): JSX.Element {
     return unsub
   }, [])
 
-  const loadStats = useCallback(async () => {
-    const s = await window.api.getStats()
+  const loadStats = useCallback(async (chatNameFilter?: string) => {
+    const s = await window.api.getStats(chatNameFilter)
     setStats(s)
   }, [])
 
@@ -206,9 +206,14 @@ export default function App(): JSX.Element {
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
   }, [query, filters, sortOrder, loadAttachments])
 
+  // Reload stats when conversation filter changes
+  useEffect(() => {
+    if (appState === 'main') loadStats(filters.chatName)
+  }, [filters.chatName])
+
   // Reload after indexing completes
   useEffect(() => {
-    if (!isIndexing && appState === 'main') { loadStats(); loadAttachments() }
+    if (!isIndexing && appState === 'main') { loadStats(filters.chatName); loadAttachments() }
   }, [isIndexing])
 
   // Load data when entering main view
