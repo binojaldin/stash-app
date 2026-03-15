@@ -210,8 +210,25 @@ function setupIpc(): void {
     if (!filePath || !existsSync(filePath)) return null
     try {
       const ext = extname(filePath).toLowerCase()
-      // Skip HEIC/HEIF — browsers can't render them, need thumbnail
-      if (ext === '.heic' || ext === '.heif') return null
+      // HEIC/HEIF: convert on-the-fly with sips, cache the result
+      if (ext === '.heic' || ext === '.heif') {
+        const { execSync } = require('child_process')
+        const { mkdirSync } = require('fs')
+        const cacheDir = join(app.getPath('appData'), 'Stash', 'thumbnails')
+        mkdirSync(cacheDir, { recursive: true })
+        const hash = filePath.replace(/[^a-zA-Z0-9]/g, '_').slice(-60)
+        const cachedPath = join(cacheDir, `heic_${hash}.jpg`)
+        if (!existsSync(cachedPath)) {
+          try {
+            execSync(`sips -s format jpeg -Z 800 "${filePath}" --out "${cachedPath}"`, { timeout: 15000, stdio: 'ignore' })
+          } catch { return null }
+        }
+        if (existsSync(cachedPath)) {
+          const data = readFileSync(cachedPath)
+          return `data:image/jpeg;base64,${data.toString('base64')}`
+        }
+        return null
+      }
       const mimeMap: Record<string, string> = {
         '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
         '.gif': 'image/gif', '.webp': 'image/webp', '.bmp': 'image/bmp',
