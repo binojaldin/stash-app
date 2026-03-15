@@ -18,7 +18,7 @@ import {
   clearAllAttachments
 } from './db'
 import { compileOcrHelper, runOcr } from './ocr'
-import { compileContactsHelper, resolveContact } from './contacts'
+import { compileContactsHelper, resolveContact, resolveContactsBatch } from './contacts'
 import { homedir } from 'os'
 import { app } from 'electron'
 
@@ -133,6 +133,20 @@ function resolveDisplayName(summary: ChatSummary): string {
 export function fetchChatSummaries(): ResolvedChatSummary[] {
   compileContactsHelper()
   const summaries = getChatSummaries()
+
+  // Batch-resolve all handles upfront in one pass
+  const allHandles: string[] = []
+  for (const s of summaries) {
+    const id = s.raw_chat_identifier || s.chat_name
+    if (id && (id.startsWith('+') || id.includes('@'))) {
+      allHandles.push(id)
+    }
+    for (const h of s.participant_handles) {
+      allHandles.push(h)
+    }
+  }
+  resolveContactsBatch([...new Set(allHandles)])
+
   return summaries.map((s) => ({
     chat_name: s.chat_name,
     display_name: resolveDisplayName(s),
