@@ -122,7 +122,6 @@ function ImageCard({ attachment, selected, onClick, chatNameMap }: { attachment:
     >
       <div className="aspect-square overflow-hidden relative" style={{ background: '#1A1714' }}>
         <ThumbnailImage attachment={attachment} />
-        <SourceBadge attachment={attachment} />
       </div>
       <div style={{ padding: '8px 10px' }}>
         <p className="truncate" style={{ fontSize: 11, fontWeight: 500, color: unavailable ? '#636363' : '#FFFFFF' }}>{attachment.filename}</p>

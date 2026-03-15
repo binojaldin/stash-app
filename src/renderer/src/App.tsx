@@ -312,7 +312,7 @@ export default function App(): JSX.Element {
 
         {/* Media summary cards — 2x2 grid */}
         {stats.total > 0 && (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, padding: '12px 14px', background: '#F6F3EF' }} className="flex-shrink-0">
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, padding: '12px 14px', background: '#F6F3EF', flexShrink: 0 }}>
             {mediaCards.map(({ icon: Icon, label, count, bg, color, type }) => (
               <button key={type} onClick={() => { setFilters({ ...filters, type }); setUserActivated(true); setDashboardView(false) }}
                 style={{ background: '#FFFFFF', border: '1px solid rgba(0,0,0,0.06)', borderRadius: 14, padding: '16px 18px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 14, textAlign: 'left', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>

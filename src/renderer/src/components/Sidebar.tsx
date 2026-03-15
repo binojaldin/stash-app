@@ -62,9 +62,12 @@ export function Sidebar({ stats, filters, onFilterChange, onManageConversations,
     setChatSort(sortKeys[(idx + 1) % sortKeys.length])
   }
 
-  // Insight rows
-  const byLaughs = [...(stats.chatNames as ChatNameEntry[])].sort((a, b) => b.laughsGenerated - a.laughsGenerated)
-  const byMessages = [...(stats.chatNames as ChatNameEntry[])].sort((a, b) => b.messageCount - a.messageCount)
+  // Insight rows — individuals only
+  const isGroupChat = (rawName: string): boolean =>
+    /^chat\d+/i.test(rawName) || (!rawName.startsWith('+') && !rawName.includes('@') && rawName.length > 20)
+  const individuals = (stats.chatNames as ChatNameEntry[]).filter((c) => !isGroupChat(c.rawName))
+  const byLaughs = [...individuals].sort((a, b) => b.laughsGenerated - a.laughsGenerated)
+  const byMessages = [...individuals].sort((a, b) => b.messageCount - a.messageCount)
   const funniestName = byLaughs[0] ? resolveName(byLaughs[0].rawName, stats.chatNameMap) : '—'
   const mostActiveName = byMessages[0] ? resolveName(byMessages[0].rawName, stats.chatNameMap) : '—'
 
