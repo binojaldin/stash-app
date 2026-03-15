@@ -314,16 +314,16 @@ export default function App(): JSX.Element {
 
         {/* Media summary cards */}
         {stats.total > 0 && (
-          <div className="flex gap-1.5 flex-shrink-0" style={{ padding: '10px 14px 0' }}>
+          <div className="flex gap-1.5 flex-shrink-0" style={{ padding: '8px 14px 6px' }}>
             {mediaCards.map(({ icon: Icon, label, count, bg, color, type }) => (
               <button key={type} onClick={() => { setFilters({ ...filters, type }); setUserActivated(true) }}
                 className="flex-1 transition-all"
-                style={{ background: '#FFFFFF', border: '1px solid #EAE5DF', borderRadius: 8, padding: '8px 10px', cursor: 'pointer', textAlign: 'left' }}>
-                <div style={{ width: 22, height: 22, borderRadius: '50%', background: bg, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 4 }}>
-                  <Icon style={{ width: 11, height: 11, stroke: color }} />
+                style={{ background: '#FFFFFF', border: '1px solid #EAE5DF', borderRadius: 8, padding: '10px 12px', cursor: 'pointer', textAlign: 'left', maxHeight: 72 }}>
+                <div style={{ width: 20, height: 20, borderRadius: '50%', background: bg, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 3 }}>
+                  <Icon style={{ width: 10, height: 10, stroke: color }} />
                 </div>
-                <div style={{ fontSize: 9, color: '#AAAAAA' }}>{label}</div>
-                <div style={{ fontSize: 14, fontWeight: 500, color }}>{count.toLocaleString()}</div>
+                <div style={{ fontSize: 9, color: '#AAAAAA', fontFamily: 'DM Sans' }}>{label}</div>
+                <div style={{ fontSize: 13, fontWeight: 500, color, fontFamily: 'DM Sans' }}>{count.toLocaleString()}</div>
               </button>
             ))}
           </div>

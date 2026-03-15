@@ -110,23 +110,24 @@ function ImageCard({ attachment, selected, onClick, chatNameMap }: { attachment:
   return (
     <button
       onClick={onClick}
-      className={`group rounded-lg overflow-hidden border transition-all cursor-pointer text-left relative ${
-        selected
-          ? 'border-blue-500 ring-2 ring-blue-500/30'
-          : unavailable
-            ? 'border-dashed border-[#262626] hover:border-[#333]'
-            : 'border-[#262626] hover:border-[#333]'
-      } ${unavailable ? 'opacity-60' : ''}`}
+      className="group overflow-hidden transition-all cursor-pointer text-left relative"
+      style={{
+        borderRadius: 10,
+        border: selected ? '1.5px solid #E8604A' : unavailable ? '1px dashed rgba(255,255,255,0.06)' : '1px solid rgba(255,255,255,0.06)',
+        background: '#201C19',
+        opacity: unavailable ? 0.6 : 1
+      }}
     >
-      <div className="aspect-square overflow-hidden bg-[#141414] relative">
+      <div className="aspect-square overflow-hidden relative" style={{ background: '#1A1714' }}>
         <ThumbnailImage attachment={attachment} />
         <SourceBadge attachment={attachment} />
       </div>
-      <div className="p-2">
-        <p className={`text-xs truncate ${unavailable ? 'text-[#636363]' : 'text-white'}`}>{attachment.filename}</p>
-        <p className="text-[10px] text-[#636363] truncate">
-          {displayContact}
-          {attachment.created_at && ` · ${format(new Date(attachment.created_at), 'MMM d, yyyy')}`}
+      <div style={{ padding: '8px 10px' }}>
+        <p className="truncate" style={{ fontSize: 11, fontWeight: 500, color: unavailable ? '#636363' : '#FFFFFF' }}>{attachment.filename}</p>
+        <p className="truncate" style={{ fontSize: 10 }}>
+          <span style={{ color: '#E8604A', fontWeight: 400 }}>{displayContact}</span>
+          {displayContact && attachment.created_at && <span style={{ color: '#444444' }}> · </span>}
+          {attachment.created_at && <span style={{ color: '#555555', fontWeight: 300 }}>{format(new Date(attachment.created_at), 'MMM d, yyyy')}</span>}
         </p>
       </div>
     </button>

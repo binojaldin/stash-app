@@ -114,7 +114,7 @@ export function Sidebar({ stats, filters, onFilterChange, onManageConversations,
     : stats.total > 0 ? 100 : 0
 
   return (
-    <div className="flex flex-col flex-shrink-0 overflow-y-auto" style={{ width: 220, background: '#0F0F0F', borderRight: '1px solid #1A1A1A' }} onClick={() => setContextMenu(null)}>
+    <div className="flex flex-col flex-shrink-0 overflow-y-auto" style={{ width: 200, background: '#0F0F0F', borderRight: '1px solid #1A1A1A' }} onClick={() => setContextMenu(null)}>
       <div className="flex-1 p-3">
         {/* TYPE */}
         <div className="mb-5">
@@ -124,7 +124,7 @@ export function Sidebar({ stats, filters, onFilterChange, onManageConversations,
             return (
               <button key={key} onClick={() => onFilterChange({ ...filters, type: key })}
                 className="w-full flex items-center gap-2.5 px-2 py-1.5 rounded-md text-sm transition-colors"
-                style={{ borderLeft: active ? '2px solid #E8604A' : '2px solid transparent', color: active ? '#FFFFFF' : '#888888', background: active ? '#1E1E1E' : 'transparent' }}>
+                style={{ borderLeft: active ? '2px solid #E8604A' : '2px solid transparent', color: active ? '#FFFFFF' : '#888888', background: active ? 'rgba(255,255,255,0.04)' : 'transparent' }}>
                 <Icon className="w-4 h-4 flex-shrink-0" />
                 <span className="flex-1 text-left">{label}</span>
                 <span style={{ fontSize: 11, color: '#555555' }}>{getCount(stats, key).toLocaleString()}</span>
@@ -215,7 +215,7 @@ export function Sidebar({ stats, filters, onFilterChange, onManageConversations,
 
             <button onClick={() => onFilterChange({ ...filters, chatName: undefined })}
               className="w-full text-left px-2 py-1.5 rounded-md text-sm transition-colors"
-              style={{ color: !filters.chatName ? '#FFFFFF' : '#888888', background: !filters.chatName ? '#1E1E1E' : 'transparent', borderLeft: !filters.chatName ? '2px solid #E8604A' : '2px solid transparent' }}>
+              style={{ color: !filters.chatName ? '#FFFFFF' : '#888888', background: !filters.chatName ? 'rgba(255,255,255,0.04)' : 'transparent', borderLeft: !filters.chatName ? '2px solid #E8604A' : '2px solid transparent' }}>
               All conversations
             </button>
 
@@ -231,7 +231,7 @@ export function Sidebar({ stats, filters, onFilterChange, onManageConversations,
                     onContextMenu={(e) => handleContextMenu(e, chat.rawName)}
                     className="w-full flex items-center gap-1 px-2 py-1.5 rounded-md text-sm transition-colors"
                     style={{
-                      color: active ? '#FFFFFF' : '#888888', background: active ? '#1E1E1E' : 'transparent',
+                      color: active ? '#FFFFFF' : '#888888', background: active ? 'rgba(255,255,255,0.04)' : 'transparent',
                       borderLeft: highlighted ? '2px solid #2EC4A0' : active ? '2px solid #E8604A' : '2px solid transparent'
                     }} title={displayName}>
                     <span className="flex-1 truncate text-left">{displayName}</span>
