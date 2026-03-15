@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain, dialog, Menu } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, dialog, Menu, Tray, nativeImage } from 'electron'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import { checkFullDiskAccess } from './messagesReader'
@@ -10,6 +10,8 @@ import { copyFileSync, existsSync, readFileSync } from 'fs'
 import { extname } from 'path'
 
 let mainWindow: BrowserWindow | null = null
+let tray: Tray | null = null
+let isQuitting = false
 
 function sendToRenderer(channel: string): void {
   if (mainWindow && !mainWindow.isDestroyed()) {
@@ -311,19 +313,62 @@ function setupIpc(): void {
   })
 }
 
+function createTray(): void {
+  // 16x16 teal square placeholder icon
+  const icon = nativeImage.createFromDataURL(
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAMElEQVQ4T2P8z8BQz0BAwMDAwMDIQCRgYGBgYPz//389kQYMHwMo/iJRNgyYASS7AABt+A4RMfMnIgAAAABJRU5ErkJggg=='
+  )
+  icon.setTemplateImage(true)
+  tray = new Tray(icon)
+  tray.setToolTip('Stash')
+
+  const contextMenu = Menu.buildFromTemplate([
+    { label: 'Open Stash', click: () => { mainWindow?.show() } },
+    { type: 'separator' },
+    { label: 'Quit', click: () => { isQuitting = true; app.quit() } }
+  ])
+  tray.setContextMenu(contextMenu)
+  tray.on('click', () => { mainWindow?.show() })
+}
+
+function setupLoginItem(): void {
+  const prefsPath = join(app.getPath('userData'), 'prefs.json')
+  let prefs: Record<string, unknown> = {}
+  if (existsSync(prefsPath)) {
+    try { prefs = JSON.parse(readFileSync(prefsPath, 'utf-8')) } catch { /* ignore */ }
+  }
+  if (!prefs.loginItemSet) {
+    app.setLoginItemSettings({ openAtLogin: true })
+    prefs.loginItemSet = true
+    const { writeFileSync } = require('fs')
+    writeFileSync(prefsPath, JSON.stringify(prefs, null, 2))
+  }
+}
+
 app.whenReady().then(() => {
   initDb()
   createMenu()
+  createTray()
+  setupLoginItem()
   setupIpc()
   createWindow()
 
+  // Hide to tray instead of quitting on window close
+  mainWindow!.on('close', (e) => {
+    if (!isQuitting) {
+      e.preventDefault()
+      mainWindow!.hide()
+    }
+  })
+
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    if (mainWindow) mainWindow.show()
+    else createWindow()
   })
 })
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') { closeDb(); app.quit() }
+  // Don't quit on macOS — stays in tray
 })
 
-app.on('before-quit', () => { closeDb() })
+app.on('before-quit', () => { isQuitting = true; closeDb() })
