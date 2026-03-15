@@ -3,7 +3,7 @@ import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import { checkFullDiskAccess } from './messagesReader'
 import { initDb, searchAttachments, getStats, getAttachmentById, closeDb } from './db'
-import { startIndexing, getIndexingProgress, fetchChatSummaries, saveChatPriorities, getSavedPriorityChats, resetIndexing, recoverAttachment } from './indexer'
+import { startIndexing, getIndexingProgress, fetchChatSummaries, saveChatPriorities, getSavedPriorityChats, resetIndexing, recoverAttachment, resolveNamesInBackground } from './indexer'
 import { copyFileSync, existsSync } from 'fs'
 
 let mainWindow: BrowserWindow | null = null
@@ -163,6 +163,7 @@ function setupIpc(): void {
   ipcMain.handle('get-indexing-progress', () => getIndexingProgress())
   ipcMain.handle('start-indexing', (_event, priorityChats?: string[]) => { startIndexing(mainWindow, priorityChats) })
   ipcMain.handle('get-chat-summaries', () => fetchChatSummaries())
+  ipcMain.handle('resolve-chat-names', () => { resolveNamesInBackground(mainWindow) })
   ipcMain.handle('save-chat-priorities', (_event, chats: string[]) => { saveChatPriorities(chats) })
   ipcMain.handle('get-saved-priority-chats', () => getSavedPriorityChats())
   ipcMain.handle('reset-indexing', () => { resetIndexing() })

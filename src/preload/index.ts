@@ -64,6 +64,12 @@ const api = {
     const handler = (): void => callback()
     ipcRenderer.on('menu-manage-conversations', handler)
     return () => ipcRenderer.removeListener('menu-manage-conversations', handler)
+  },
+  resolveChatNames: (): Promise<void> => ipcRenderer.invoke('resolve-chat-names'),
+  onChatNamesResolved: (callback: (data: unknown[]) => void): (() => void) => {
+    const handler = (_event: unknown, data: unknown[]): void => callback(data)
+    ipcRenderer.on('chat-names-resolved', handler)
+    return () => ipcRenderer.removeListener('chat-names-resolved', handler)
   }
 }
 

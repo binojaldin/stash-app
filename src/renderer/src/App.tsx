@@ -17,12 +17,12 @@ const SORT_OPTIONS = [
 ] as const
 
 type SortOrder = typeof SORT_OPTIONS[number]['value']
+type AppState = 'checking' | 'loading' | 'no-access' | 'priority' | 'main'
 
 export default function App(): JSX.Element {
-  const [hasAccess, setHasAccess] = useState<boolean | null>(null)
+  const [appState, setAppState] = useState<AppState>('checking')
   const [isIndexing, setIsIndexing] = useState(false)
   const [showIndexing, setShowIndexing] = useState(true)
-  const [showChatPriority, setShowChatPriority] = useState(false)
   const [chatSummaries, setChatSummaries] = useState<ChatSummary[]>([])
   const [indexingProgress, setIndexingProgress] = useState<IndexingProgress>({
     total: 0, processed: 0, currentFile: ''
@@ -41,15 +41,90 @@ export default function App(): JSX.Element {
   )
   const [sortOrder, setSortOrder] = useState<SortOrder>('newest')
   const [showSortMenu, setShowSortMenu] = useState(false)
-  const debounceRef = useRef<NodeJS.Timeout>()
-  const initialIndexDone = useRef(false)
-  const searchBarRef = useRef<SearchBarRef>(null)
   const [showSidebar, setShowSidebar] = useState(true)
+  const debounceRef = useRef<NodeJS.Timeout>()
+  const searchBarRef = useRef<SearchBarRef>(null)
 
   // Persist view mode
   useEffect(() => { localStorage.setItem('stash-view-mode', viewMode) }, [viewMode])
 
+  // ── Startup flow ──
+  useEffect(() => {
+    let cancelled = false
+
+    const startup = async (): Promise<void> => {
+      // Step 1: Check disk access
+      const access = await window.api.checkDiskAccess()
+      if (cancelled) return
+      if (!access) {
+        setAppState('no-access')
+        // Poll for access
+        const interval = setInterval(async () => {
+          const ok = await window.api.checkDiskAccess()
+          if (ok) { clearInterval(interval); if (!cancelled) startup() }
+        }, 2000)
+        return
+      }
+
+      // Step 2: Check if DB has data (fast — no contact resolution)
+      setAppState('loading')
+      try {
+        const s = await window.api.getStats()
+        if (cancelled) return
+        if (s.total > 0) {
+          // Returning user — go straight to main view
+          setStats(s)
+          setAppState('main')
+          return
+        }
+      } catch (err) {
+        console.error('[App] getStats error:', err)
+      }
+
+      // Step 3: Empty DB — fetch chat summaries (fast, no contact resolution)
+      try {
+        const summaries = await window.api.getChatSummaries()
+        if (cancelled) return
+        if (summaries.length > 0) {
+          setChatSummaries(summaries)
+          setAppState('priority')
+          // Resolve contact names in background
+          window.api.resolveChatNames()
+        } else {
+          setAppState('main')
+        }
+      } catch (err) {
+        console.error('[App] getChatSummaries error:', err)
+        setAppState('main')
+      }
+    }
+
+    startup()
+    return () => { cancelled = true }
+  }, [])
+
+  // Listen for resolved contact names (background)
+  useEffect(() => {
+    const unsub = window.api.onChatNamesResolved((data) => {
+      setChatSummaries(data as ChatSummary[])
+    })
+    return unsub
+  }, [])
+
   // Menu bar listeners
+  const handleManageConversations = useCallback(async () => {
+    const confirmed = await window.api.confirmReset()
+    if (!confirmed) return
+    await window.api.resetIndexing()
+    setAppState('loading')
+    const summaries = await window.api.getChatSummaries()
+    setChatSummaries(summaries)
+    setAttachments([])
+    setStats({ total: 0, images: 0, videos: 0, documents: 0, audio: 0, unavailable: 0, chatNames: [] })
+    setAppState('priority')
+    window.api.resolveChatNames()
+  }, [])
+
   useEffect(() => {
     const unsubs = [
       window.api.onFocusSearch(() => searchBarRef.current?.focus()),
@@ -61,94 +136,11 @@ export default function App(): JSX.Element {
     return () => unsubs.forEach((u) => u())
   }, [handleManageConversations])
 
-  // Check disk access on mount
-  useEffect(() => {
-    let interval: NodeJS.Timeout
-    const check = async (): Promise<void> => {
-      const access = await window.api.checkDiskAccess()
-      setHasAccess(access)
-      if (access) clearInterval(interval)
-    }
-    check()
-    interval = setInterval(check, 2000)
-    return () => clearInterval(interval)
-  }, [])
-
-  const [loading, setLoading] = useState(false)
-
-  // Once access is granted, check if DB has data already
-  useEffect(() => {
-    if (hasAccess && !initialIndexDone.current) {
-      setLoading(true)
-      let resolved = false
-
-      // Timeout fallback: if nothing resolves in 5s, force priority screen
-      const timeout = setTimeout(() => {
-        if (!resolved) {
-          console.warn('[App] Startup timeout — forcing priority screen')
-          resolved = true
-          setLoading(false)
-          setShowChatPriority(true)
-        }
-      }, 5000)
-
-      window.api.getStats()
-        .then((s) => {
-          console.log('[App] getStats resolved:', s.total, 'records')
-          if (resolved) return
-          if (s.total > 0) {
-            resolved = true
-            clearTimeout(timeout)
-            initialIndexDone.current = true
-            setStats(s)
-            setLoading(false)
-            loadAttachments()
-          } else {
-            console.log('[App] Empty DB, fetching chat summaries...')
-            return window.api.getChatSummaries().then((summaries) => {
-              console.log('[App] getChatSummaries resolved:', summaries.length, 'chats')
-              if (resolved) return
-              resolved = true
-              clearTimeout(timeout)
-              setLoading(false)
-              if (summaries.length > 0) {
-                setChatSummaries(summaries)
-                setShowChatPriority(true)
-              } else {
-                initialIndexDone.current = true
-              }
-            })
-          }
-        })
-        .catch((err) => {
-          console.error('[App] Startup error:', err)
-          if (!resolved) {
-            resolved = true
-            clearTimeout(timeout)
-            setLoading(false)
-            setShowChatPriority(true)
-          }
-        })
-    }
-  }, [hasAccess])
-
   const handleStartWithPriority = useCallback((priorityChats: string[]) => {
-    setShowChatPriority(false)
-    initialIndexDone.current = true
+    setAppState('main')
     setIsIndexing(true)
     setShowIndexing(true)
     window.api.startIndexing(priorityChats)
-  }, [])
-
-  const handleManageConversations = useCallback(async () => {
-    const confirmed = await window.api.confirmReset()
-    if (!confirmed) return
-    await window.api.resetIndexing()
-    const summaries = await window.api.getChatSummaries()
-    setChatSummaries(summaries)
-    setAttachments([])
-    setStats({ total: 0, images: 0, videos: 0, documents: 0, audio: 0, unavailable: 0, chatNames: [] })
-    setShowChatPriority(true)
   }, [])
 
   // Listen for indexing progress
@@ -213,8 +205,15 @@ export default function App(): JSX.Element {
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
   }, [query, filters, sortOrder, loadAttachments])
 
-  useEffect(() => { if (hasAccess) loadStats() }, [hasAccess, loadStats])
-  useEffect(() => { if (!isIndexing && hasAccess) { loadStats(); loadAttachments() } }, [isIndexing])
+  // Reload after indexing completes
+  useEffect(() => {
+    if (!isIndexing && appState === 'main') { loadStats(); loadAttachments() }
+  }, [isIndexing])
+
+  // Load data when entering main view
+  useEffect(() => {
+    if (appState === 'main') { loadStats(); loadAttachments() }
+  }, [appState])
 
   // Close sort menu on click outside
   useEffect(() => {
@@ -226,17 +225,18 @@ export default function App(): JSX.Element {
 
   const selectedIndex = selectedAttachment ? attachments.findIndex((a) => a.id === selectedAttachment.id) : -1
 
-  if (hasAccess === null || loading) {
+  // ── Render by state ──
+  if (appState === 'checking' || appState === 'loading') {
     return (
       <div className="flex flex-col items-center justify-center h-screen bg-[#0a0a0a] gap-3">
         <div className="w-6 h-6 border-2 border-teal-500 border-t-transparent rounded-full animate-spin" />
-        {loading && <p className="text-xs text-[#636363]">Loading conversations...</p>}
+        <p className="text-xs text-[#636363]">Loading your library...</p>
       </div>
     )
   }
 
-  if (!hasAccess) return <PermissionScreen />
-  if (showChatPriority) return <ChatPriorityScreen chats={chatSummaries} onStart={handleStartWithPriority} />
+  if (appState === 'no-access') return <PermissionScreen />
+  if (appState === 'priority') return <ChatPriorityScreen chats={chatSummaries} onStart={handleStartWithPriority} />
 
   const isImageView = viewMode === 'grid' && (!filters.type || filters.type === 'all' || filters.type === 'images')
 
@@ -255,17 +255,14 @@ export default function App(): JSX.Element {
         </div>
       )}
 
-      {/* Drag region for title bar */}
       <div className="h-12 flex-shrink-0 flex items-center px-20" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
         <span className="text-xs font-medium text-[#636363] tracking-wide uppercase">Stash</span>
       </div>
 
-      {/* Search bar */}
       <div className="px-4 pb-3 flex-shrink-0">
         <SearchBar ref={searchBarRef} value={query} onChange={setQuery} />
       </div>
 
-      {/* Main content */}
       <div className="flex flex-1 min-h-0">
         {showSidebar && (
           <Sidebar
@@ -277,7 +274,6 @@ export default function App(): JSX.Element {
         )}
 
         <div className="flex-1 min-w-0 flex flex-col">
-          {/* Toolbar: view toggle + sort */}
           <div className="flex items-center justify-between px-4 py-2 border-b border-[#1c1c1c] flex-shrink-0">
             <div className="flex items-center gap-1">
               <button

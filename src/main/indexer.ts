@@ -112,24 +112,43 @@ function resolveDisplayName(summary: ChatSummary): string {
   return summary.chat_name
 }
 
+// Returns raw data instantly — no contact resolution
 export function fetchChatSummaries(): ResolvedChatSummary[] {
-  compileContactsHelper()
   const summaries = getChatSummaries()
-  const allHandles: string[] = []
-  for (const s of summaries) {
-    const id = s.raw_chat_identifier || s.chat_name
-    if (id && (id.startsWith('+') || id.includes('@'))) allHandles.push(id)
-    for (const h of s.participant_handles) allHandles.push(h)
-  }
-  resolveContactsBatch([...new Set(allHandles)])
   return summaries.map((s) => ({
     chat_name: s.chat_name,
-    display_name: resolveDisplayName(s),
+    display_name: s.display_name || s.chat_name,
     raw_chat_identifier: s.raw_chat_identifier,
     attachment_count: s.attachment_count,
     last_message_date: s.last_message_date,
     participant_handles: s.participant_handles
   }))
+}
+
+// Resolves contact names in background, sends IPC when done
+export function resolveNamesInBackground(win: BrowserWindow | null): void {
+  setTimeout(() => {
+    compileContactsHelper()
+    const summaries = getChatSummaries()
+    const allHandles: string[] = []
+    for (const s of summaries) {
+      const id = s.raw_chat_identifier || s.chat_name
+      if (id && (id.startsWith('+') || id.includes('@'))) allHandles.push(id)
+      for (const h of s.participant_handles) allHandles.push(h)
+    }
+    resolveContactsBatch([...new Set(allHandles)])
+    const resolved = summaries.map((s) => ({
+      chat_name: s.chat_name,
+      display_name: resolveDisplayName(s),
+      raw_chat_identifier: s.raw_chat_identifier,
+      attachment_count: s.attachment_count,
+      last_message_date: s.last_message_date,
+      participant_handles: s.participant_handles
+    }))
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('chat-names-resolved', resolved)
+    }
+  }, 100)
 }
 
 export function saveChatPriorities(chats: string[]): void { savePriorityChats(chats) }
