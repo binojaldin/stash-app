@@ -44,15 +44,22 @@ export default function App(): JSX.Element {
   const debounceRef = useRef<NodeJS.Timeout>()
   const initialIndexDone = useRef(false)
   const searchBarRef = useRef<SearchBarRef>(null)
+  const [showSidebar, setShowSidebar] = useState(true)
 
   // Persist view mode
   useEffect(() => { localStorage.setItem('stash-view-mode', viewMode) }, [viewMode])
 
-  // Listen for Cmd+F
+  // Menu bar listeners
   useEffect(() => {
-    const unsub = window.api.onFocusSearch(() => searchBarRef.current?.focus())
-    return unsub
-  }, [])
+    const unsubs = [
+      window.api.onFocusSearch(() => searchBarRef.current?.focus()),
+      window.api.onToggleSidebar(() => setShowSidebar((p) => !p)),
+      window.api.onSetViewGrid(() => setViewMode('grid')),
+      window.api.onSetViewList(() => setViewMode('list')),
+      window.api.onManageConversations(() => handleManageConversations())
+    ]
+    return () => unsubs.forEach((u) => u())
+  }, [handleManageConversations])
 
   // Check disk access on mount
   useEffect(() => {
@@ -217,12 +224,14 @@ export default function App(): JSX.Element {
 
       {/* Main content */}
       <div className="flex flex-1 min-h-0">
-        <Sidebar
-          stats={stats}
-          filters={filters}
-          onFilterChange={setFilters}
-          onManageConversations={!isIndexing ? handleManageConversations : undefined}
-        />
+        {showSidebar && (
+          <Sidebar
+            stats={stats}
+            filters={filters}
+            onFilterChange={setFilters}
+            onManageConversations={!isIndexing ? handleManageConversations : undefined}
+          />
+        )}
 
         <div className="flex-1 min-w-0 flex flex-col">
           {/* Toolbar: view toggle + sort */}

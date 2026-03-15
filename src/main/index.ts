@@ -8,6 +8,12 @@ import { copyFileSync, existsSync } from 'fs'
 
 let mainWindow: BrowserWindow | null = null
 
+function sendToRenderer(channel: string): void {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send(channel)
+  }
+}
+
 function createMenu(): void {
   const template: Electron.MenuItemConstructorOptions[] = [
     {
@@ -25,6 +31,12 @@ function createMenu(): void {
     {
       label: 'File',
       submenu: [
+        {
+          label: 'Manage Conversations',
+          accelerator: 'CmdOrCtrl+Shift+C',
+          click: (): void => sendToRenderer('menu-manage-conversations')
+        },
+        { type: 'separator' },
         { role: 'close' }
       ]
     },
@@ -46,14 +58,24 @@ function createMenu(): void {
         {
           label: 'Focus Search',
           accelerator: 'CmdOrCtrl+F',
-          click: (): void => {
-            if (mainWindow && !mainWindow.isDestroyed()) {
-              mainWindow.webContents.send('focus-search')
-            }
-          }
+          click: (): void => sendToRenderer('focus-search')
+        },
+        {
+          label: 'Toggle Sidebar',
+          accelerator: 'CmdOrCtrl+B',
+          click: (): void => sendToRenderer('toggle-sidebar')
         },
         { type: 'separator' },
-        { role: 'toggleDevTools' },
+        {
+          label: 'Grid View',
+          accelerator: 'CmdOrCtrl+1',
+          click: (): void => sendToRenderer('set-view-grid')
+        },
+        {
+          label: 'List View',
+          accelerator: 'CmdOrCtrl+2',
+          click: (): void => sendToRenderer('set-view-list')
+        },
         { type: 'separator' },
         { role: 'resetZoom' },
         { role: 'zoomIn' },

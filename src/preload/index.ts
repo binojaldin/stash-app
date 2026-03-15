@@ -44,6 +44,26 @@ const api = {
     const handler = (): void => callback()
     ipcRenderer.on('focus-search', handler)
     return () => ipcRenderer.removeListener('focus-search', handler)
+  },
+  onToggleSidebar: (callback: () => void): (() => void) => {
+    const handler = (): void => callback()
+    ipcRenderer.on('toggle-sidebar', handler)
+    return () => ipcRenderer.removeListener('toggle-sidebar', handler)
+  },
+  onSetViewGrid: (callback: () => void): (() => void) => {
+    const handler = (): void => callback()
+    ipcRenderer.on('set-view-grid', handler)
+    return () => ipcRenderer.removeListener('set-view-grid', handler)
+  },
+  onSetViewList: (callback: () => void): (() => void) => {
+    const handler = (): void => callback()
+    ipcRenderer.on('set-view-list', handler)
+    return () => ipcRenderer.removeListener('set-view-list', handler)
+  },
+  onManageConversations: (callback: () => void): (() => void) => {
+    const handler = (): void => callback()
+    ipcRenderer.on('menu-manage-conversations', handler)
+    return () => ipcRenderer.removeListener('menu-manage-conversations', handler)
   }
 }
 
