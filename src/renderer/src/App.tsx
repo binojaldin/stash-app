@@ -46,11 +46,15 @@ export default function App(): JSX.Element {
   const [showSidebar, setShowSidebar] = useState(true)
   const [showWrapped, setShowWrapped] = useState(false)
   const [userActivated, setUserActivated] = useState(false)
+  const [wordmarkReady, setWordmarkReady] = useState(false)
   const debounceRef = useRef<NodeJS.Timeout>()
   const searchBarRef = useRef<SearchBarRef>(null)
 
   // Persist view mode
   useEffect(() => { localStorage.setItem('stash-view-mode', viewMode) }, [viewMode])
+
+  // Wordmark animation
+  useEffect(() => { const t = setTimeout(() => setWordmarkReady(true), 300); return () => clearTimeout(t) }, [])
 
   // ── Startup flow: getStats only, never getChatSummaries ──
   useEffect(() => {
@@ -253,9 +257,6 @@ export default function App(): JSX.Element {
   const isImageView = viewMode === 'grid' && (!filters.type || filters.type === 'all' || filters.type === 'images')
   const showContent = userActivated || !!query || !!filters.chatName || (filters.type && filters.type !== 'all') || !!filters.dateRange
 
-  const [wordmarkReady, setWordmarkReady] = useState(false)
-  useEffect(() => { const t = setTimeout(() => setWordmarkReady(true), 300); return () => clearTimeout(t) }, [])
-
   const mediaCards = [
     { icon: Image, label: 'Images', count: stats.images, bg: '#FFF0ED', color: '#E8604A', type: 'images' },
     { icon: Video, label: 'Videos', count: stats.videos, bg: '#EAF8F4', color: '#2EC4A0', type: 'videos' },
@@ -264,7 +265,7 @@ export default function App(): JSX.Element {
   ]
 
   return (
-    <div className="flex h-screen" style={{ background: '#0A0A0A' }}>
+    <div className="flex" style={{ background: '#0A0A0A', height: '100vh', width: '100vw' }}>
       {showWrapped && <WrappedView onClose={() => setShowWrapped(false)} />}
 
       {isIndexing && showIndexing && indexingProgress.total > 0 && (
