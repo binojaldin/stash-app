@@ -6,6 +6,7 @@ import { IndexingOverlay } from './components/IndexingOverlay'
 import { SearchBar, SearchBarRef } from './components/SearchBar'
 import { IconRail } from './components/IconRail'
 import { Sidebar } from './components/Sidebar'
+import { Dashboard } from './components/Dashboard'
 import { AttachmentGrid } from './components/AttachmentGrid'
 import { DetailPanel } from './components/DetailPanel'
 import { WrappedView } from './components/WrappedView'
@@ -47,6 +48,7 @@ export default function App(): JSX.Element {
   const [showWrapped, setShowWrapped] = useState(false)
   const [userActivated, setUserActivated] = useState(false)
   const [wordmarkReady, setWordmarkReady] = useState(false)
+  const [dashboardView, setDashboardView] = useState(true)
   const debounceRef = useRef<NodeJS.Timeout>()
   const searchBarRef = useRef<SearchBarRef>(null)
 
@@ -255,7 +257,8 @@ export default function App(): JSX.Element {
   )
 
   const isImageView = viewMode === 'grid' && (!filters.type || filters.type === 'all' || filters.type === 'images')
-  const showContent = userActivated || !!query || !!filters.chatName || (filters.type && filters.type !== 'all') || !!filters.dateRange
+  const showGrid = userActivated || !!query || !!filters.chatName || (filters.type && filters.type !== 'all') || !!filters.dateRange
+  const showDash = dashboardView && !showGrid && stats.total > 0
 
   const mediaCards = [
     { icon: Image, label: 'Images', count: stats.images, bg: '#FFF0ED', color: '#E8604A', type: 'images' },
@@ -288,11 +291,12 @@ export default function App(): JSX.Element {
           <Sidebar
             stats={stats}
             filters={filters}
-            onFilterChange={(f) => { setFilters(f); setUserActivated(true) }}
+            onFilterChange={(f) => { setFilters(f); setUserActivated(true); setDashboardView(false) }}
             onManageConversations={!isIndexing ? handleManageConversations : undefined}
             onHideChat={async (rawName) => { await window.api.hideChat(rawName); loadStats() }}
             isIndexing={isIndexing}
             indexingProgress={indexingProgress}
+            onGoHome={() => { setDashboardView(true); setUserActivated(false); setFilters({ type: 'all' }); setQuery('') }}
           />
         )}
       </div>
@@ -316,7 +320,7 @@ export default function App(): JSX.Element {
         {stats.total > 0 && (
           <div className="flex gap-1.5 flex-shrink-0" style={{ padding: '8px 14px 6px' }}>
             {mediaCards.map(({ icon: Icon, label, count, bg, color, type }) => (
-              <button key={type} onClick={() => { setFilters({ ...filters, type }); setUserActivated(true) }}
+              <button key={type} onClick={() => { setFilters({ ...filters, type }); setUserActivated(true); setDashboardView(false) }}
                 className="flex-1 transition-all"
                 style={{ background: '#FFFFFF', border: '1px solid #EAE5DF', borderRadius: 8, padding: '10px 12px', cursor: 'pointer', textAlign: 'left', maxHeight: 72 }}>
                 <div style={{ width: 20, height: 20, borderRadius: '50%', background: bg, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 3 }}>
@@ -331,7 +335,7 @@ export default function App(): JSX.Element {
 
         {/* Search bar */}
         <div style={{ padding: '10px 14px 0' }} className="flex-shrink-0">
-          <SearchBar ref={searchBarRef} value={query} onChange={(v) => { setQuery(v); if (v) setUserActivated(true) }} />
+          <SearchBar ref={searchBarRef} value={query} onChange={(v) => { setQuery(v); if (v) { setUserActivated(true); setDashboardView(false) } }} />
         </div>
 
         {/* Toolbar */}
@@ -365,8 +369,14 @@ export default function App(): JSX.Element {
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto" style={{ padding: '0 14px 14px' }}>
-          {showContent ? (
+        {showDash ? (
+          <Dashboard
+            stats={stats}
+            chatNameMap={stats.chatNameMap}
+            onSelectConversation={(rawName) => { setFilters({ ...filters, chatName: rawName }); setUserActivated(true); setDashboardView(false) }}
+          />
+        ) : showGrid ? (
+          <div className="flex-1 overflow-y-auto" style={{ padding: '0 14px 14px' }}>
             <AttachmentGrid
               attachments={attachments}
               selectedId={selectedAttachment?.id ?? null}
@@ -376,14 +386,14 @@ export default function App(): JSX.Element {
               isImageView={isImageView}
               chatNameMap={stats.chatNameMap}
             />
-          ) : (
-            <div className="flex flex-col items-center justify-center h-full text-center">
-              <Grid style={{ width: 40, height: 40, color: '#C8C0B8', marginBottom: 16 }} />
-              <p style={{ color: '#1A1A1A', fontSize: 16, fontWeight: 500 }}>Select a conversation to get started</p>
-              <p style={{ color: '#888888', fontSize: 13, marginTop: 4 }}>or search for something specific above</p>
-            </div>
-          )}
-        </div>
+          </div>
+        ) : (
+          <div className="flex flex-col items-center justify-center flex-1 text-center">
+            <Grid style={{ width: 40, height: 40, color: '#C8C0B8', marginBottom: 16 }} />
+            <p style={{ color: '#1A1A1A', fontSize: 16, fontWeight: 500 }}>Select a conversation to get started</p>
+            <p style={{ color: '#888888', fontSize: 13, marginTop: 4 }}>or search for something specific above</p>
+          </div>
+        )}
 
         {selectedAttachment && (
           <DetailPanel
