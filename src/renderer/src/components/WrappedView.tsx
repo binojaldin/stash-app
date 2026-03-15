@@ -286,7 +286,7 @@ function SlidePersonality({ data }: { data: WrappedData }): JSX.Element {
   const hours = Array.from({ length: 24 }, (_, i) => i)
   return (
     <div className="text-center">
-      <p className="text-[#636363] text-xl">You're a</p>
+      <p className="text-[#636363] text-xl">You're {/^[aeiou]/i.test(data.personality.peakHourLabel) ? 'an' : 'a'}</p>
       <p className="text-white font-bold mt-1" style={{ fontSize: '56px' }}>{data.personality.peakHourLabel}</p>
       <p className="text-[#636363] text-xl mt-1">texter</p>
       {data.personality.avgResponseTimeMinutes > 0 && (
@@ -334,9 +334,10 @@ function SlideMonthly({ data }: { data: WrappedData }): JSX.Element {
 }
 
 function SlideEmoji({ data }: { data: WrappedData }): JSX.Element {
+  const emoji = data.personality.mostUsedEmoji || '💬'
   if (!data.personality.mostUsedEmoji) {
     return (
-      <div className="text-center">
+      <div className="text-center" style={{ background: '#0a0a0a' }}>
         <p className="text-white text-4xl font-bold">You texted across</p>
         <p className="text-teal-400 font-bold mt-2" style={{ fontSize: '72px' }}>{data.totalConversations}</p>
         <p className="text-white text-4xl font-bold">conversations</p>
@@ -345,8 +346,8 @@ function SlideEmoji({ data }: { data: WrappedData }): JSX.Element {
     )
   }
   return (
-    <div className="text-center">
-      <p style={{ fontSize: '96px' }}>{data.personality.mostUsedEmoji}</p>
+    <div className="text-center" style={{ background: '#0a0a0a' }}>
+      <p style={{ fontSize: '96px' }}>{emoji}</p>
       <p className="text-[#636363] text-lg mt-4">your most-used emoji this year</p>
       <p className="text-[#4a4a4a] text-sm mt-6">{data.narrative.personalityLine}</p>
     </div>

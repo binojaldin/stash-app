@@ -23,6 +23,8 @@ export function Sidebar({ stats, filters, onFilterChange, onManageConversations,
   const [chatSort, setChatSort] = useState<string>('most-messages')
   const [showAllChats, setShowAllChats] = useState(false)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; rawName: string } | null>(null)
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
 
   const sortedChats = useMemo(() => {
     let list = stats.chatNames as ChatNameEntry[]
@@ -90,6 +92,19 @@ export function Sidebar({ stats, filters, onFilterChange, onManageConversations,
         <button onClick={cycleSort} style={{ borderRadius: 999, border: '1px solid rgba(255,255,255,0.12)', color: '#b9b9b9', padding: '8px 12px', fontSize: 12, background: 'transparent', cursor: 'pointer', marginBottom: 20, fontFamily: "'DM Sans'" }}>
           {sortLabels[chatSort]}
         </button>
+
+        {/* Date range */}
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ fontSize: 11, letterSpacing: '0.2em', textTransform: 'uppercase', color: '#E8604A', margin: '18px 0 10px' }}>Date range</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)}
+              style={{ flex: 1, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 10, padding: '8px 10px', fontSize: 12, color: '#888', outline: 'none', fontFamily: "'DM Sans'" }} />
+            <span style={{ color: '#555', fontSize: 12 }}>→</span>
+            <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)}
+              style={{ flex: 1, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 10, padding: '8px 10px', fontSize: 12, color: '#888', outline: 'none', fontFamily: "'DM Sans'" }} />
+          </div>
+          {/* TODO: Wire date inputs to IPC filter with { from, to } */}
+        </div>
 
         {/* Top chats */}
         <div style={{ fontSize: 11, letterSpacing: '0.2em', textTransform: 'uppercase', color: '#E8604A', margin: '18px 0 12px' }}>

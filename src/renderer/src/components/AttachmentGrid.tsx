@@ -101,12 +101,14 @@ function ThumbnailImage({ attachment }: { attachment: Attachment }): JSX.Element
 
 function resolveName(raw: string | null, map?: Record<string, string>): string {
   if (!raw) return ''
-  return map?.[raw] || raw
+  const resolved = map?.[raw] || raw
+  if (resolved.startsWith('#')) return 'Group chat'
+  return resolved
 }
 
 function ImageCard({ attachment, selected, onClick, chatNameMap }: { attachment: Attachment; selected: boolean; onClick: () => void; chatNameMap?: Record<string, string> }): JSX.Element {
   const unavailable = !attachment.is_available
-  const displayContact = attachment.source === 'orphan' ? 'Unknown conversation' : resolveName(attachment.sender_handle || attachment.chat_name, chatNameMap)
+  const displayContact = attachment.chat_name ? resolveName(attachment.chat_name, chatNameMap) : ''
   return (
     <button
       onClick={onClick}
@@ -136,7 +138,7 @@ function ImageCard({ attachment, selected, onClick, chatNameMap }: { attachment:
 
 function ListRow({ attachment, selected, onClick, chatNameMap }: { attachment: Attachment; selected: boolean; onClick: () => void; chatNameMap?: Record<string, string> }): JSX.Element {
   const unavailable = !attachment.is_available
-  const displayContact = attachment.source === 'orphan' ? 'Unknown conversation' : resolveName(attachment.sender_handle || attachment.chat_name, chatNameMap)
+  const displayContact = attachment.chat_name ? resolveName(attachment.chat_name, chatNameMap) : ''
   return (
     <button
       onClick={onClick}
