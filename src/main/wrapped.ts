@@ -54,10 +54,7 @@ export interface WrappedData {
     firstMessageDate: string
     longestStreakDays: number
     mostActiveMonth: string
-    conversationBreakdown: {
-      direct: number
-      groups: { chatName: string; count: number }[]
-    }
+    sharedGroupCount: number
   }[]
 
   monthlyActivity: {
@@ -249,101 +246,87 @@ export function generateWrapped(year: number): WrappedData {
         AND (text IS NOT NULL OR cache_has_attachments = 1)
     `).get(start, end) as { c: number }).c
 
-    // ── Top relationships (person-level, across ALL conversations) ──
-    // Count all messages where this handle appears — includes group chats
+    // ── Top relationships (1:1 direct chats only) ──
+    // Find chats with exactly 1 handle (= 2 participants: you + them)
+    const directChatIds = db.prepare(`
+      SELECT chj.chat_id, h.id as handle
+      FROM chat_handle_join chj
+      JOIN handle h ON chj.handle_id = h.ROWID
+      WHERE chj.chat_id IN (
+        SELECT chat_id FROM chat_handle_join GROUP BY chat_id HAVING COUNT(*) = 1
+      )
+    `).all() as { chat_id: number; handle: string }[]
+
+    const directChatMap = new Map<string, number[]>() // handle -> chat_ids
+    for (const dc of directChatIds) {
+      if (!directChatMap.has(dc.handle)) directChatMap.set(dc.handle, [])
+      directChatMap.get(dc.handle)!.push(dc.chat_id)
+    }
+
+    // Count messages per handle in direct chats only
     const topHandlesRaw = db.prepare(`
       SELECT
         h.id as handle,
+        SUM(CASE WHEN m.is_from_me = 1 THEN 1 ELSE 0 END) as sent,
         SUM(CASE WHEN m.is_from_me = 0 THEN 1 ELSE 0 END) as received,
         COUNT(*) as total,
         MIN(datetime(m.date/1000000000 + 978307200, 'unixepoch', 'localtime')) as first_date
       FROM message m
+      JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
+      JOIN chat c ON cmj.chat_id = c.ROWID
       LEFT JOIN handle h ON m.handle_id = h.ROWID
       WHERE m.date >= ? AND m.date < ?
-        AND h.id IS NOT NULL
         AND (m.text IS NOT NULL OR m.cache_has_attachments = 1)
-      GROUP BY h.id
+        AND c.ROWID IN (
+          SELECT chat_id FROM chat_handle_join GROUP BY chat_id HAVING COUNT(*) = 1
+        )
+      GROUP BY COALESCE(h.id, c.chat_identifier)
       ORDER BY total DESC
       LIMIT 10
-    `).all(start, end) as { handle: string; received: number; total: number; first_date: string }[]
-
-    // Also count sent messages per handle (messages I sent in conversations where this handle participates)
-    const sentByHandle = new Map<string, number>()
-    for (const r of topHandlesRaw) {
-      const sent = (db.prepare(`
-        SELECT COUNT(*) as c
-        FROM message m
-        JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
-        JOIN chat c ON cmj.chat_id = c.ROWID
-        JOIN chat_handle_join chj ON c.ROWID = chj.chat_id
-        JOIN handle h ON chj.handle_id = h.ROWID
-        WHERE m.date >= ? AND m.date < ?
-          AND m.is_from_me = 1
-          AND h.id = ?
-          AND (m.text IS NOT NULL OR m.cache_has_attachments = 1)
-      `).get(start, end, r.handle) as { c: number }).c
-      sentByHandle.set(r.handle, sent)
-    }
+    `).all(start, end) as { handle: string; sent: number; received: number; total: number; first_date: string }[]
 
     const topRelationships = topHandlesRaw.slice(0, 3).map((r) => {
-      const sent = sentByHandle.get(r.handle) || 0
-
-      // Streak: all days with messages involving this person
-      const dates = db.prepare(`
+      // Streak: days with messages in direct chats only
+      const chatIds = directChatMap.get(r.handle) || []
+      const placeholders = chatIds.map(() => '?').join(',')
+      const dates = chatIds.length > 0 ? db.prepare(`
         SELECT DISTINCT date(datetime(m.date/1000000000 + 978307200, 'unixepoch', 'localtime')) as d
         FROM message m
-        LEFT JOIN handle h ON m.handle_id = h.ROWID
-        WHERE m.date >= ? AND m.date < ? AND h.id = ?
-        ORDER BY d
-      `).all(start, end, r.handle) as { d: string }[]
-
-      // Most active month
-      const monthCounts = db.prepare(`
-        SELECT
-          CAST(strftime('%m', datetime(m.date/1000000000 + 978307200, 'unixepoch', 'localtime')) AS INTEGER) as month,
-          COUNT(*) as c
-        FROM message m
-        LEFT JOIN handle h ON m.handle_id = h.ROWID
-        WHERE m.date >= ? AND m.date < ? AND h.id = ?
-        GROUP BY month ORDER BY c DESC LIMIT 1
-      `).get(start, end, r.handle) as { month: number; c: number } | undefined
-
-      // Conversation breakdown: direct vs group chats
-      const chatBreakdown = db.prepare(`
-        SELECT
-          COALESCE(NULLIF(c.display_name, ''), c.chat_identifier) as chat_name,
-          COUNT(*) as msg_count
-        FROM message m
-        LEFT JOIN handle h ON m.handle_id = h.ROWID
         JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
-        JOIN chat c ON cmj.chat_id = c.ROWID
-        WHERE m.date >= ? AND m.date < ?
-          AND h.id = ?
-        GROUP BY c.ROWID
-        ORDER BY msg_count DESC
-      `).all(start, end, r.handle) as { chat_name: string; msg_count: number }[]
+        WHERE m.date >= ? AND m.date < ? AND cmj.chat_id IN (${placeholders})
+        ORDER BY d
+      `).all(start, end, ...chatIds) as { d: string }[] : []
 
-      // Identify direct chat (chat_identifier matches handle) vs groups
-      let direct = 0
-      const groups: { chatName: string; count: number }[] = []
-      for (const cb of chatBreakdown) {
-        if (cb.chat_name === r.handle || cb.chat_name?.includes(r.handle)) {
-          direct += cb.msg_count
-        } else {
-          groups.push({ chatName: cb.chat_name, count: cb.msg_count })
-        }
-      }
+      // Most active month in direct chats
+      const monthCounts = chatIds.length > 0 ? db.prepare(`
+        SELECT CAST(strftime('%m', datetime(m.date/1000000000 + 978307200, 'unixepoch', 'localtime')) AS INTEGER) as month, COUNT(*) as c
+        FROM message m
+        JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
+        WHERE m.date >= ? AND m.date < ? AND cmj.chat_id IN (${placeholders})
+        GROUP BY month ORDER BY c DESC LIMIT 1
+      `).get(start, end, ...chatIds) as { month: number; c: number } | undefined : undefined
+
+      // Count shared group chats (chats with >1 handle where this person is a member)
+      const sharedGroupCount = (db.prepare(`
+        SELECT COUNT(DISTINCT chj1.chat_id) as c
+        FROM chat_handle_join chj1
+        JOIN handle h1 ON chj1.handle_id = h1.ROWID
+        WHERE h1.id = ?
+          AND chj1.chat_id IN (
+            SELECT chat_id FROM chat_handle_join GROUP BY chat_id HAVING COUNT(*) > 1
+          )
+      `).get(r.handle) as { c: number }).c
 
       return {
         handle: r.handle,
         displayName: getContactName(r.handle),
-        messagesSent: sent,
+        messagesSent: r.sent,
         messagesReceived: r.received,
-        totalMessages: r.total + sent,
+        totalMessages: r.total,
         firstMessageDate: r.first_date,
         longestStreakDays: computeStreak(dates.map((d) => d.d)),
         mostActiveMonth: monthCounts ? MONTH_NAMES[monthCounts.month - 1] : 'Unknown',
-        conversationBreakdown: { direct, groups }
+        sharedGroupCount
       }
     })
 
