@@ -67,25 +67,17 @@ export default function App(): JSX.Element {
     return () => clearInterval(interval)
   }, [])
 
-  // Once access is granted, check if we need to show priority screen
+  // Once access is granted, always show priority screen so user chooses what to index
   useEffect(() => {
     if (hasAccess && !initialIndexDone.current) {
-      window.api.getSavedPriorityChats().then((saved) => {
-        if (saved !== null) {
+      window.api.getChatSummaries().then((summaries) => {
+        if (summaries.length > 0) {
+          setChatSummaries(summaries)
+          setShowChatPriority(true)
+        } else {
           initialIndexDone.current = true
           setIsIndexing(true)
           window.api.startIndexing()
-        } else {
-          window.api.getChatSummaries().then((summaries) => {
-            if (summaries.length > 0) {
-              setChatSummaries(summaries)
-              setShowChatPriority(true)
-            } else {
-              initialIndexDone.current = true
-              setIsIndexing(true)
-              window.api.startIndexing()
-            }
-          })
         }
       })
     }
