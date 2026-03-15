@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Grid, List, ChevronDown, Sparkles } from 'lucide-react'
+import { Grid, List, ChevronDown, Sparkles, Image, Video, FileText, Music } from 'lucide-react'
 import { PermissionScreen } from './components/PermissionScreen'
 import { ChatPriorityScreen } from './components/ChatPriorityScreen'
 import { IndexingOverlay } from './components/IndexingOverlay'
 import { SearchBar, SearchBarRef } from './components/SearchBar'
+import { IconRail } from './components/IconRail'
 import { Sidebar } from './components/Sidebar'
 import { AttachmentGrid } from './components/AttachmentGrid'
 import { DetailPanel } from './components/DetailPanel'
@@ -252,110 +253,135 @@ export default function App(): JSX.Element {
   const isImageView = viewMode === 'grid' && (!filters.type || filters.type === 'all' || filters.type === 'images')
   const showContent = userActivated || !!query || !!filters.chatName || (filters.type && filters.type !== 'all') || !!filters.dateRange
 
+  const [wordmarkReady, setWordmarkReady] = useState(false)
+  useEffect(() => { const t = setTimeout(() => setWordmarkReady(true), 300); return () => clearTimeout(t) }, [])
+
+  const mediaCards = [
+    { icon: Image, label: 'Images', count: stats.images, bg: '#FFF0ED', color: '#E8604A', type: 'images' },
+    { icon: Video, label: 'Videos', count: stats.videos, bg: '#EAF8F4', color: '#2EC4A0', type: 'videos' },
+    { icon: FileText, label: 'Documents', count: stats.documents, bg: '#F5F0FF', color: '#8B7FD4', type: 'documents' },
+    { icon: Music, label: 'Audio', count: stats.audio, bg: '#FFF8ED', color: '#E8A04A', type: 'audio' }
+  ]
+
   return (
-    <div className="flex flex-col h-screen bg-[#0a0a0a]">
+    <div className="flex h-screen" style={{ background: '#0A0A0A' }}>
       {showWrapped && <WrappedView onClose={() => setShowWrapped(false)} />}
 
       {isIndexing && showIndexing && indexingProgress.total > 0 && (
         <IndexingOverlay progress={indexingProgress} onBrowse={() => setShowIndexing(false)} />
       )}
 
-      {/* Progress bar removed — now in sidebar footer */}
+      {/* Icon Rail */}
+      <IconRail />
 
-      <div className="h-12 flex-shrink-0 flex items-center justify-between pr-5" style={{ WebkitAppRegion: 'drag', paddingLeft: '80px' } as React.CSSProperties}>
-        <span className="text-xs font-medium text-[#636363] tracking-wide uppercase">Stash</span>
-        <button
-          onClick={() => setShowWrapped(true)}
-          className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#1c1c1c] border border-[#262626] text-xs text-[#a3a3a3] hover:text-white hover:border-teal-600 transition-colors"
-          style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-        >
-          <Sparkles className="w-3 h-3" />
-          Wrapped
-        </button>
-      </div>
+      {/* Sidebar */}
+      <div className="flex flex-col" style={{ background: '#0F0F0F' }}>
+        {/* Sidebar title bar */}
+        <div className="flex items-center justify-between flex-shrink-0" style={{ height: 44, padding: '0 14px', borderBottom: '1px solid #1A1A1A', WebkitAppRegion: 'drag' } as React.CSSProperties}>
+          <span style={{ fontFamily: "'Unbounded', sans-serif", fontWeight: 200, fontSize: 11, letterSpacing: '0.24em', color: '#FFFFFF' }}>
+            ST<span style={{ fontWeight: 400, color: '#E8604A', opacity: wordmarkReady ? 1 : 0, transform: wordmarkReady ? 'translateY(0)' : 'translateY(4px)', transition: 'opacity 0.4s cubic-bezier(0.16,1,0.3,1), transform 0.4s cubic-bezier(0.16,1,0.3,1)', transitionDelay: '0ms', display: 'inline-block' }}>A</span><span style={{ fontWeight: 400, color: '#E8604A', opacity: wordmarkReady ? 1 : 0, transform: wordmarkReady ? 'translateY(0)' : 'translateY(4px)', transition: 'opacity 0.4s cubic-bezier(0.16,1,0.3,1), transform 0.4s cubic-bezier(0.16,1,0.3,1)', transitionDelay: '150ms', display: 'inline-block' }}>S</span><span style={{ fontWeight: 400, color: '#E8604A', opacity: wordmarkReady ? 1 : 0, transform: wordmarkReady ? 'translateY(0)' : 'translateY(4px)', transition: 'opacity 0.4s cubic-bezier(0.16,1,0.3,1), transform 0.4s cubic-bezier(0.16,1,0.3,1)', transitionDelay: '300ms', display: 'inline-block' }}>H</span>
+          </span>
+        </div>
 
-      <div className="px-4 pb-3 flex-shrink-0">
-        <SearchBar ref={searchBarRef} value={query} onChange={(v) => { setQuery(v); if (v) setUserActivated(true) }} />
-      </div>
-
-      <div className="flex flex-1 min-h-0">
         {showSidebar && (
           <Sidebar
             stats={stats}
             filters={filters}
             onFilterChange={(f) => { setFilters(f); setUserActivated(true) }}
             onManageConversations={!isIndexing ? handleManageConversations : undefined}
-            onHideChat={async (rawName) => {
-              await window.api.hideChat(rawName)
-              loadStats()
-            }}
+            onHideChat={async (rawName) => { await window.api.hideChat(rawName); loadStats() }}
             isIndexing={isIndexing}
             indexingProgress={indexingProgress}
           />
         )}
+      </div>
 
-        <div className="flex-1 min-w-0 flex flex-col">
-          <div className="flex items-center justify-between px-4 py-2 border-b border-[#1c1c1c] flex-shrink-0">
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => setViewMode('grid')}
-                className={`p-1.5 rounded-md transition-colors ${viewMode === 'grid' ? 'bg-[#1c1c1c] text-white' : 'text-[#636363] hover:text-[#a3a3a3]'}`}
-              >
-                <Grid className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => setViewMode('list')}
-                className={`p-1.5 rounded-md transition-colors ${viewMode === 'list' ? 'bg-[#1c1c1c] text-white' : 'text-[#636363] hover:text-[#a3a3a3]'}`}
-              >
-                <List className="w-4 h-4" />
-              </button>
-            </div>
+      {/* Main content */}
+      <div className="flex-1 min-w-0 flex flex-col" style={{ background: '#F5F0EA' }}>
+        {/* Title bar drag region */}
+        <div className="flex-shrink-0 flex items-center justify-end pr-4" style={{ height: 44, borderBottom: '1px solid #EAE5DF', WebkitAppRegion: 'drag' } as React.CSSProperties}>
+          <button
+            onClick={() => setShowWrapped(true)}
+            style={{ background: '#E8604A', color: '#FFFFFF', borderRadius: 6, padding: '5px 14px', fontSize: 11, fontWeight: 500, border: 'none', cursor: 'pointer', WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+            onMouseEnter={(e) => { e.currentTarget.style.background = '#C44A36' }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = '#E8604A' }}
+          >
+            <Sparkles style={{ width: 12, height: 12, display: 'inline', marginRight: 4, verticalAlign: 'middle' }} />
+            Wrapped
+          </button>
+        </div>
 
-            <div className="relative">
-              <button
-                onClick={(e) => { e.stopPropagation(); setShowSortMenu(!showSortMenu) }}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs text-[#a3a3a3] hover:bg-[#1c1c1c] hover:text-white transition-colors"
-              >
-                {SORT_OPTIONS.find((o) => o.value === sortOrder)?.label}
-                <ChevronDown className="w-3 h-3" />
-              </button>
-              {showSortMenu && (
-                <div className="absolute right-0 top-full mt-1 w-40 bg-[#1c1c1c] border border-[#262626] rounded-lg shadow-lg z-20 overflow-hidden">
-                  {SORT_OPTIONS.map((opt) => (
-                    <button
-                      key={opt.value}
-                      onClick={() => { setSortOrder(opt.value); setShowSortMenu(false) }}
-                      className={`w-full text-left px-3 py-2 text-xs transition-colors ${
-                        sortOrder === opt.value ? 'text-white bg-[#262626]' : 'text-[#a3a3a3] hover:bg-[#222] hover:text-white'
-                      }`}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
+        {/* Media summary cards */}
+        {stats.total > 0 && (
+          <div className="flex gap-1.5 flex-shrink-0" style={{ padding: '10px 14px 0' }}>
+            {mediaCards.map(({ icon: Icon, label, count, bg, color, type }) => (
+              <button key={type} onClick={() => { setFilters({ ...filters, type }); setUserActivated(true) }}
+                className="flex-1 transition-all"
+                style={{ background: '#FFFFFF', border: '1px solid #EAE5DF', borderRadius: 8, padding: '8px 10px', cursor: 'pointer', textAlign: 'left' }}>
+                <div style={{ width: 22, height: 22, borderRadius: '50%', background: bg, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 4 }}>
+                  <Icon style={{ width: 11, height: 11, stroke: color }} />
                 </div>
-              )}
-            </div>
+                <div style={{ fontSize: 9, color: '#AAAAAA' }}>{label}</div>
+                <div style={{ fontSize: 14, fontWeight: 500, color }}>{count.toLocaleString()}</div>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Search bar */}
+        <div style={{ padding: '10px 14px 0' }} className="flex-shrink-0">
+          <SearchBar ref={searchBarRef} value={query} onChange={(v) => { setQuery(v); if (v) setUserActivated(true) }} />
+        </div>
+
+        {/* Toolbar */}
+        <div className="flex items-center justify-between flex-shrink-0" style={{ padding: '8px 14px' }}>
+          <div className="flex items-center gap-1">
+            <button onClick={() => setViewMode('grid')} style={{ padding: 6, borderRadius: 6, background: viewMode === 'grid' ? '#E8E3DC' : 'transparent', color: viewMode === 'grid' ? '#1A1A1A' : '#AAAAAA' }}>
+              <Grid style={{ width: 14, height: 14 }} />
+            </button>
+            <button onClick={() => setViewMode('list')} style={{ padding: 6, borderRadius: 6, background: viewMode === 'list' ? '#E8E3DC' : 'transparent', color: viewMode === 'list' ? '#1A1A1A' : '#AAAAAA' }}>
+              <List style={{ width: 14, height: 14 }} />
+            </button>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-4">
-            {showContent ? (
-              <AttachmentGrid
-                attachments={attachments}
-                selectedId={selectedAttachment?.id ?? null}
-                onSelect={setSelectedAttachment}
-                onLoadMore={loadMore}
-                hasMore={hasMore}
-                isImageView={isImageView}
-                chatNameMap={stats.chatNameMap}
-              />
-            ) : (
-              <div className="flex flex-col items-center justify-center h-full text-center">
-                <Grid className="w-10 h-10 text-[#262626] mb-4" />
-                <p className="text-white text-base font-medium">Select a conversation to get started</p>
-                <p className="text-[#636363] text-sm mt-1">or search for something specific above</p>
+          <div className="relative">
+            <button onClick={(e) => { e.stopPropagation(); setShowSortMenu(!showSortMenu) }}
+              className="flex items-center gap-1.5" style={{ fontSize: 11, fontWeight: 300, color: '#AAAAAA', background: 'transparent', border: 'none', cursor: 'pointer' }}>
+              {SORT_OPTIONS.find((o) => o.value === sortOrder)?.label}
+              <ChevronDown style={{ width: 12, height: 12 }} />
+            </button>
+            {showSortMenu && (
+              <div className="absolute right-0 top-full mt-1 w-40 rounded-lg shadow-lg z-20 overflow-hidden" style={{ background: '#FFFFFF', border: '1px solid #EAE5DF' }}>
+                {SORT_OPTIONS.map((opt) => (
+                  <button key={opt.value} onClick={() => { setSortOrder(opt.value); setShowSortMenu(false) }}
+                    className="w-full text-left px-3 py-2 transition-colors" style={{ fontSize: 11, color: sortOrder === opt.value ? '#1A1A1A' : '#AAAAAA', background: sortOrder === opt.value ? '#F5F0EA' : 'transparent' }}>
+                    {opt.label}
+                  </button>
+                ))}
               </div>
             )}
           </div>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto" style={{ padding: '0 14px 14px' }}>
+          {showContent ? (
+            <AttachmentGrid
+              attachments={attachments}
+              selectedId={selectedAttachment?.id ?? null}
+              onSelect={setSelectedAttachment}
+              onLoadMore={loadMore}
+              hasMore={hasMore}
+              isImageView={isImageView}
+              chatNameMap={stats.chatNameMap}
+            />
+          ) : (
+            <div className="flex flex-col items-center justify-center h-full text-center">
+              <Grid style={{ width: 40, height: 40, color: '#C8C0B8', marginBottom: 16 }} />
+              <p style={{ color: '#1A1A1A', fontSize: 16, fontWeight: 500 }}>Select a conversation to get started</p>
+              <p style={{ color: '#888888', fontSize: 13, marginTop: 4 }}>or search for something specific above</p>
+            </div>
+          )}
         </div>
 
         {selectedAttachment && (
