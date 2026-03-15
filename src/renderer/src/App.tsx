@@ -289,6 +289,10 @@ export default function App(): JSX.Element {
             filters={filters}
             onFilterChange={setFilters}
             onManageConversations={!isIndexing ? handleManageConversations : undefined}
+            onHideChat={async (rawName) => {
+              await window.api.hideChat(rawName)
+              loadStats()
+            }}
           />
         )}
 

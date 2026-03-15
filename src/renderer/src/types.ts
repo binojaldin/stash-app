@@ -44,6 +44,7 @@ export interface Stats {
 }
 
 export interface ChatSummary {
+  chat_id: number
   chat_name: string
   display_name: string
   raw_chat_identifier: string

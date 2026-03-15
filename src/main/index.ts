@@ -2,7 +2,7 @@ import { app, shell, BrowserWindow, ipcMain, dialog, Menu } from 'electron'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import { checkFullDiskAccess } from './messagesReader'
-import { initDb, searchAttachments, getStats, getAttachmentById, closeDb } from './db'
+import { initDb, searchAttachments, getStats, getAttachmentById, closeDb, hideChat, getHiddenChats } from './db'
 import { startIndexing, getIndexingProgress, fetchChatSummaries, saveChatPriorities, getSavedPriorityChats, resetIndexing, recoverAttachment, resolveNamesInBackground } from './indexer'
 import { compileContactsHelper, resolveContact, resolveContactsBatch } from './contacts'
 import { generateWrapped, getAvailableYears } from './wrapped'
@@ -189,6 +189,8 @@ function setupIpc(): void {
   ipcMain.handle('get-saved-priority-chats', () => getSavedPriorityChats())
   ipcMain.handle('reset-indexing', () => { resetIndexing() })
   ipcMain.handle('recover-from-icloud', async (_event, id: number) => recoverAttachment(id))
+  ipcMain.handle('hide-chat', (_event, chatIdentifier: string) => { hideChat(chatIdentifier) })
+  ipcMain.handle('get-hidden-chats', () => getHiddenChats())
   ipcMain.handle('generate-wrapped', (_event, year: number) => generateWrapped(year))
   ipcMain.handle('get-wrapped-years', () => getAvailableYears())
   ipcMain.handle('open-imessage', (_event, handle: string) => { shell.openExternal(`imessage://${handle}`) })

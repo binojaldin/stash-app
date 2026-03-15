@@ -93,6 +93,8 @@ export function initDb(): Database.Database {
     END;
   `)
 
+  db.exec(`CREATE TABLE IF NOT EXISTS hidden_chats (chat_identifier TEXT PRIMARY KEY)`)
+
   // Migrations for existing DBs
   const addColumnIfMissing = (col: string, def: string): void => {
     try { db!.prepare(`SELECT ${col} FROM attachments LIMIT 1`).get() }
@@ -301,7 +303,10 @@ export function getStats(): {
   const documents = (d.prepare('SELECT COUNT(*) as c FROM attachments WHERE is_document = 1').get() as { c: number }).c
   const audio = (d.prepare("SELECT COUNT(*) as c FROM attachments WHERE mime_type LIKE 'audio/%'").get() as { c: number }).c
   const unavailable = (d.prepare('SELECT COUNT(*) as c FROM attachments WHERE is_available = 0').get() as { c: number }).c
-  const chatNames = (d.prepare('SELECT DISTINCT chat_name FROM attachments WHERE chat_name IS NOT NULL ORDER BY chat_name').all() as { chat_name: string }[]).map((r) => r.chat_name)
+  const hidden = new Set(getHiddenChats())
+  const chatNames = (d.prepare('SELECT DISTINCT chat_name FROM attachments WHERE chat_name IS NOT NULL ORDER BY chat_name').all() as { chat_name: string }[])
+    .map((r) => r.chat_name)
+    .filter((n) => !hidden.has(n))
   return { total, images, videos, documents, audio, unavailable, chatNames }
 }
 
@@ -326,6 +331,16 @@ export function clearAllAttachments(): void {
   const d = initDb()
   d.exec('DELETE FROM attachments')
   d.exec("DELETE FROM attachments_fts WHERE attachments_fts MATCH '*'")
+}
+
+export function hideChat(chatIdentifier: string): void {
+  const d = initDb()
+  d.prepare('INSERT OR IGNORE INTO hidden_chats (chat_identifier) VALUES (?)').run(chatIdentifier)
+}
+
+export function getHiddenChats(): string[] {
+  const d = initDb()
+  return (d.prepare('SELECT chat_identifier FROM hidden_chats').all() as { chat_identifier: string }[]).map((r) => r.chat_identifier)
 }
 
 export function closeDb(): void {

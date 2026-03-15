@@ -17,6 +17,7 @@ export interface MessageAttachment {
 }
 
 export interface ChatSummary {
+  chat_id: number
   chat_name: string
   display_name: string
   raw_chat_identifier: string
@@ -42,6 +43,7 @@ export function getChatSummaries(): ChatSummary[] {
   try {
     const rows = db.prepare(`
       SELECT
+        c.ROWID as chat_id,
         COALESCE(NULLIF(c.display_name, ''), c.chat_identifier) as chat_name,
         c.display_name as display_name,
         c.chat_identifier as raw_chat_identifier,
@@ -80,7 +82,8 @@ export function getChatSummaries(): ChatSummary[] {
     }
 
     db.close()
-    return rows.map((row) => ({
+    return rows.map((row: any) => ({
+      chat_id: row.chat_id,
       chat_name: row.chat_name,
       display_name: row.display_name || '',
       raw_chat_identifier: row.raw_chat_identifier || '',

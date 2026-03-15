@@ -99,6 +99,7 @@ function savePriorityChats(chats: string[]): void {
 }
 
 export interface ResolvedChatSummary {
+  chat_id: number
   chat_name: string
   display_name: string
   raw_chat_identifier: string
@@ -129,6 +130,7 @@ function resolveDisplayName(summary: ChatSummary): string {
 export function fetchChatSummaries(): ResolvedChatSummary[] {
   const summaries = getChatSummaries()
   return summaries.map((s) => ({
+    chat_id: s.chat_id,
     chat_name: s.chat_name,
     display_name: s.display_name || s.chat_name,
     raw_chat_identifier: s.raw_chat_identifier,
@@ -151,6 +153,7 @@ export function resolveNamesInBackground(win: BrowserWindow | null): void {
     }
     resolveContactsBatch([...new Set(allHandles)])
     const resolved = summaries.map((s) => ({
+      chat_id: s.chat_id,
       chat_name: s.chat_name,
       display_name: resolveDisplayName(s),
       raw_chat_identifier: s.raw_chat_identifier,

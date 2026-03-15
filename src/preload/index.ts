@@ -18,7 +18,7 @@ const api = {
     ipcRenderer.invoke('get-indexing-progress'),
   startIndexing: (priorityChats?: string[]): Promise<void> => ipcRenderer.invoke('start-indexing', priorityChats),
   getChatSummaries: (): Promise<{
-    chat_name: string; display_name: string; raw_chat_identifier: string
+    chat_id: number; chat_name: string; display_name: string; raw_chat_identifier: string
     attachment_count: number; last_message_date: string; participant_handles: string[]
   }[]> => ipcRenderer.invoke('get-chat-summaries'),
   saveChatPriorities: (chats: string[]): Promise<void> => ipcRenderer.invoke('save-chat-priorities', chats),
@@ -66,6 +66,8 @@ const api = {
     return () => ipcRenderer.removeListener('menu-manage-conversations', handler)
   },
   resolveChatNames: (): Promise<void> => ipcRenderer.invoke('resolve-chat-names'),
+  hideChat: (chatIdentifier: string): Promise<void> => ipcRenderer.invoke('hide-chat', chatIdentifier),
+  getHiddenChats: (): Promise<string[]> => ipcRenderer.invoke('get-hidden-chats'),
   generateWrapped: (year: number): Promise<unknown> => ipcRenderer.invoke('generate-wrapped', year),
   getWrappedYears: (): Promise<number[]> => ipcRenderer.invoke('get-wrapped-years'),
   onChatNamesResolved: (callback: (data: unknown[]) => void): (() => void) => {

@@ -42,7 +42,7 @@ export function ChatPriorityScreen({ chats, indexedChatNames, onStart, onReset, 
 
   const selectAllNew = (): void => {
     const next: Record<string, boolean> = {}
-    chats.forEach((c) => { if (!indexedSet.has(c.chat_name)) next[c.raw_chat_identifier] = true })
+    chats.forEach((c) => { if (!indexedSet.has(c.chat_name)) next[String(c.chat_id)] = true })
     setSelected(next)
   }
   const selectNone = (): void => setSelected({})
@@ -71,7 +71,7 @@ export function ChatPriorityScreen({ chats, indexedChatNames, onStart, onReset, 
 
   const handleStart = (): void => {
     const selectedChatNames = chats
-      .filter((c) => selected[c.raw_chat_identifier])
+      .filter((c) => selected[String(c.chat_id)])
       .map((c) => c.chat_name)
     onStart(selectedChatNames)
   }
@@ -137,11 +137,11 @@ export function ChatPriorityScreen({ chats, indexedChatNames, onStart, onReset, 
           {sorted.length === 0 && (
             <div className="px-4 py-6 text-center text-sm text-[#636363]">No conversations match your search</div>
           )}
-          {sorted.map((chat, idx) => {
+          {sorted.map((chat) => {
             const name = chat.display_name?.trim() || 'Unknown'
             const rawSub = name !== chat.chat_name ? chat.chat_name : null
             const subtitle = rawSub && !isRawIdentifier(rawSub) ? rawSub : null
-            const id = chat.raw_chat_identifier || `chat-${idx}`
+            const id = String(chat.chat_id)
             const isIndexed = indexedSet.has(chat.chat_name)
             const isChecked = isIndexed || !!selected[id]
             return (
