@@ -4,7 +4,8 @@ import { is } from '@electron-toolkit/utils'
 import { checkFullDiskAccess } from './messagesReader'
 import { initDb, searchAttachments, getStats, getAttachmentById, closeDb } from './db'
 import { startIndexing, getIndexingProgress, fetchChatSummaries, saveChatPriorities, getSavedPriorityChats, resetIndexing, recoverAttachment, resolveNamesInBackground } from './indexer'
-import { copyFileSync, existsSync } from 'fs'
+import { copyFileSync, existsSync, readFileSync } from 'fs'
+import { extname } from 'path'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -143,10 +144,13 @@ function setupIpc(): void {
 
   ipcMain.handle('get-stats', () => {
     const stats = getStats()
-    // Build chatNameMap: raw -> resolved for sidebar display
     const chatNameMap: Record<string, string> = {}
     try {
-      const { resolveContact } = require('./contacts')
+      const { compileContactsHelper, resolveContact, resolveContactsBatch } = require('./contacts')
+      compileContactsHelper()
+      // Batch resolve all handles at once (fast if already cached)
+      const handles = stats.chatNames.filter((n: string) => n && (n.startsWith('+') || n.includes('@')))
+      if (handles.length > 0) resolveContactsBatch(handles)
       for (const name of stats.chatNames) {
         if (name && (name.startsWith('+') || name.includes('@'))) {
           chatNameMap[name] = resolveContact(name) || name
@@ -201,12 +205,20 @@ function setupIpc(): void {
   })
 
   ipcMain.handle('get-file-url', (_event, filePath: string) => {
-    if (filePath && existsSync(filePath)) {
-      // Use pathToFileURL to properly encode spaces and special chars
-      const { pathToFileURL } = require('url')
-      return pathToFileURL(filePath).href
+    if (!filePath || !existsSync(filePath)) return null
+    try {
+      const ext = extname(filePath).toLowerCase()
+      const mimeMap: Record<string, string> = {
+        '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
+        '.gif': 'image/gif', '.webp': 'image/webp', '.bmp': 'image/bmp',
+        '.tiff': 'image/tiff', '.heic': 'image/heic', '.heif': 'image/heif'
+      }
+      const mime = mimeMap[ext] || 'image/jpeg'
+      const data = readFileSync(filePath)
+      return `data:${mime};base64,${data.toString('base64')}`
+    } catch {
+      return null
     }
-    return null
   })
 }
 

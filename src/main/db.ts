@@ -193,17 +193,20 @@ export function searchAttachments(
     sql = 'SELECT * FROM attachments WHERE 1=1'
   }
 
+  // Use table-qualified column names to work with both plain and FTS queries
+  const col = query && query.trim() ? 'a.' : ''
+
   if (filters.type && filters.type !== 'all') {
     switch (filters.type) {
-      case 'images': conditions.push('is_image = 1'); break
-      case 'videos': conditions.push('is_video = 1'); break
-      case 'documents': conditions.push('is_document = 1'); break
-      case 'audio': conditions.push("mime_type LIKE 'audio/%'"); break
+      case 'images': conditions.push(`${col}is_image = 1`); break
+      case 'videos': conditions.push(`${col}is_video = 1`); break
+      case 'documents': conditions.push(`${col}is_document = 1`); break
+      case 'audio': conditions.push(`${col}mime_type LIKE 'audio/%'`); break
     }
   }
 
   if (filters.chatName) {
-    conditions.push('chat_name = ?')
+    conditions.push(`${col}chat_name = ?`)
     params.push(filters.chatName)
   }
 
@@ -215,20 +218,20 @@ export function searchAttachments(
       case 'month': { const d = new Date(now); d.setMonth(d.getMonth() - 1); dateStr = d.toISOString(); break }
       case 'year': { const d = new Date(now); d.setFullYear(d.getFullYear() - 1); dateStr = d.toISOString(); break }
     }
-    if (dateStr) { conditions.push('created_at >= ?'); params.push(dateStr) }
+    if (dateStr) { conditions.push(`${col}created_at >= ?`); params.push(dateStr) }
     if (filters.dateRange === 'older') {
       const d = new Date(now); d.setFullYear(d.getFullYear() - 1)
-      conditions.push('created_at < ?'); params.push(d.toISOString())
+      conditions.push(`${col}created_at < ?`); params.push(d.toISOString())
     }
   }
 
   if (conditions.length > 0) sql += ' AND ' + conditions.join(' AND ')
 
-  let orderClause = 'ORDER BY created_at DESC'
+  let orderClause = `ORDER BY ${col}created_at DESC`
   switch (sortOrder) {
-    case 'oldest': orderClause = 'ORDER BY created_at ASC'; break
-    case 'largest': orderClause = 'ORDER BY file_size DESC'; break
-    case 'sender': orderClause = 'ORDER BY sender_handle ASC, created_at DESC'; break
+    case 'oldest': orderClause = `ORDER BY ${col}created_at ASC`; break
+    case 'largest': orderClause = `ORDER BY ${col}file_size DESC`; break
+    case 'sender': orderClause = `ORDER BY ${col}sender_handle ASC, ${col}created_at DESC`; break
   }
   sql += ` ${orderClause} LIMIT ? OFFSET ?`
   params.push(limit, page * limit)
