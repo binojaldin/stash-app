@@ -17,6 +17,10 @@ interface WrappedData {
     firstMessageDate: string
     longestStreakDays: number
     mostActiveMonth: string
+    conversationBreakdown: {
+      direct: number
+      groups: { chatName: string; count: number }[]
+    }
   }[]
   monthlyActivity: {
     month: string
@@ -187,23 +191,34 @@ export function WrappedView({ onClose }: Props): JSX.Element {
           {/* Top relationships */}
           <Section title="Top relationships">
             <div className="space-y-3">
-              {data.topRelationships.map((r, i) => (
-                <div key={r.handle} className="flex items-center gap-3 p-3 rounded-lg bg-[#141414] border border-[#1c1c1c]">
-                  <span className="w-6 h-6 rounded-full bg-teal-600/20 text-teal-400 text-xs flex items-center justify-center font-bold flex-shrink-0">
-                    {i + 1}
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm text-white font-medium truncate">{r.displayName}</p>
-                    <p className="text-xs text-[#636363]">
-                      {r.totalMessages.toLocaleString()} messages · {r.longestStreakDays}-day streak · Most active in {r.mostActiveMonth}
-                    </p>
+              {data.topRelationships.map((r, i) => {
+                const groupTotal = r.conversationBreakdown?.groups?.reduce((s, g) => s + g.count, 0) || 0
+                const groupCount = r.conversationBreakdown?.groups?.length || 0
+                return (
+                  <div key={r.handle} className="p-3 rounded-lg bg-[#141414] border border-[#1c1c1c]">
+                    <div className="flex items-center gap-3">
+                      <span className="w-6 h-6 rounded-full bg-teal-600/20 text-teal-400 text-xs flex items-center justify-center font-bold flex-shrink-0">
+                        {i + 1}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-white font-medium truncate">{r.displayName}</p>
+                        <p className="text-xs text-[#636363]">
+                          {r.totalMessages.toLocaleString()} messages · {r.longestStreakDays}-day streak · Most active in {r.mostActiveMonth}
+                        </p>
+                      </div>
+                      <div className="text-right flex-shrink-0">
+                        <p className="text-xs text-[#a3a3a3]">{r.messagesSent.toLocaleString()} sent</p>
+                        <p className="text-xs text-[#636363]">{r.messagesReceived.toLocaleString()} received</p>
+                      </div>
+                    </div>
+                    {groupCount > 0 && (
+                      <p className="text-[10px] text-[#4a4a4a] mt-1.5 ml-9">
+                        Including {groupTotal.toLocaleString()} messages across {groupCount} group chat{groupCount > 1 ? 's' : ''}
+                      </p>
+                    )}
                   </div>
-                  <div className="text-right flex-shrink-0">
-                    <p className="text-xs text-[#a3a3a3]">{r.messagesSent.toLocaleString()} sent</p>
-                    <p className="text-xs text-[#636363]">{r.messagesReceived.toLocaleString()} received</p>
-                  </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           </Section>
 
