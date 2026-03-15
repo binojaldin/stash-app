@@ -186,7 +186,7 @@ export function getAvailableYears(): number[] {
       ORDER BY year ASC
     `).all() as { year: number }[]
     db.close()
-    return rows.map((r) => r.year).filter((y) => y >= 2008 && y <= 2030)
+    return rows.map((r) => r.year).filter((y) => y >= 2026 && y <= 2030)
   } catch {
     db.close()
     return []
@@ -285,7 +285,7 @@ export function generateWrapped(year: number): WrappedData {
       sentByHandle.set(r.handle, sent)
     }
 
-    const topRelationships = topHandlesRaw.slice(0, 5).map((r) => {
+    const topRelationships = topHandlesRaw.slice(0, 3).map((r) => {
       const sent = sentByHandle.get(r.handle) || 0
 
       // Streak: all days with messages involving this person
@@ -698,7 +698,7 @@ export function generateWrapped(year: number): WrappedData {
       monthlyActivity,
       momentClusters,
       personality,
-      relationshipArcs: relationshipArcs.slice(0, 15),
+      relationshipArcs: relationshipArcs.slice(0, 3),
       groupStats,
       narrative: {
         headline,
