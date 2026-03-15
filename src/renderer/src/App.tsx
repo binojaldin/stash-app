@@ -74,27 +74,61 @@ export default function App(): JSX.Element {
     return () => clearInterval(interval)
   }, [])
 
+  const [loading, setLoading] = useState(false)
+
   // Once access is granted, check if DB has data already
   useEffect(() => {
     if (hasAccess && !initialIndexDone.current) {
-      window.api.getStats().then((s) => {
-        if (s.total > 0) {
-          // Returning user with indexed data — go straight to main view
-          initialIndexDone.current = true
-          setStats(s)
-          loadAttachments()
-        } else {
-          // First time or empty DB — show priority screen
-          window.api.getChatSummaries().then((summaries) => {
-            if (summaries.length > 0) {
-              setChatSummaries(summaries)
-              setShowChatPriority(true)
-            } else {
-              initialIndexDone.current = true
-            }
-          })
+      setLoading(true)
+      let resolved = false
+
+      // Timeout fallback: if nothing resolves in 5s, force priority screen
+      const timeout = setTimeout(() => {
+        if (!resolved) {
+          console.warn('[App] Startup timeout — forcing priority screen')
+          resolved = true
+          setLoading(false)
+          setShowChatPriority(true)
         }
-      })
+      }, 5000)
+
+      window.api.getStats()
+        .then((s) => {
+          console.log('[App] getStats resolved:', s.total, 'records')
+          if (resolved) return
+          if (s.total > 0) {
+            resolved = true
+            clearTimeout(timeout)
+            initialIndexDone.current = true
+            setStats(s)
+            setLoading(false)
+            loadAttachments()
+          } else {
+            console.log('[App] Empty DB, fetching chat summaries...')
+            return window.api.getChatSummaries().then((summaries) => {
+              console.log('[App] getChatSummaries resolved:', summaries.length, 'chats')
+              if (resolved) return
+              resolved = true
+              clearTimeout(timeout)
+              setLoading(false)
+              if (summaries.length > 0) {
+                setChatSummaries(summaries)
+                setShowChatPriority(true)
+              } else {
+                initialIndexDone.current = true
+              }
+            })
+          }
+        })
+        .catch((err) => {
+          console.error('[App] Startup error:', err)
+          if (!resolved) {
+            resolved = true
+            clearTimeout(timeout)
+            setLoading(false)
+            setShowChatPriority(true)
+          }
+        })
     }
   }, [hasAccess])
 
@@ -192,10 +226,11 @@ export default function App(): JSX.Element {
 
   const selectedIndex = selectedAttachment ? attachments.findIndex((a) => a.id === selectedAttachment.id) : -1
 
-  if (hasAccess === null) {
+  if (hasAccess === null || loading) {
     return (
-      <div className="flex items-center justify-center h-screen bg-[#0a0a0a]">
+      <div className="flex flex-col items-center justify-center h-screen bg-[#0a0a0a] gap-3">
         <div className="w-6 h-6 border-2 border-teal-500 border-t-transparent rounded-full animate-spin" />
+        {loading && <p className="text-xs text-[#636363]">Loading conversations...</p>}
       </div>
     )
   }
