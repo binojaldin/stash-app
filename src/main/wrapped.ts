@@ -175,6 +175,22 @@ export function generateWrapped(year: number): WrappedData {
 
   try {
     console.log(`[Wrapped] Generating for ${year}...`)
+
+    // Pre-resolve all contact handles for this year in one batch
+    try {
+      const { compileContactsHelper, resolveContactsBatch } = require('./contacts')
+      compileContactsHelper()
+      const allHandles = db.prepare(`
+        SELECT DISTINCT h.id as handle FROM message m
+        LEFT JOIN handle h ON m.handle_id = h.ROWID
+        WHERE m.date >= ? AND m.date < ? AND h.id IS NOT NULL
+      `).all(start, end) as { handle: string }[]
+      resolveContactsBatch(allHandles.map((r) => r.handle))
+      console.log(`[Wrapped] Resolved ${allHandles.length} contacts`)
+    } catch (err) {
+      console.log('[Wrapped] Contact resolution failed:', err)
+    }
+
     // ── Top-line stats ──
     const topLine = db.prepare(`
       SELECT
@@ -228,12 +244,6 @@ export function generateWrapped(year: number): WrappedData {
       ORDER BY total DESC
       LIMIT 10
     `).all(start, end) as { handle: string; sent: number; received: number; total: number; first_date: string }[]
-
-    // Batch resolve contacts
-    try {
-      const { resolveContactsBatch } = require('./contacts')
-      resolveContactsBatch(topHandlesRaw.map((r) => r.handle))
-    } catch { /* ignore */ }
 
     const topRelationships = topHandlesRaw.slice(0, 5).map((r) => {
       // Get dates for streak calculation
