@@ -1,13 +1,21 @@
 import { Search, X } from 'lucide-react'
-import { useRef, useEffect } from 'react'
+import { useRef, useEffect, useImperativeHandle, forwardRef } from 'react'
 
 interface Props {
   value: string
   onChange: (value: string) => void
 }
 
-export function SearchBar({ value, onChange }: Props): JSX.Element {
+export interface SearchBarRef {
+  focus: () => void
+}
+
+export const SearchBar = forwardRef<SearchBarRef, Props>(function SearchBar({ value, onChange }, ref) {
   const inputRef = useRef<HTMLInputElement>(null)
+
+  useImperativeHandle(ref, () => ({
+    focus: () => inputRef.current?.focus()
+  }))
 
   useEffect(() => {
     inputRef.current?.focus()
@@ -34,4 +42,4 @@ export function SearchBar({ value, onChange }: Props): JSX.Element {
       )}
     </div>
   )
-}
+})

@@ -1,11 +1,14 @@
-import { useState, useEffect } from 'react'
-import { X, ExternalLink, Download, Image, FileText, Video, Music, File, Eye, Cloud, CloudOff, Loader2 } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { X, ExternalLink, Download, Image, FileText, Video, Music, File, Eye, Cloud, CloudOff, Loader2, ChevronLeft, ChevronRight, Copy, Check } from 'lucide-react'
 import { format } from 'date-fns'
 import type { Attachment } from '../types'
 
 interface Props {
   attachment: Attachment
+  attachments: Attachment[]
+  currentIndex: number
   onClose: () => void
+  onNavigate: (attachment: Attachment) => void
 }
 
 function formatFileSize(bytes: number): string {
@@ -25,15 +28,39 @@ function FileTypeIcon({ attachment }: { attachment: Attachment }): JSX.Element {
   return <File className={`${size} text-[#636363]`} />
 }
 
-export function DetailPanel({ attachment, onClose }: Props): JSX.Element {
+export function DetailPanel({ attachment, attachments, currentIndex, onClose, onNavigate }: Props): JSX.Element {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [recovering, setRecovering] = useState(false)
   const [recovered, setRecovered] = useState(false)
+  const [copied, setCopied] = useState(false)
   const unavailable = !attachment.is_available && !recovered
+
+  const hasPrev = currentIndex > 0
+  const hasNext = currentIndex < attachments.length - 1
+
+  const goPrev = useCallback(() => {
+    if (hasPrev) onNavigate(attachments[currentIndex - 1])
+  }, [hasPrev, currentIndex, attachments, onNavigate])
+
+  const goNext = useCallback(() => {
+    if (hasNext) onNavigate(attachments[currentIndex + 1])
+  }, [hasNext, currentIndex, attachments, onNavigate])
+
+  // Keyboard navigation
+  useEffect(() => {
+    const handler = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') { onClose(); return }
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { e.preventDefault(); goPrev(); return }
+      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { e.preventDefault(); goNext(); return }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [onClose, goPrev, goNext])
 
   useEffect(() => {
     setRecovered(false)
     setRecovering(false)
+    setCopied(false)
     if (unavailable) { setPreviewUrl(null); return }
     const path = attachment.thumbnail_path || (attachment.is_image ? attachment.original_path : null)
     if (path) { window.api.getFileUrl(path).then(setPreviewUrl) }
@@ -51,11 +78,32 @@ export function DetailPanel({ attachment, onClose }: Props): JSX.Element {
     }
   }
 
+  const handleCopyOcr = async (): Promise<void> => {
+    if (!attachment.ocr_text) return
+    await navigator.clipboard.writeText(attachment.ocr_text)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
   return (
     <div className="w-80 flex-shrink-0 border-l border-[#262626] bg-[#0a0a0a] overflow-y-auto">
       {/* Header */}
-      <div className="sticky top-0 bg-[#0a0a0a] z-10 flex items-center justify-between p-4 border-b border-[#262626]">
-        <h3 className="text-sm font-medium text-white truncate pr-2">{attachment.filename}</h3>
+      <div className="sticky top-0 bg-[#0a0a0a] z-10 flex items-center gap-1 p-4 border-b border-[#262626]">
+        <button
+          onClick={goPrev}
+          disabled={!hasPrev}
+          className="w-6 h-6 rounded-full bg-[#1c1c1c] flex items-center justify-center hover:bg-[#262626] transition-colors flex-shrink-0 disabled:opacity-30"
+        >
+          <ChevronLeft className="w-3.5 h-3.5 text-[#a3a3a3]" />
+        </button>
+        <button
+          onClick={goNext}
+          disabled={!hasNext}
+          className="w-6 h-6 rounded-full bg-[#1c1c1c] flex items-center justify-center hover:bg-[#262626] transition-colors flex-shrink-0 disabled:opacity-30"
+        >
+          <ChevronRight className="w-3.5 h-3.5 text-[#a3a3a3]" />
+        </button>
+        <h3 className="text-sm font-medium text-white truncate px-1 flex-1">{attachment.filename}</h3>
         <button
           onClick={onClose}
           className="w-6 h-6 rounded-full bg-[#1c1c1c] flex items-center justify-center hover:bg-[#262626] transition-colors flex-shrink-0"
@@ -73,7 +121,6 @@ export function DetailPanel({ attachment, onClose }: Props): JSX.Element {
           </div>
         )}
 
-        {/* Source badge */}
         {attachment.source === 'backup' && (
           <div className="flex items-center gap-2 mb-4 p-3 rounded-lg bg-amber-950/30 border border-amber-900/30">
             <p className="text-xs text-amber-400">From iPhone backup</p>
@@ -153,7 +200,13 @@ export function DetailPanel({ attachment, onClose }: Props): JSX.Element {
           <div className="mt-6">
             <div className="flex items-center gap-1.5 mb-2">
               <Eye className="w-3.5 h-3.5 text-[#636363]" />
-              <h4 className="text-xs font-semibold text-[#636363] uppercase tracking-wider">Text in image</h4>
+              <h4 className="text-xs font-semibold text-[#636363] uppercase tracking-wider flex-1">Text in image</h4>
+              <button
+                onClick={handleCopyOcr}
+                className="flex items-center gap-1 text-[10px] text-[#636363] hover:text-white transition-colors"
+              >
+                {copied ? <><Check className="w-3 h-3 text-teal-400" /><span className="text-teal-400">Copied</span></> : <><Copy className="w-3 h-3" /><span>Copy</span></>}
+              </button>
             </div>
             <div className="p-3 rounded-lg bg-[#141414] border border-[#262626]">
               <p className="text-xs text-[#a3a3a3] whitespace-pre-wrap leading-relaxed select-text">{attachment.ocr_text}</p>

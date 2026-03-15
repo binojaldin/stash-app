@@ -1,12 +1,22 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { Grid, List, ChevronDown } from 'lucide-react'
 import { PermissionScreen } from './components/PermissionScreen'
 import { ChatPriorityScreen } from './components/ChatPriorityScreen'
 import { IndexingOverlay } from './components/IndexingOverlay'
-import { SearchBar } from './components/SearchBar'
+import { SearchBar, SearchBarRef } from './components/SearchBar'
 import { Sidebar } from './components/Sidebar'
 import { AttachmentGrid } from './components/AttachmentGrid'
 import { DetailPanel } from './components/DetailPanel'
 import type { Attachment, ChatSummary, Filters, IndexingProgress, Stats } from './types'
+
+const SORT_OPTIONS = [
+  { value: 'newest', label: 'Newest first' },
+  { value: 'oldest', label: 'Oldest first' },
+  { value: 'largest', label: 'Largest first' },
+  { value: 'sender', label: 'By sender' }
+] as const
+
+type SortOrder = typeof SORT_OPTIONS[number]['value']
 
 export default function App(): JSX.Element {
   const [hasAccess, setHasAccess] = useState<boolean | null>(null)
@@ -15,27 +25,34 @@ export default function App(): JSX.Element {
   const [showChatPriority, setShowChatPriority] = useState(false)
   const [chatSummaries, setChatSummaries] = useState<ChatSummary[]>([])
   const [indexingProgress, setIndexingProgress] = useState<IndexingProgress>({
-    total: 0,
-    processed: 0,
-    currentFile: ''
+    total: 0, processed: 0, currentFile: ''
   })
   const [query, setQuery] = useState('')
   const [filters, setFilters] = useState<Filters>({ type: 'all' })
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [selectedAttachment, setSelectedAttachment] = useState<Attachment | null>(null)
   const [stats, setStats] = useState<Stats>({
-    total: 0,
-    images: 0,
-    videos: 0,
-    documents: 0,
-    audio: 0,
-    unavailable: 0,
-    chatNames: []
+    total: 0, images: 0, videos: 0, documents: 0, audio: 0, unavailable: 0, chatNames: []
   })
   const [page, setPage] = useState(0)
   const [hasMore, setHasMore] = useState(true)
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>(() =>
+    (localStorage.getItem('stash-view-mode') as 'grid' | 'list') || 'grid'
+  )
+  const [sortOrder, setSortOrder] = useState<SortOrder>('newest')
+  const [showSortMenu, setShowSortMenu] = useState(false)
   const debounceRef = useRef<NodeJS.Timeout>()
   const initialIndexDone = useRef(false)
+  const searchBarRef = useRef<SearchBarRef>(null)
+
+  // Persist view mode
+  useEffect(() => { localStorage.setItem('stash-view-mode', viewMode) }, [viewMode])
+
+  // Listen for Cmd+F
+  useEffect(() => {
+    const unsub = window.api.onFocusSearch(() => searchBarRef.current?.focus())
+    return unsub
+  }, [])
 
   // Check disk access on mount
   useEffect(() => {
@@ -53,21 +70,17 @@ export default function App(): JSX.Element {
   // Once access is granted, check if we need to show priority screen
   useEffect(() => {
     if (hasAccess && !initialIndexDone.current) {
-      // Check if user already has saved preferences (returning user)
       window.api.getSavedPriorityChats().then((saved) => {
         if (saved !== null) {
-          // Returning user — start indexing directly
           initialIndexDone.current = true
           setIsIndexing(true)
           window.api.startIndexing()
         } else {
-          // First time — show chat priority screen
           window.api.getChatSummaries().then((summaries) => {
             if (summaries.length > 0) {
               setChatSummaries(summaries)
               setShowChatPriority(true)
             } else {
-              // No chats found, just start
               initialIndexDone.current = true
               setIsIndexing(true)
               window.api.startIndexing()
@@ -87,11 +100,13 @@ export default function App(): JSX.Element {
   }, [])
 
   const handleManageConversations = useCallback(async () => {
+    const confirmed = await window.api.confirmReset()
+    if (!confirmed) return
     await window.api.resetIndexing()
     const summaries = await window.api.getChatSummaries()
     setChatSummaries(summaries)
     setAttachments([])
-    setStats({ total: 0, images: 0, videos: 0, documents: 0, audio: 0, chatNames: [] })
+    setStats({ total: 0, images: 0, videos: 0, documents: 0, audio: 0, unavailable: 0, chatNames: [] })
     setShowChatPriority(true)
   }, [])
 
@@ -102,7 +117,6 @@ export default function App(): JSX.Element {
       if (data.total > 0 && data.processed >= data.total && data.phase === 'Complete') {
         setIsIndexing(false)
       }
-      // Refresh results periodically during indexing
       if (data.processed > 0 && data.processed % 20 === 0) {
         loadAttachments()
         loadStats()
@@ -111,12 +125,8 @@ export default function App(): JSX.Element {
     return unsub
   }, [])
 
-  // Listen for new attachments from watcher
   useEffect(() => {
-    const unsub = window.api.onNewAttachment(() => {
-      loadAttachments()
-      loadStats()
-    })
+    const unsub = window.api.onNewAttachment(() => { loadAttachments(); loadStats() })
     return unsub
   }, [])
 
@@ -132,12 +142,12 @@ export default function App(): JSX.Element {
     if (filters.dateRange) filterParams.dateRange = filters.dateRange
 
     const results = query
-      ? await window.api.searchAttachments(query, filterParams, 0, 50)
-      : await window.api.getAttachments(filterParams, 0, 50)
+      ? await window.api.searchAttachments(query, filterParams, 0, 50, sortOrder)
+      : await window.api.getAttachments(filterParams, 0, 50, sortOrder)
     setAttachments(results as Attachment[])
     setPage(0)
     setHasMore((results as Attachment[]).length === 50)
-  }, [query, filters])
+  }, [query, filters, sortOrder])
 
   const loadMore = useCallback(async () => {
     const nextPage = page + 1
@@ -147,37 +157,33 @@ export default function App(): JSX.Element {
     if (filters.dateRange) filterParams.dateRange = filters.dateRange
 
     const results = query
-      ? await window.api.searchAttachments(query, filterParams, nextPage, 50)
-      : await window.api.getAttachments(filterParams, nextPage, 50)
+      ? await window.api.searchAttachments(query, filterParams, nextPage, 50, sortOrder)
+      : await window.api.getAttachments(filterParams, nextPage, 50, sortOrder)
     const newResults = results as Attachment[]
     setAttachments((prev) => [...prev, ...newResults])
     setPage(nextPage)
     setHasMore(newResults.length === 50)
-  }, [query, filters, page])
+  }, [query, filters, page, sortOrder])
 
   // Debounced search
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
-    debounceRef.current = setTimeout(() => {
-      loadAttachments()
-    }, 200)
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current)
-    }
-  }, [query, filters, loadAttachments])
+    debounceRef.current = setTimeout(() => { loadAttachments() }, 200)
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
+  }, [query, filters, sortOrder, loadAttachments])
 
-  // Load stats on access
-  useEffect(() => {
-    if (hasAccess) loadStats()
-  }, [hasAccess, loadStats])
+  useEffect(() => { if (hasAccess) loadStats() }, [hasAccess, loadStats])
+  useEffect(() => { if (!isIndexing && hasAccess) { loadStats(); loadAttachments() } }, [isIndexing])
 
-  // Reload stats after indexing
+  // Close sort menu on click outside
   useEffect(() => {
-    if (!isIndexing && hasAccess) {
-      loadStats()
-      loadAttachments()
-    }
-  }, [isIndexing])
+    if (!showSortMenu) return
+    const handler = (): void => setShowSortMenu(false)
+    window.addEventListener('click', handler)
+    return () => window.removeEventListener('click', handler)
+  }, [showSortMenu])
+
+  const selectedIndex = selectedAttachment ? attachments.findIndex((a) => a.id === selectedAttachment.id) : -1
 
   if (hasAccess === null) {
     return (
@@ -187,13 +193,10 @@ export default function App(): JSX.Element {
     )
   }
 
-  if (!hasAccess) {
-    return <PermissionScreen />
-  }
+  if (!hasAccess) return <PermissionScreen />
+  if (showChatPriority) return <ChatPriorityScreen chats={chatSummaries} onStart={handleStartWithPriority} />
 
-  if (showChatPriority) {
-    return <ChatPriorityScreen chats={chatSummaries} onStart={handleStartWithPriority} />
-  }
+  const isImageView = viewMode === 'grid' && (!filters.type || filters.type === 'all' || filters.type === 'images')
 
   return (
     <div className="flex flex-col h-screen bg-[#0a0a0a]">
@@ -201,7 +204,6 @@ export default function App(): JSX.Element {
         <IndexingOverlay progress={indexingProgress} onBrowse={() => setShowIndexing(false)} />
       )}
 
-      {/* Persistent progress bar while indexing in background */}
       {isIndexing && !showIndexing && indexingProgress.total > 0 && (
         <div className="fixed top-0 left-0 right-0 z-50 h-[3px] bg-[#1c1c1c]">
           <div
@@ -218,7 +220,7 @@ export default function App(): JSX.Element {
 
       {/* Search bar */}
       <div className="px-4 pb-3 flex-shrink-0">
-        <SearchBar value={query} onChange={setQuery} />
+        <SearchBar ref={searchBarRef} value={query} onChange={setQuery} />
       </div>
 
       {/* Main content */}
@@ -230,21 +232,69 @@ export default function App(): JSX.Element {
           onManageConversations={!isIndexing ? handleManageConversations : undefined}
         />
 
-        <div className="flex-1 min-w-0 overflow-y-auto p-4">
-          <AttachmentGrid
-            attachments={attachments}
-            selectedId={selectedAttachment?.id ?? null}
-            onSelect={setSelectedAttachment}
-            onLoadMore={loadMore}
-            hasMore={hasMore}
-            isImageView={!filters.type || filters.type === 'all' || filters.type === 'images'}
-          />
+        <div className="flex-1 min-w-0 flex flex-col">
+          {/* Toolbar: view toggle + sort */}
+          <div className="flex items-center justify-between px-4 py-2 border-b border-[#1c1c1c] flex-shrink-0">
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setViewMode('grid')}
+                className={`p-1.5 rounded-md transition-colors ${viewMode === 'grid' ? 'bg-[#1c1c1c] text-white' : 'text-[#636363] hover:text-[#a3a3a3]'}`}
+              >
+                <Grid className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => setViewMode('list')}
+                className={`p-1.5 rounded-md transition-colors ${viewMode === 'list' ? 'bg-[#1c1c1c] text-white' : 'text-[#636363] hover:text-[#a3a3a3]'}`}
+              >
+                <List className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="relative">
+              <button
+                onClick={(e) => { e.stopPropagation(); setShowSortMenu(!showSortMenu) }}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs text-[#a3a3a3] hover:bg-[#1c1c1c] hover:text-white transition-colors"
+              >
+                {SORT_OPTIONS.find((o) => o.value === sortOrder)?.label}
+                <ChevronDown className="w-3 h-3" />
+              </button>
+              {showSortMenu && (
+                <div className="absolute right-0 top-full mt-1 w-40 bg-[#1c1c1c] border border-[#262626] rounded-lg shadow-lg z-20 overflow-hidden">
+                  {SORT_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.value}
+                      onClick={() => { setSortOrder(opt.value); setShowSortMenu(false) }}
+                      className={`w-full text-left px-3 py-2 text-xs transition-colors ${
+                        sortOrder === opt.value ? 'text-white bg-[#262626]' : 'text-[#a3a3a3] hover:bg-[#222] hover:text-white'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-4">
+            <AttachmentGrid
+              attachments={attachments}
+              selectedId={selectedAttachment?.id ?? null}
+              onSelect={setSelectedAttachment}
+              onLoadMore={loadMore}
+              hasMore={hasMore}
+              isImageView={isImageView}
+            />
+          </div>
         </div>
 
         {selectedAttachment && (
           <DetailPanel
             attachment={selectedAttachment}
+            attachments={attachments}
+            currentIndex={selectedIndex}
             onClose={() => setSelectedAttachment(null)}
+            onNavigate={setSelectedAttachment}
           />
         )}
       </div>

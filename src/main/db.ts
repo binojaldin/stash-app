@@ -174,7 +174,8 @@ export function searchAttachments(
   query: string,
   filters: { type?: string; chatName?: string; dateRange?: string },
   page = 0,
-  limit = 50
+  limit = 50,
+  sortOrder?: string
 ): StashAttachment[] {
   const d = initDb()
   const conditions: string[] = []
@@ -222,7 +223,14 @@ export function searchAttachments(
   }
 
   if (conditions.length > 0) sql += ' AND ' + conditions.join(' AND ')
-  sql += ' ORDER BY created_at DESC LIMIT ? OFFSET ?'
+
+  let orderClause = 'ORDER BY created_at DESC'
+  switch (sortOrder) {
+    case 'oldest': orderClause = 'ORDER BY created_at ASC'; break
+    case 'largest': orderClause = 'ORDER BY file_size DESC'; break
+    case 'sender': orderClause = 'ORDER BY sender_handle ASC, created_at DESC'; break
+  }
+  sql += ` ${orderClause} LIMIT ? OFFSET ?`
   params.push(limit, page * limit)
 
   try { return d.prepare(sql).all(...params) as StashAttachment[] }
