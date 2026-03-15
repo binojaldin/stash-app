@@ -293,8 +293,18 @@ export function searchAttachments(
   catch (err) { console.error('Search error:', err); return [] }
 }
 
+export interface ChatNameEntry {
+  rawName: string
+  attachmentCount: number
+  lastMessageDate: string
+  messageCount: number
+  sentCount: number
+  receivedCount: number
+  initiationCount: number
+}
+
 export function getStats(chatNameFilter?: string): {
-  total: number; images: number; videos: number; documents: number; audio: number; unavailable: number; chatNames: string[]
+  total: number; images: number; videos: number; documents: number; audio: number; unavailable: number; chatNames: ChatNameEntry[]
 } {
   const d = initDb()
   const where = chatNameFilter ? ' WHERE chat_name = ?' : ''
@@ -311,9 +321,68 @@ export function getStats(chatNameFilter?: string): {
     FROM attachments WHERE chat_name IS NOT NULL GROUP BY chat_name ORDER BY chat_name
   `).all() as { chat_name: string; attachment_count: number; last_message_date: string }[])
     .filter((r) => !hidden.has(r.chat_name))
-  const chatNames = chatDetails.map((r) => r.chat_name)
-  const chatData = chatDetails.map((r) => ({ rawName: r.chat_name, attachmentCount: r.attachment_count, lastMessageDate: r.last_message_date || '' }))
-  return { total, images, videos, documents, audio, unavailable, chatNames, chatData }
+
+  // Enrich with message counts from chat.db
+  let msgStats = new Map<string, { messageCount: number; sentCount: number; receivedCount: number; initiationCount: number }>()
+  try {
+    const { homedir } = require('os')
+    const { join } = require('path')
+    const { existsSync } = require('fs')
+    const chatDbPath = join(homedir(), 'Library/Messages/chat.db')
+    if (existsSync(chatDbPath)) {
+      const chatDb = new Database(chatDbPath, { readonly: true })
+      const rows = chatDb.prepare(`
+        SELECT
+          COALESCE(NULLIF(c.display_name, ''), c.chat_identifier) as chat_name,
+          COUNT(m.ROWID) as message_count,
+          SUM(CASE WHEN m.is_from_me = 1 THEN 1 ELSE 0 END) as sent_count,
+          SUM(CASE WHEN m.is_from_me = 0 THEN 1 ELSE 0 END) as received_count
+        FROM message m
+        JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
+        JOIN chat c ON cmj.chat_id = c.ROWID
+        WHERE m.text IS NOT NULL OR m.cache_has_attachments = 1
+        GROUP BY c.ROWID
+      `).all() as { chat_name: string; message_count: number; sent_count: number; received_count: number }[]
+
+      // Initiation count: days where user sent first message
+      const initRows = chatDb.prepare(`
+        SELECT
+          COALESCE(NULLIF(c.display_name, ''), c.chat_identifier) as chat_name,
+          COUNT(DISTINCT date(datetime(m.date/1000000000 + 978307200, 'unixepoch', 'localtime'))) as init_days
+        FROM message m
+        JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
+        JOIN chat c ON cmj.chat_id = c.ROWID
+        WHERE m.is_from_me = 1
+        GROUP BY c.ROWID
+      `).all() as { chat_name: string; init_days: number }[]
+
+      const initMap = new Map(initRows.map((r) => [r.chat_name, r.init_days]))
+      for (const r of rows) {
+        msgStats.set(r.chat_name, {
+          messageCount: r.message_count,
+          sentCount: r.sent_count,
+          receivedCount: r.received_count,
+          initiationCount: initMap.get(r.chat_name) || 0
+        })
+      }
+      chatDb.close()
+    }
+  } catch { /* fallback: all zeros */ }
+
+  const chatNames = chatDetails.map((r) => {
+    const ms = msgStats.get(r.chat_name)
+    return {
+      rawName: r.chat_name,
+      attachmentCount: r.attachment_count,
+      lastMessageDate: r.last_message_date || '',
+      messageCount: ms?.messageCount || 0,
+      sentCount: ms?.sentCount || 0,
+      receivedCount: ms?.receivedCount || 0,
+      initiationCount: ms?.initiationCount || 0
+    }
+  })
+
+  return { total, images, videos, documents, audio, unavailable, chatNames }
 }
 
 // Returns chat names with contact resolution applied

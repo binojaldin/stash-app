@@ -149,9 +149,10 @@ function setupIpc(): void {
     const chatNameMap: Record<string, string> = {}
     try {
       compileContactsHelper()
-      const handles = stats.chatNames.filter((n: string) => n && (n.startsWith('+') || n.includes('@')))
+      const rawNames = stats.chatNames.map((c) => c.rawName)
+      const handles = rawNames.filter((n) => n && (n.startsWith('+') || n.includes('@')))
       if (handles.length > 0) resolveContactsBatch(handles)
-      for (const name of stats.chatNames) {
+      for (const name of rawNames) {
         if (name && (name.startsWith('+') || name.includes('@'))) {
           chatNameMap[name] = resolveContact(name) || name
         } else {
@@ -159,7 +160,7 @@ function setupIpc(): void {
         }
       }
     } catch {
-      for (const name of stats.chatNames) chatNameMap[name] = name
+      for (const c of stats.chatNames) chatNameMap[c.rawName] = c.rawName
     }
     return { ...stats, chatNameMap }
   })

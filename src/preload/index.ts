@@ -10,7 +10,7 @@ const api = {
   ): Promise<unknown[]> => ipcRenderer.invoke('get-attachments', filters, page ?? 0, limit ?? 50, sortOrder),
   getStats: (chatNameFilter?: string): Promise<{
     total: number; images: number; videos: number; documents: number; audio: number; unavailable: number
-    chatNames: string[]; chatData: { rawName: string; attachmentCount: number; lastMessageDate: string }[]
+    chatNames: { rawName: string; attachmentCount: number; lastMessageDate: string; messageCount: number; sentCount: number; receivedCount: number; initiationCount: number }[]
     chatNameMap: Record<string, string>
   }> => ipcRenderer.invoke('get-stats', chatNameFilter),
   getAttachment: (id: number): Promise<unknown> => ipcRenderer.invoke('get-attachment', id),
