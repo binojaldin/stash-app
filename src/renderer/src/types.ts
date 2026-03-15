@@ -40,6 +40,7 @@ export interface Stats {
   audio: number
   unavailable: number
   chatNames: string[]
+  chatNameMap: Record<string, string>
 }
 
 export interface ChatSummary {

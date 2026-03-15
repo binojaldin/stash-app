@@ -114,20 +114,21 @@ export function Sidebar({ stats, filters, onFilterChange, onManageConversations 
             All conversations
           </button>
           <div className="max-h-60 overflow-y-auto">
-            {stats.chatNames.map((name) => {
-              const active = filters.chatName === name
+            {stats.chatNames.map((rawName) => {
+              const displayName = stats.chatNameMap?.[rawName] || rawName
+              const active = filters.chatName === rawName
               return (
                 <button
-                  key={name}
-                  onClick={() => onFilterChange({ ...filters, chatName: name })}
+                  key={rawName}
+                  onClick={() => onFilterChange({ ...filters, chatName: rawName })}
                   className={`w-full text-left px-2 py-1.5 rounded-md text-sm truncate transition-colors ${
                     active
                       ? 'bg-[#1c1c1c] text-white'
                       : 'text-[#a3a3a3] hover:bg-[#141414] hover:text-white'
                   }`}
-                  title={name}
+                  title={displayName}
                 >
-                  {name}
+                  {displayName}
                 </button>
               )
             })}

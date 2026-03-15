@@ -10,6 +10,7 @@ interface Props {
   onLoadMore: () => void
   hasMore: boolean
   isImageView: boolean
+  chatNameMap?: Record<string, string>
 }
 
 function formatFileSize(bytes: number): string {
@@ -98,8 +99,14 @@ function ThumbnailImage({ attachment }: { attachment: Attachment }): JSX.Element
   )
 }
 
-function ImageCard({ attachment, selected, onClick }: { attachment: Attachment; selected: boolean; onClick: () => void }): JSX.Element {
+function resolveName(raw: string | null, map?: Record<string, string>): string {
+  if (!raw) return ''
+  return map?.[raw] || raw
+}
+
+function ImageCard({ attachment, selected, onClick, chatNameMap }: { attachment: Attachment; selected: boolean; onClick: () => void; chatNameMap?: Record<string, string> }): JSX.Element {
   const unavailable = !attachment.is_available
+  const displayContact = attachment.source === 'orphan' ? 'Unknown conversation' : resolveName(attachment.sender_handle || attachment.chat_name, chatNameMap)
   return (
     <button
       onClick={onClick}
@@ -118,7 +125,7 @@ function ImageCard({ attachment, selected, onClick }: { attachment: Attachment; 
       <div className="p-2">
         <p className={`text-xs truncate ${unavailable ? 'text-[#636363]' : 'text-white'}`}>{attachment.filename}</p>
         <p className="text-[10px] text-[#636363] truncate">
-          {attachment.source === 'orphan' ? 'Unknown conversation' : (attachment.sender_handle || attachment.chat_name || '')}
+          {displayContact}
           {attachment.created_at && ` · ${format(new Date(attachment.created_at), 'MMM d, yyyy')}`}
         </p>
       </div>
@@ -126,8 +133,9 @@ function ImageCard({ attachment, selected, onClick }: { attachment: Attachment; 
   )
 }
 
-function ListRow({ attachment, selected, onClick }: { attachment: Attachment; selected: boolean; onClick: () => void }): JSX.Element {
+function ListRow({ attachment, selected, onClick, chatNameMap }: { attachment: Attachment; selected: boolean; onClick: () => void; chatNameMap?: Record<string, string> }): JSX.Element {
   const unavailable = !attachment.is_available
+  const displayContact = attachment.source === 'orphan' ? 'Unknown conversation' : resolveName(attachment.sender_handle || attachment.chat_name, chatNameMap)
   return (
     <button
       onClick={onClick}
@@ -153,7 +161,7 @@ function ListRow({ attachment, selected, onClick }: { attachment: Attachment; se
           {attachment.source === 'backup' && <span className="text-[10px] text-amber-400 flex-shrink-0">backup</span>}
         </div>
         <p className="text-xs text-[#636363]">
-          {attachment.source === 'orphan' ? 'Unknown conversation' : (attachment.sender_handle || attachment.chat_name || '')}
+          {displayContact}
           {unavailable && ' · in iCloud'}
           {attachment.created_at && ` · ${format(new Date(attachment.created_at), 'MMM d, yyyy')}`}
         </p>
@@ -165,7 +173,7 @@ function ListRow({ attachment, selected, onClick }: { attachment: Attachment; se
   )
 }
 
-export function AttachmentGrid({ attachments, selectedId, onSelect, onLoadMore, hasMore, isImageView }: Props): JSX.Element {
+export function AttachmentGrid({ attachments, selectedId, onSelect, onLoadMore, hasMore, isImageView, chatNameMap }: Props): JSX.Element {
   const observerRef = useRef<IntersectionObserver>()
   const loadMoreRef = useCallback(
     (node: HTMLDivElement | null) => {
@@ -192,7 +200,7 @@ export function AttachmentGrid({ attachments, selectedId, onSelect, onLoadMore, 
       <>
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
           {attachments.map((att) => (
-            <ImageCard key={att.id} attachment={att} selected={selectedId === att.id} onClick={() => onSelect(att)} />
+            <ImageCard key={att.id} attachment={att} selected={selectedId === att.id} onClick={() => onSelect(att)} chatNameMap={chatNameMap} />
           ))}
         </div>
         {hasMore && <div ref={loadMoreRef} className="h-10" />}
@@ -204,7 +212,7 @@ export function AttachmentGrid({ attachments, selectedId, onSelect, onLoadMore, 
     <>
       <div className="space-y-1">
         {attachments.map((att) => (
-          <ListRow key={att.id} attachment={att} selected={selectedId === att.id} onClick={() => onSelect(att)} />
+          <ListRow key={att.id} attachment={att} selected={selectedId === att.id} onClick={() => onSelect(att)} chatNameMap={chatNameMap} />
         ))}
       </div>
       {hasMore && <div ref={loadMoreRef} className="h-10" />}

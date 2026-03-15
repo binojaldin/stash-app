@@ -143,17 +143,21 @@ function setupIpc(): void {
 
   ipcMain.handle('get-stats', () => {
     const stats = getStats()
-    // Resolve chat names through contacts cache (non-blocking, uses cached values)
+    // Build chatNameMap: raw -> resolved for sidebar display
+    const chatNameMap: Record<string, string> = {}
     try {
       const { resolveContact } = require('./contacts')
-      stats.chatNames = stats.chatNames.map((name: string) => {
+      for (const name of stats.chatNames) {
         if (name && (name.startsWith('+') || name.includes('@'))) {
-          return resolveContact(name) || name
+          chatNameMap[name] = resolveContact(name) || name
+        } else {
+          chatNameMap[name] = name
         }
-        return name
-      })
-    } catch { /* contacts not compiled yet, use raw names */ }
-    return stats
+      }
+    } catch {
+      for (const name of stats.chatNames) chatNameMap[name] = name
+    }
+    return { ...stats, chatNameMap }
   })
   ipcMain.handle('get-attachment', (_event, id: number) => getAttachmentById(id))
 
@@ -197,7 +201,11 @@ function setupIpc(): void {
   })
 
   ipcMain.handle('get-file-url', (_event, filePath: string) => {
-    if (filePath && existsSync(filePath)) return `file://${filePath}`
+    if (filePath && existsSync(filePath)) {
+      // Use pathToFileURL to properly encode spaces and special chars
+      const { pathToFileURL } = require('url')
+      return pathToFileURL(filePath).href
+    }
     return null
   })
 }

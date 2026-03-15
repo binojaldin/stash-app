@@ -32,7 +32,7 @@ export default function App(): JSX.Element {
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [selectedAttachment, setSelectedAttachment] = useState<Attachment | null>(null)
   const [stats, setStats] = useState<Stats>({
-    total: 0, images: 0, videos: 0, documents: 0, audio: 0, unavailable: 0, chatNames: []
+    total: 0, images: 0, videos: 0, documents: 0, audio: 0, unavailable: 0, chatNames: [], chatNameMap: {}
   })
   const [page, setPage] = useState(0)
   const [hasMore, setHasMore] = useState(true)
@@ -117,7 +117,7 @@ export default function App(): JSX.Element {
     if (!confirmed) return
     await window.api.resetIndexing()
     setAttachments([])
-    setStats({ total: 0, images: 0, videos: 0, documents: 0, audio: 0, unavailable: 0, chatNames: [] })
+    setStats({ total: 0, images: 0, videos: 0, documents: 0, audio: 0, unavailable: 0, chatNames: [], chatNameMap: {} })
     const summaries = await window.api.getChatSummaries()
     setChatSummaries(summaries)
     setAppState('priority')
@@ -331,6 +331,7 @@ export default function App(): JSX.Element {
               onLoadMore={loadMore}
               hasMore={hasMore}
               isImageView={isImageView}
+              chatNameMap={stats.chatNameMap}
             />
           </div>
         </div>
