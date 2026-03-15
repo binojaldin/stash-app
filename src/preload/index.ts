@@ -9,7 +9,9 @@ const api = {
     filters: Record<string, string>, page?: number, limit?: number, sortOrder?: string
   ): Promise<unknown[]> => ipcRenderer.invoke('get-attachments', filters, page ?? 0, limit ?? 50, sortOrder),
   getStats: (chatNameFilter?: string): Promise<{
-    total: number; images: number; videos: number; documents: number; audio: number; unavailable: number; chatNames: string[]; chatNameMap: Record<string, string>
+    total: number; images: number; videos: number; documents: number; audio: number; unavailable: number
+    chatNames: string[]; chatData: { rawName: string; attachmentCount: number; lastMessageDate: string }[]
+    chatNameMap: Record<string, string>
   }> => ipcRenderer.invoke('get-stats', chatNameFilter),
   getAttachment: (id: number): Promise<unknown> => ipcRenderer.invoke('get-attachment', id),
   openInFinder: (path: string): Promise<boolean> => ipcRenderer.invoke('open-in-finder', path),

@@ -53,6 +53,7 @@ export function Sidebar({ stats, filters, onFilterChange, onManageConversations,
   })
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; rawName: string } | null>(null)
   const [chatFilter, setChatFilter] = useState('')
+  const [chatSort, setChatSort] = useState<string>('most-attachments')
   const [showFinder, setShowFinder] = useState(false)
   const [finderQuery, setFinderQuery] = useState('')
   const [finderLoading, setFinderLoading] = useState(false)
@@ -63,14 +64,38 @@ export function Sidebar({ stats, filters, onFilterChange, onManageConversations,
   const [keySaved, setKeySaved] = useState(false)
   const finderRef = useRef<HTMLTextAreaElement>(null)
 
+  // Build a lookup map from chatData
+  const chatDataMap = useMemo(() => {
+    const m = new Map<string, { attachmentCount: number; lastMessageDate: string }>()
+    for (const cd of (stats.chatData || [])) m.set(cd.rawName, cd)
+    return m
+  }, [stats.chatData])
+
   const filteredChats = useMemo(() => {
-    if (!chatFilter) return stats.chatNames
-    const q = chatFilter.toLowerCase()
-    return stats.chatNames.filter((rawName) => {
-      const displayName = stats.chatNameMap?.[rawName] || rawName
-      return displayName.toLowerCase().includes(q) || rawName.toLowerCase().includes(q)
+    let list = stats.chatNames
+
+    // Filter by search
+    if (chatFilter) {
+      const q = chatFilter.toLowerCase()
+      list = list.filter((rawName) => {
+        const displayName = stats.chatNameMap?.[rawName] || rawName
+        return displayName.toLowerCase().includes(q) || rawName.toLowerCase().includes(q)
+      })
+    }
+
+    // Sort
+    return [...list].sort((a, b) => {
+      const da = chatDataMap.get(a)
+      const db = chatDataMap.get(b)
+      switch (chatSort) {
+        case 'most-attachments': return (db?.attachmentCount || 0) - (da?.attachmentCount || 0)
+        case 'fewest-attachments': return (da?.attachmentCount || 0) - (db?.attachmentCount || 0)
+        case 'most-recent': return (db?.lastMessageDate || '').localeCompare(da?.lastMessageDate || '')
+        case 'oldest': return (da?.lastMessageDate || '').localeCompare(db?.lastMessageDate || '')
+        default: return 0
+      }
     })
-  }, [stats.chatNames, stats.chatNameMap, chatFilter])
+  }, [stats.chatNames, stats.chatNameMap, chatFilter, chatSort, chatDataMap])
 
   const handleContextMenu = (e: React.MouseEvent, rawName: string): void => {
     e.preventDefault(); e.stopPropagation()
@@ -167,6 +192,18 @@ export function Sidebar({ stats, filters, onFilterChange, onManageConversations,
             )}
           </div>
 
+          {/* Sort dropdown */}
+          <select
+            value={chatSort}
+            onChange={(e) => setChatSort(e.target.value)}
+            className="w-full h-7 px-1.5 mb-1.5 text-xs bg-[#141414] border border-[#262626] rounded-md text-[#a3a3a3] outline-none focus:border-[#444] cursor-pointer"
+          >
+            <option value="most-attachments">Most attachments</option>
+            <option value="fewest-attachments">Fewest attachments</option>
+            <option value="most-recent">Most recent</option>
+            <option value="oldest">Oldest</option>
+          </select>
+
           {/* AI finder button */}
           <button
             onClick={() => { setShowFinder(!showFinder); if (!showFinder) setTimeout(() => finderRef.current?.focus(), 100) }}
@@ -231,17 +268,21 @@ export function Sidebar({ stats, filters, onFilterChange, onManageConversations,
           <div className="max-h-60 overflow-y-auto">
             {filteredChats.map((rawName) => {
               const displayName = stats.chatNameMap?.[rawName] || rawName
+              const cd = chatDataMap.get(rawName)
               const active = filters.chatName === rawName
               const highlighted = finderSet.has(rawName)
               return (
                 <button key={rawName}
                   onClick={() => onFilterChange({ ...filters, chatName: rawName })}
                   onContextMenu={(e) => handleContextMenu(e, rawName)}
-                  className={`w-full text-left px-2 py-1.5 rounded-md text-sm truncate transition-colors ${
+                  className={`w-full flex items-center gap-1 px-2 py-1.5 rounded-md text-sm transition-colors ${
                     active ? 'bg-[#1c1c1c] text-white' : 'text-[#a3a3a3] hover:bg-[#141414] hover:text-white'
                   } ${highlighted ? 'border-l-2 border-teal-400 pl-1.5' : ''}`}
                   title={displayName}
-                >{displayName}</button>
+                >
+                  <span className="flex-1 truncate text-left">{displayName}</span>
+                  {cd && <span className="text-[10px] text-[#4a4a4a] flex-shrink-0 tabular-nums">{cd.attachmentCount}</span>}
+                </button>
               )
             })}
           </div>

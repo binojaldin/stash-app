@@ -306,10 +306,14 @@ export function getStats(chatNameFilter?: string): {
   const audio = (d.prepare(`SELECT COUNT(*) as c FROM attachments WHERE mime_type LIKE 'audio/%'${chatNameFilter ? ' AND chat_name = ?' : ''}`).get(...params) as { c: number }).c
   const unavailable = (d.prepare(`SELECT COUNT(*) as c FROM attachments WHERE is_available = 0${chatNameFilter ? ' AND chat_name = ?' : ''}`).get(...params) as { c: number }).c
   const hidden = new Set(getHiddenChats())
-  const chatNames = (d.prepare('SELECT DISTINCT chat_name FROM attachments WHERE chat_name IS NOT NULL ORDER BY chat_name').all() as { chat_name: string }[])
-    .map((r) => r.chat_name)
-    .filter((n) => !hidden.has(n))
-  return { total, images, videos, documents, audio, unavailable, chatNames }
+  const chatDetails = (d.prepare(`
+    SELECT chat_name, COUNT(*) as attachment_count, MAX(created_at) as last_message_date
+    FROM attachments WHERE chat_name IS NOT NULL GROUP BY chat_name ORDER BY chat_name
+  `).all() as { chat_name: string; attachment_count: number; last_message_date: string }[])
+    .filter((r) => !hidden.has(r.chat_name))
+  const chatNames = chatDetails.map((r) => r.chat_name)
+  const chatData = chatDetails.map((r) => ({ rawName: r.chat_name, attachmentCount: r.attachment_count, lastMessageDate: r.last_message_date || '' }))
+  return { total, images, videos, documents, audio, unavailable, chatNames, chatData }
 }
 
 // Returns chat names with contact resolution applied

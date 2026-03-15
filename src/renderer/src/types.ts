@@ -32,6 +32,12 @@ export interface IndexingProgress {
   phase?: string
 }
 
+export interface ChatDataItem {
+  rawName: string
+  attachmentCount: number
+  lastMessageDate: string
+}
+
 export interface Stats {
   total: number
   images: number
@@ -40,6 +46,7 @@ export interface Stats {
   audio: number
   unavailable: number
   chatNames: string[]
+  chatData: ChatDataItem[]
   chatNameMap: Record<string, string>
 }
 
