@@ -139,7 +139,8 @@ export function ChatPriorityScreen({ chats, indexedChatNames, onStart, onReset, 
       {onBack && (
         <button
           onClick={onBack}
-          className="absolute left-5 top-4 flex items-center gap-1 h-8 px-3 rounded-lg text-sm text-[#a3a3a3] hover:bg-[#1c1c1c] hover:text-white transition-colors z-10"
+          className="absolute top-4 flex items-center gap-1 h-8 px-3 rounded-lg text-sm text-[#a3a3a3] hover:bg-[#1c1c1c] hover:text-white transition-colors z-10"
+          style={{ left: '80px' }}
         >
           <ChevronLeft className="w-4 h-4" /> Back
         </button>
