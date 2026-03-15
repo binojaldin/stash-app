@@ -392,7 +392,18 @@ export function getStats(chatNameFilter?: string): {
           if (row.is_from_me === 0) entry.generated++ // they laughed at your message
           else entry.received++ // you laughed at their message
         }
-      } catch { /* laugh detection failed, ignore */ }
+      } catch (err) { console.error('[Laugh detection] Error:', err) }
+
+      // Log top laugh stats
+      const laughEntries = [...laughMap.entries()].sort((a, b) => (b[1].generated + b[1].received) - (a[1].generated + a[1].received))
+      if (laughEntries.length > 0) {
+        console.log(`[Laugh detection] Found laughs in ${laughEntries.length} conversations. Top 3:`)
+        for (const [name, counts] of laughEntries.slice(0, 3)) {
+          console.log(`  ${name}: generated=${counts.generated}, received=${counts.received}`)
+        }
+      } else {
+        console.log('[Laugh detection] No laughs detected in any conversation')
+      }
 
       for (const r of rows) {
         const laughs = laughMap.get(r.chat_name)
