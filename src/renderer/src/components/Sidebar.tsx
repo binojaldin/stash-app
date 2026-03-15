@@ -75,46 +75,32 @@ export function Sidebar({ stats, filters, onFilterChange, onManageConversations,
     if (!finderQuery.trim()) return
     setFinderLoading(true); setFinderError(null); setFinderResults(null)
     try {
-      const chatList = stats.chatNames.map((raw) => {
-        const display = stats.chatNameMap?.[raw] || raw
-        return `- "${display}" (identifier: ${raw})`
-      }).join('\n')
-
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': localStorage.getItem('stash-anthropic-key') || '',
-          'anthropic-version': '2023-06-01',
-          'anthropic-dangerous-direct-browser-access': 'true'
-        },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 256,
-          system: 'You are helping a user find a specific iMessage conversation. You will be given a list of conversations with metadata and the user\'s description. Return ONLY a JSON array of chat_identifier strings for the conversations that best match the description, ranked by confidence, max 5 results. No explanation, just the JSON array.',
-          messages: [{ role: 'user', content: `Conversations:\n${chatList}\n\nFind: ${finderQuery}` }]
-        })
-      })
-
-      if (!response.ok) {
-        const err = await response.text()
-        if (response.status === 401) {
-          const key = prompt('Enter your Anthropic API key to use conversation finder:')
-          if (key) { localStorage.setItem('stash-anthropic-key', key); handleFinderSubmit(); return }
-          setFinderError('API key required')
-        } else {
-          setFinderError(`API error: ${response.status}`)
-        }
-        setFinderLoading(false)
-        return
+      let apiKey = localStorage.getItem('stash-anthropic-key') || ''
+      if (!apiKey) {
+        const key = prompt('Enter your Anthropic API key to use conversation finder:')
+        if (!key) { setFinderError('API key required'); setFinderLoading(false); return }
+        localStorage.setItem('stash-anthropic-key', key)
+        apiKey = key
       }
-
-      const data = await response.json()
-      const text = data.content?.[0]?.text || '[]'
-      const matches = JSON.parse(text) as string[]
-      setFinderResults(matches.length > 0 ? matches : null)
-      if (matches.length === 0) setFinderError('No matches found')
+      const conversations = stats.chatNames.map((raw) => ({
+        display: stats.chatNameMap?.[raw] || raw,
+        identifier: raw
+      }))
+      const result = await window.api.searchConversationsAi(finderQuery, conversations, apiKey)
+      if (result.error) {
+        if (result.error.includes('401')) {
+          localStorage.removeItem('stash-anthropic-key')
+          setFinderError('Invalid API key — try again')
+        } else {
+          setFinderError(result.error)
+        }
+      } else if (result.results && result.results.length > 0) {
+        setFinderResults(result.results)
+      } else {
+        setFinderError('No matches found')
+      }
     } catch (err) {
+      console.error('[AI Finder]', err)
       setFinderError('Failed to search')
     }
     setFinderLoading(false)
@@ -166,7 +152,7 @@ export function Sidebar({ stats, filters, onFilterChange, onManageConversations,
           <div className="relative mb-1.5">
             <input
               type="text" value={chatFilter} onChange={(e) => setChatFilter(e.target.value)}
-              placeholder="Filter conversations..."
+              placeholder="Search by name, number, or group..."
               className="w-full h-7 px-2 text-xs bg-[#141414] border border-[#262626] rounded-md text-white placeholder-[#4a4a4a] outline-none focus:border-[#444]"
             />
             {chatFilter && (
@@ -188,7 +174,7 @@ export function Sidebar({ stats, filters, onFilterChange, onManageConversations,
               <textarea
                 ref={finderRef}
                 value={finderQuery} onChange={(e) => setFinderQuery(e.target.value)}
-                placeholder="Describe what you remember... e.g. 'the friend I texted about moving to NYC'"
+                placeholder="e.g. 'the friend I texted about moving to NYC' or 'whoever sent me photos in summer 2022'"
                 className="w-full h-16 px-2 py-1.5 text-xs bg-[#141414] border border-[#262626] rounded-md text-white placeholder-[#4a4a4a] outline-none focus:border-[#444] resize-none"
                 onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleFinderSubmit() } }}
               />

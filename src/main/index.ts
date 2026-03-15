@@ -189,6 +189,43 @@ function setupIpc(): void {
   ipcMain.handle('get-saved-priority-chats', () => getSavedPriorityChats())
   ipcMain.handle('reset-indexing', () => { resetIndexing() })
   ipcMain.handle('recover-from-icloud', async (_event, id: number) => recoverAttachment(id))
+
+  ipcMain.handle('search-conversations-ai', async (_event, description: string, conversations: { display: string; identifier: string }[], apiKey: string) => {
+    try {
+      const chatList = conversations.map((c) => `- "${c.display}" (identifier: ${c.identifier})`).join('\n')
+      const { net } = require('electron')
+      const response = await new Promise<{ status: number; body: string }>((resolve, reject) => {
+        const request = net.request({ method: 'POST', url: 'https://api.anthropic.com/v1/messages' })
+        request.setHeader('Content-Type', 'application/json')
+        request.setHeader('x-api-key', apiKey)
+        request.setHeader('anthropic-version', '2023-06-01')
+        let body = ''
+        request.on('response', (resp: any) => {
+          resp.on('data', (chunk: Buffer) => { body += chunk.toString() })
+          resp.on('end', () => resolve({ status: resp.statusCode, body }))
+        })
+        request.on('error', reject)
+        request.write(JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 256,
+          system: 'You are helping a user find a specific iMessage conversation. You will be given a list of conversations with metadata and the user\'s description. Return ONLY a JSON array of identifier strings for the conversations that best match the description, ranked by confidence, max 5 results. No explanation, just the JSON array.',
+          messages: [{ role: 'user', content: `Conversations:\n${chatList}\n\nFind: ${description}` }]
+        }))
+        request.end()
+      })
+      if (response.status !== 200) {
+        console.error('[AI Search] API error:', response.status, response.body)
+        return { error: `API error: ${response.status}`, results: null }
+      }
+      const data = JSON.parse(response.body)
+      const text = data.content?.[0]?.text || '[]'
+      const matches = JSON.parse(text) as string[]
+      return { error: null, results: matches }
+    } catch (err) {
+      console.error('[AI Search] Error:', err)
+      return { error: String(err), results: null }
+    }
+  })
   ipcMain.handle('hide-chat', (_event, chatIdentifier: string) => { hideChat(chatIdentifier) })
   ipcMain.handle('get-hidden-chats', () => getHiddenChats())
   ipcMain.handle('generate-wrapped', (_event, year: number) => generateWrapped(year))

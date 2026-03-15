@@ -67,6 +67,8 @@ const api = {
   },
   resolveChatNames: (): Promise<void> => ipcRenderer.invoke('resolve-chat-names'),
   hideChat: (chatIdentifier: string): Promise<void> => ipcRenderer.invoke('hide-chat', chatIdentifier),
+  searchConversationsAi: (description: string, conversations: { display: string; identifier: string }[], apiKey: string): Promise<{ error: string | null; results: string[] | null }> =>
+    ipcRenderer.invoke('search-conversations-ai', description, conversations, apiKey),
   getHiddenChats: (): Promise<string[]> => ipcRenderer.invoke('get-hidden-chats'),
   generateWrapped: (year: number): Promise<unknown> => ipcRenderer.invoke('generate-wrapped', year),
   getWrappedYears: (): Promise<number[]> => ipcRenderer.invoke('get-wrapped-years'),
