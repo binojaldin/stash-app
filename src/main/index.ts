@@ -3,7 +3,7 @@ import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import { checkFullDiskAccess } from './messagesReader'
 import { initDb, searchAttachments, getStats, getAttachmentById, closeDb } from './db'
-import { startIndexing, getIndexingProgress, fetchChatSummaries, saveChatPriorities, getSavedPriorityChats, resetIndexing } from './indexer'
+import { startIndexing, getIndexingProgress, fetchChatSummaries, saveChatPriorities, getSavedPriorityChats, resetIndexing, recoverAttachment } from './indexer'
 import { copyFileSync, existsSync } from 'fs'
 
 let mainWindow: BrowserWindow | null = null
@@ -107,6 +107,14 @@ function setupIpc(): void {
 
   ipcMain.handle('reset-indexing', () => {
     resetIndexing()
+  })
+
+  ipcMain.handle('recover-from-icloud', async (_event, id: number) => {
+    return recoverAttachment(id)
+  })
+
+  ipcMain.handle('open-imessage', (_event, handle: string) => {
+    shell.openExternal(`imessage://${handle}`)
   })
 
   ipcMain.handle('get-file-url', (_event, filePath: string) => {

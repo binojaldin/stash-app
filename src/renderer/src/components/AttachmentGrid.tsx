@@ -1,5 +1,5 @@
 import { useRef, useCallback, useEffect, useState } from 'react'
-import { Image, FileText, Video, Music, File } from 'lucide-react'
+import { Image, FileText, Video, Music, File, Cloud, CloudOff } from 'lucide-react'
 import { format } from 'date-fns'
 import type { Attachment } from '../types'
 
@@ -28,10 +28,37 @@ function FileTypeIcon({ attachment }: { attachment: Attachment }): JSX.Element {
   return <File className="w-6 h-6 text-[#636363]" />
 }
 
+function SourceBadge({ attachment }: { attachment: Attachment }): JSX.Element | null {
+  if (!attachment.is_available) {
+    return (
+      <span className="absolute top-1.5 right-1.5 flex items-center gap-1 px-1.5 py-0.5 rounded bg-black/70 text-[10px] text-[#8b8b8b]">
+        <Cloud className="w-3 h-3" />
+        Not on this Mac
+      </span>
+    )
+  }
+  if (attachment.source === 'backup') {
+    return (
+      <span className="absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded bg-amber-900/70 text-[10px] text-amber-300">
+        iPhone backup
+      </span>
+    )
+  }
+  if (attachment.source === 'orphan') {
+    return (
+      <span className="absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded bg-black/70 text-[10px] text-[#636363]">
+        Unknown conversation
+      </span>
+    )
+  }
+  return null
+}
+
 function ThumbnailImage({ attachment }: { attachment: Attachment }): JSX.Element {
   const [src, setSrc] = useState<string | null>(null)
 
   useEffect(() => {
+    if (!attachment.is_available) { setSrc(null); return }
     if (attachment.thumbnail_path) {
       window.api.getFileUrl(attachment.thumbnail_path).then((url) => setSrc(url))
     } else if (attachment.is_image && attachment.original_path) {
@@ -41,8 +68,12 @@ function ThumbnailImage({ attachment }: { attachment: Attachment }): JSX.Element
 
   if (!src) {
     return (
-      <div className="w-full h-full flex items-center justify-center bg-[#1c1c1c]">
-        <FileTypeIcon attachment={attachment} />
+      <div className={`w-full h-full flex items-center justify-center ${!attachment.is_available ? 'bg-[#111]' : 'bg-[#1c1c1c]'}`}>
+        {!attachment.is_available ? (
+          <CloudOff className="w-6 h-6 text-[#333]" />
+        ) : (
+          <FileTypeIcon attachment={attachment} />
+        )}
       </div>
     )
   }
@@ -53,38 +84,32 @@ function ThumbnailImage({ attachment }: { attachment: Attachment }): JSX.Element
       alt={attachment.filename}
       className="w-full h-full object-cover"
       loading="lazy"
-      onError={(e) => {
-        ;(e.target as HTMLImageElement).style.display = 'none'
-      }}
+      onError={(e) => { ;(e.target as HTMLImageElement).style.display = 'none' }}
     />
   )
 }
 
-function ImageCard({
-  attachment,
-  selected,
-  onClick
-}: {
-  attachment: Attachment
-  selected: boolean
-  onClick: () => void
-}): JSX.Element {
+function ImageCard({ attachment, selected, onClick }: { attachment: Attachment; selected: boolean; onClick: () => void }): JSX.Element {
+  const unavailable = !attachment.is_available
   return (
     <button
       onClick={onClick}
-      className={`group rounded-lg overflow-hidden border transition-all cursor-pointer text-left ${
+      className={`group rounded-lg overflow-hidden border transition-all cursor-pointer text-left relative ${
         selected
           ? 'border-blue-500 ring-2 ring-blue-500/30'
-          : 'border-[#262626] hover:border-[#333]'
-      }`}
+          : unavailable
+            ? 'border-dashed border-[#262626] hover:border-[#333]'
+            : 'border-[#262626] hover:border-[#333]'
+      } ${unavailable ? 'opacity-60' : ''}`}
     >
-      <div className="aspect-square overflow-hidden bg-[#141414]">
+      <div className="aspect-square overflow-hidden bg-[#141414] relative">
         <ThumbnailImage attachment={attachment} />
+        <SourceBadge attachment={attachment} />
       </div>
       <div className="p-2">
-        <p className="text-xs text-white truncate">{attachment.filename}</p>
+        <p className={`text-xs truncate ${unavailable ? 'text-[#636363]' : 'text-white'}`}>{attachment.filename}</p>
         <p className="text-[10px] text-[#636363] truncate">
-          {attachment.sender_handle || attachment.chat_name || ''}
+          {attachment.source === 'orphan' ? 'Unknown conversation' : (attachment.sender_handle || attachment.chat_name || '')}
           {attachment.created_at && ` · ${format(new Date(attachment.created_at), 'MMM d, yyyy')}`}
         </p>
       </div>
@@ -92,15 +117,8 @@ function ImageCard({
   )
 }
 
-function ListRow({
-  attachment,
-  selected,
-  onClick
-}: {
-  attachment: Attachment
-  selected: boolean
-  onClick: () => void
-}): JSX.Element {
+function ListRow({ attachment, selected, onClick }: { attachment: Attachment; selected: boolean; onClick: () => void }): JSX.Element {
+  const unavailable = !attachment.is_available
   return (
     <button
       onClick={onClick}
@@ -108,19 +126,26 @@ function ListRow({
         selected
           ? 'border-blue-500 bg-blue-500/5'
           : 'border-transparent hover:bg-[#141414]'
-      }`}
+      } ${unavailable ? 'opacity-60' : ''}`}
     >
-      <div className="w-10 h-10 rounded-lg overflow-hidden flex-shrink-0 bg-[#1c1c1c] flex items-center justify-center">
+      <div className="w-10 h-10 rounded-lg overflow-hidden flex-shrink-0 bg-[#1c1c1c] flex items-center justify-center relative">
         {attachment.thumbnail_path || attachment.is_image ? (
           <ThumbnailImage attachment={attachment} />
+        ) : unavailable ? (
+          <CloudOff className="w-4 h-4 text-[#333]" />
         ) : (
           <FileTypeIcon attachment={attachment} />
         )}
       </div>
       <div className="flex-1 min-w-0">
-        <p className="text-sm text-white truncate">{attachment.filename}</p>
+        <div className="flex items-center gap-1.5">
+          {unavailable && <Cloud className="w-3 h-3 text-[#4a4a4a] flex-shrink-0" />}
+          <p className={`text-sm truncate ${unavailable ? 'text-[#636363]' : 'text-white'}`}>{attachment.filename}</p>
+          {attachment.source === 'backup' && <span className="text-[10px] text-amber-400 flex-shrink-0">backup</span>}
+        </div>
         <p className="text-xs text-[#636363]">
-          {attachment.sender_handle || attachment.chat_name || ''}
+          {attachment.source === 'orphan' ? 'Unknown conversation' : (attachment.sender_handle || attachment.chat_name || '')}
+          {unavailable && ' · in iCloud'}
           {attachment.created_at && ` · ${format(new Date(attachment.created_at), 'MMM d, yyyy')}`}
         </p>
       </div>
@@ -131,22 +156,13 @@ function ListRow({
   )
 }
 
-export function AttachmentGrid({
-  attachments,
-  selectedId,
-  onSelect,
-  onLoadMore,
-  hasMore,
-  isImageView
-}: Props): JSX.Element {
+export function AttachmentGrid({ attachments, selectedId, onSelect, onLoadMore, hasMore, isImageView }: Props): JSX.Element {
   const observerRef = useRef<IntersectionObserver>()
   const loadMoreRef = useCallback(
     (node: HTMLDivElement | null) => {
       if (observerRef.current) observerRef.current.disconnect()
       observerRef.current = new IntersectionObserver((entries) => {
-        if (entries[0].isIntersecting && hasMore) {
-          onLoadMore()
-        }
+        if (entries[0].isIntersecting && hasMore) onLoadMore()
       })
       if (node) observerRef.current.observe(node)
     },
@@ -167,12 +183,7 @@ export function AttachmentGrid({
       <>
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
           {attachments.map((att) => (
-            <ImageCard
-              key={att.id}
-              attachment={att}
-              selected={selectedId === att.id}
-              onClick={() => onSelect(att)}
-            />
+            <ImageCard key={att.id} attachment={att} selected={selectedId === att.id} onClick={() => onSelect(att)} />
           ))}
         </div>
         {hasMore && <div ref={loadMoreRef} className="h-10" />}
@@ -184,12 +195,7 @@ export function AttachmentGrid({
     <>
       <div className="space-y-1">
         {attachments.map((att) => (
-          <ListRow
-            key={att.id}
-            attachment={att}
-            selected={selectedId === att.id}
-            onClick={() => onSelect(att)}
-          />
+          <ListRow key={att.id} attachment={att} selected={selectedId === att.id} onClick={() => onSelect(att)} />
         ))}
       </div>
       {hasMore && <div ref={loadMoreRef} className="h-10" />}

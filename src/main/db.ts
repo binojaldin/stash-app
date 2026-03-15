@@ -22,6 +22,8 @@ export interface StashAttachment {
   is_document: number
   ocr_text: string | null
   metadata_only?: number
+  is_available?: number
+  source?: string
 }
 
 export function getDbPath(): string {
@@ -59,7 +61,9 @@ export function initDb(): Database.Database {
       is_video INTEGER DEFAULT 0,
       is_document INTEGER DEFAULT 0,
       ocr_text TEXT,
-      metadata_only INTEGER DEFAULT 0
+      metadata_only INTEGER DEFAULT 0,
+      is_available INTEGER DEFAULT 1,
+      source TEXT DEFAULT 'messages'
     );
 
     CREATE VIRTUAL TABLE IF NOT EXISTS attachments_fts USING fts5(
@@ -89,12 +93,14 @@ export function initDb(): Database.Database {
     END;
   `)
 
-  // Add metadata_only column if missing (migration for existing DBs)
-  try {
-    db.prepare('SELECT metadata_only FROM attachments LIMIT 1').get()
-  } catch {
-    db.exec('ALTER TABLE attachments ADD COLUMN metadata_only INTEGER DEFAULT 0')
+  // Migrations for existing DBs
+  const addColumnIfMissing = (col: string, def: string): void => {
+    try { db!.prepare(`SELECT ${col} FROM attachments LIMIT 1`).get() }
+    catch { db!.exec(`ALTER TABLE attachments ADD COLUMN ${col} ${def}`) }
   }
+  addColumnIfMissing('metadata_only', 'INTEGER DEFAULT 0')
+  addColumnIfMissing('is_available', 'INTEGER DEFAULT 1')
+  addColumnIfMissing('source', "TEXT DEFAULT 'messages'")
 
   return db
 }
@@ -104,8 +110,8 @@ export function insertAttachment(att: StashAttachment): number | null {
   try {
     const stmt = d.prepare(`
       INSERT OR IGNORE INTO attachments
-      (filename, original_path, stash_path, file_size, mime_type, created_at, chat_name, sender_handle, thumbnail_path, file_extension, is_image, is_video, is_document, ocr_text, metadata_only)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (filename, original_path, stash_path, file_size, mime_type, created_at, chat_name, sender_handle, thumbnail_path, file_extension, is_image, is_video, is_document, ocr_text, metadata_only, is_available, source)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
     const result = stmt.run(
       att.filename,
@@ -122,7 +128,9 @@ export function insertAttachment(att: StashAttachment): number | null {
       att.is_video,
       att.is_document,
       att.ocr_text,
-      att.metadata_only ?? 0
+      att.metadata_only ?? 0,
+      att.is_available ?? 1,
+      att.source ?? 'messages'
     )
     return result.changes > 0 ? Number(result.lastInsertRowid) : null
   } catch (err) {
@@ -146,6 +154,11 @@ export function markFullyIndexed(id: number): void {
   d.prepare('UPDATE attachments SET metadata_only = 0 WHERE id = ?').run(id)
 }
 
+export function updateAvailability(id: number, isAvailable: number): void {
+  const d = initDb()
+  d.prepare('UPDATE attachments SET is_available = ? WHERE id = ?').run(isAvailable, id)
+}
+
 export function getMetadataOnlyByPath(originalPath: string): { id: number } | undefined {
   const d = initDb()
   return d.prepare('SELECT id FROM attachments WHERE original_path = ? AND metadata_only = 1').get(originalPath) as { id: number } | undefined
@@ -159,11 +172,7 @@ export function getIdByPath(originalPath: string): number | null {
 
 export function searchAttachments(
   query: string,
-  filters: {
-    type?: string
-    chatName?: string
-    dateRange?: string
-  },
+  filters: { type?: string; chatName?: string; dateRange?: string },
   page = 0,
   limit = 50
 ): StashAttachment[] {
@@ -185,18 +194,10 @@ export function searchAttachments(
 
   if (filters.type && filters.type !== 'all') {
     switch (filters.type) {
-      case 'images':
-        conditions.push('is_image = 1')
-        break
-      case 'videos':
-        conditions.push('is_video = 1')
-        break
-      case 'documents':
-        conditions.push('is_document = 1')
-        break
-      case 'audio':
-        conditions.push("mime_type LIKE 'audio/%'")
-        break
+      case 'images': conditions.push('is_image = 1'); break
+      case 'videos': conditions.push('is_video = 1'); break
+      case 'documents': conditions.push('is_document = 1'); break
+      case 'audio': conditions.push("mime_type LIKE 'audio/%'"); break
     }
   }
 
@@ -207,89 +208,39 @@ export function searchAttachments(
 
   if (filters.dateRange) {
     const now = new Date()
-    let dateStr: string
+    let dateStr = ''
     switch (filters.dateRange) {
-      case 'week': {
-        const d = new Date(now)
-        d.setDate(d.getDate() - 7)
-        dateStr = d.toISOString()
-        break
-      }
-      case 'month': {
-        const d = new Date(now)
-        d.setMonth(d.getMonth() - 1)
-        dateStr = d.toISOString()
-        break
-      }
-      case 'year': {
-        const d = new Date(now)
-        d.setFullYear(d.getFullYear() - 1)
-        dateStr = d.toISOString()
-        break
-      }
-      default:
-        dateStr = ''
+      case 'week': { const d = new Date(now); d.setDate(d.getDate() - 7); dateStr = d.toISOString(); break }
+      case 'month': { const d = new Date(now); d.setMonth(d.getMonth() - 1); dateStr = d.toISOString(); break }
+      case 'year': { const d = new Date(now); d.setFullYear(d.getFullYear() - 1); dateStr = d.toISOString(); break }
     }
-    if (dateStr) {
-      conditions.push('created_at >= ?')
-      params.push(dateStr)
-    }
+    if (dateStr) { conditions.push('created_at >= ?'); params.push(dateStr) }
     if (filters.dateRange === 'older') {
-      const d = new Date(now)
-      d.setFullYear(d.getFullYear() - 1)
-      conditions.push('created_at < ?')
-      params.push(d.toISOString())
+      const d = new Date(now); d.setFullYear(d.getFullYear() - 1)
+      conditions.push('created_at < ?'); params.push(d.toISOString())
     }
   }
 
-  if (conditions.length > 0) {
-    sql += ' AND ' + conditions.join(' AND ')
-  }
-
+  if (conditions.length > 0) sql += ' AND ' + conditions.join(' AND ')
   sql += ' ORDER BY created_at DESC LIMIT ? OFFSET ?'
   params.push(limit, page * limit)
 
-  try {
-    return d.prepare(sql).all(...params) as StashAttachment[]
-  } catch (err) {
-    console.error('Search error:', err)
-    return []
-  }
+  try { return d.prepare(sql).all(...params) as StashAttachment[] }
+  catch (err) { console.error('Search error:', err); return [] }
 }
 
 export function getStats(): {
-  total: number
-  images: number
-  videos: number
-  documents: number
-  audio: number
-  chatNames: string[]
+  total: number; images: number; videos: number; documents: number; audio: number; unavailable: number; chatNames: string[]
 } {
   const d = initDb()
   const total = (d.prepare('SELECT COUNT(*) as c FROM attachments').get() as { c: number }).c
-  const images = (
-    d.prepare('SELECT COUNT(*) as c FROM attachments WHERE is_image = 1').get() as { c: number }
-  ).c
-  const videos = (
-    d.prepare('SELECT COUNT(*) as c FROM attachments WHERE is_video = 1').get() as { c: number }
-  ).c
-  const documents = (
-    d.prepare('SELECT COUNT(*) as c FROM attachments WHERE is_document = 1').get() as { c: number }
-  ).c
-  const audio = (
-    d.prepare("SELECT COUNT(*) as c FROM attachments WHERE mime_type LIKE 'audio/%'").get() as {
-      c: number
-    }
-  ).c
-  const chatNames = (
-    d
-      .prepare(
-        'SELECT DISTINCT chat_name FROM attachments WHERE chat_name IS NOT NULL ORDER BY chat_name'
-      )
-      .all() as { chat_name: string }[]
-  ).map((r) => r.chat_name)
-
-  return { total, images, videos, documents, audio, chatNames }
+  const images = (d.prepare('SELECT COUNT(*) as c FROM attachments WHERE is_image = 1').get() as { c: number }).c
+  const videos = (d.prepare('SELECT COUNT(*) as c FROM attachments WHERE is_video = 1').get() as { c: number }).c
+  const documents = (d.prepare('SELECT COUNT(*) as c FROM attachments WHERE is_document = 1').get() as { c: number }).c
+  const audio = (d.prepare("SELECT COUNT(*) as c FROM attachments WHERE mime_type LIKE 'audio/%'").get() as { c: number }).c
+  const unavailable = (d.prepare('SELECT COUNT(*) as c FROM attachments WHERE is_available = 0').get() as { c: number }).c
+  const chatNames = (d.prepare('SELECT DISTINCT chat_name FROM attachments WHERE chat_name IS NOT NULL ORDER BY chat_name').all() as { chat_name: string }[]).map((r) => r.chat_name)
+  return { total, images, videos, documents, audio, unavailable, chatNames }
 }
 
 export function getAttachmentById(id: number): StashAttachment | null {
@@ -299,9 +250,7 @@ export function getAttachmentById(id: number): StashAttachment | null {
 
 export function isAlreadyIndexed(originalPath: string): boolean {
   const d = initDb()
-  const row = d
-    .prepare('SELECT id FROM attachments WHERE original_path = ?')
-    .get(originalPath) as { id: number } | undefined
+  const row = d.prepare('SELECT id FROM attachments WHERE original_path = ?').get(originalPath) as { id: number } | undefined
   return !!row
 }
 
@@ -312,8 +261,5 @@ export function clearAllAttachments(): void {
 }
 
 export function closeDb(): void {
-  if (db) {
-    db.close()
-    db = null
-  }
+  if (db) { db.close(); db = null }
 }

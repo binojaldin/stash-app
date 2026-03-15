@@ -29,6 +29,7 @@ export default function App(): JSX.Element {
     videos: 0,
     documents: 0,
     audio: 0,
+    unavailable: 0,
     chatNames: []
   })
   const [page, setPage] = useState(0)

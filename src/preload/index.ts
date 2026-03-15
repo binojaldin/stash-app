@@ -19,6 +19,7 @@ const api = {
     videos: number
     documents: number
     audio: number
+    unavailable: number
     chatNames: string[]
   }> => ipcRenderer.invoke('get-stats'),
   getAttachment: (id: number): Promise<unknown> => ipcRenderer.invoke('get-attachment', id),
@@ -38,6 +39,8 @@ const api = {
   saveChatPriorities: (chats: string[]): Promise<void> => ipcRenderer.invoke('save-chat-priorities', chats),
   getSavedPriorityChats: (): Promise<string[] | null> => ipcRenderer.invoke('get-saved-priority-chats'),
   resetIndexing: (): Promise<void> => ipcRenderer.invoke('reset-indexing'),
+  recoverFromIcloud: (id: number): Promise<boolean> => ipcRenderer.invoke('recover-from-icloud', id),
+  openImessage: (handle: string): Promise<void> => ipcRenderer.invoke('open-imessage', handle),
   getFileUrl: (path: string): Promise<string | null> => ipcRenderer.invoke('get-file-url', path),
   onIndexingProgress: (
     callback: (data: { total: number; processed: number; currentFile: string; phase?: string }) => void

@@ -1,4 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from 'react'
+import { Cloud } from 'lucide-react'
 import type { ChatSummary } from '../types'
 
 interface Props {
@@ -179,6 +180,16 @@ export function ChatPriorityScreen({ chats, onStart }: Props): JSX.Element {
                     <span className="text-xs text-[#4a4a4a] block truncate">{subtitle}</span>
                   )}
                 </div>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    window.api.openImessage(chat.raw_chat_identifier)
+                  }}
+                  className="flex-shrink-0 p-1.5 rounded-md text-[#4a4a4a] hover:text-teal-400 hover:bg-[#1c1c1c] transition-colors"
+                  title="Opens this conversation in Messages to trigger iCloud download of older attachments"
+                >
+                  <Cloud className="w-3.5 h-3.5" />
+                </button>
                 <div className="flex flex-col items-end flex-shrink-0 gap-0.5">
                   <span className="text-xs text-[#636363] tabular-nums">{chat.attachment_count.toLocaleString()}</span>
                   {chat.last_message_date && (

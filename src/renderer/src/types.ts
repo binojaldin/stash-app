@@ -15,6 +15,8 @@ export interface Attachment {
   is_document: number
   ocr_text: string | null
   metadata_only: number
+  is_available: number
+  source: string
 }
 
 export interface Filters {
@@ -36,6 +38,7 @@ export interface Stats {
   videos: number
   documents: number
   audio: number
+  unavailable: number
   chatNames: string[]
 }
 
