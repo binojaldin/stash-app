@@ -102,15 +102,23 @@ export function WrappedView({ onClose }: Props): JSX.Element {
       {/* Header */}
       <div className="sticky top-0 z-50 bg-[#0a0a0a]/90 backdrop-blur-sm border-b border-[#1c1c1c]">
         <div className="flex items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
             <h1 className="text-lg font-semibold text-white">Wrapped</h1>
-            <select
-              value={selectedYear}
-              onChange={(e) => setSelectedYear(Number(e.target.value))}
-              className="bg-[#1c1c1c] border border-[#262626] rounded-lg px-3 py-1.5 text-sm text-white outline-none"
-            >
-              {years.map((y) => <option key={y} value={y}>{y}</option>)}
-            </select>
+            <div className="flex gap-1 flex-wrap">
+              {years.map((y) => (
+                <button
+                  key={y}
+                  onClick={() => setSelectedYear(y)}
+                  className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                    selectedYear === y
+                      ? 'bg-teal-600 text-white'
+                      : 'bg-[#1c1c1c] text-[#636363] hover:text-white hover:bg-[#262626]'
+                  }`}
+                >
+                  {y}
+                </button>
+              ))}
+            </div>
           </div>
           <button onClick={onClose} className="w-8 h-8 rounded-full bg-[#1c1c1c] flex items-center justify-center hover:bg-[#262626]">
             <X className="w-4 h-4 text-[#a3a3a3]" />
