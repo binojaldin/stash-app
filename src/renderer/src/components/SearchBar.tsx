@@ -23,14 +23,14 @@ export const SearchBar = forwardRef<SearchBarRef, Props>(function SearchBar({ va
 
   return (
     <div className="relative">
-      <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#636363]" />
+      <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#636363]" />
       <input
         ref={inputRef}
         type="text"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder="Search attachments, conversations, text in images..."
-        className="w-full h-10 pl-10 pr-10 rounded-lg bg-[#141414] border border-[#262626] text-sm text-white placeholder-[#636363] outline-none focus:border-[#3b82f6] focus:ring-1 focus:ring-[#3b82f6]/50 transition-colors"
+        className="w-full h-10 pl-12 pr-10 rounded-lg bg-[#141414] border border-[#262626] text-sm text-white placeholder-[#636363] outline-none focus:border-[#3b82f6] focus:ring-1 focus:ring-[#3b82f6]/50 transition-colors"
       />
       {value && (
         <button
