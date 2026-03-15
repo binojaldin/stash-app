@@ -251,6 +251,8 @@ export default function App(): JSX.Element {
 
   return (
     <div className="flex flex-col h-screen bg-[#0a0a0a]">
+      {showWrapped && <WrappedView onClose={() => setShowWrapped(false)} />}
+
       {isIndexing && showIndexing && indexingProgress.total > 0 && (
         <IndexingOverlay progress={indexingProgress} onBrowse={() => setShowIndexing(false)} />
       )}
@@ -275,8 +277,6 @@ export default function App(): JSX.Element {
           Wrapped
         </button>
       </div>
-
-      {showWrapped && <WrappedView onClose={() => setShowWrapped(false)} />}
 
       <div className="px-4 pb-3 flex-shrink-0">
         <SearchBar ref={searchBarRef} value={query} onChange={setQuery} />

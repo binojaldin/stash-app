@@ -98,10 +98,10 @@ export function WrappedView({ onClose }: Props): JSX.Element {
   const maxMonthly = data ? Math.max(...data.monthlyActivity.map((m) => m.messagesSent + m.messagesReceived), 1) : 1
 
   return (
-    <div className="fixed inset-0 z-40 bg-[#0a0a0a] overflow-y-auto">
+    <div className="fixed inset-0 bg-[#0a0a0a] overflow-y-auto" style={{ WebkitAppRegion: 'no-drag', zIndex: 200 } as React.CSSProperties}>
       {/* Header */}
-      <div className="sticky top-0 z-50 bg-[#0a0a0a]/90 backdrop-blur-sm border-b border-[#1c1c1c]">
-        <div className="flex items-center justify-between px-6 py-4">
+      <div className="sticky top-0 bg-[#0a0a0a]/90 backdrop-blur-sm border-b border-[#1c1c1c]" style={{ zIndex: 201 }}>
+        <div className="flex items-center justify-between px-6 py-4" style={{ paddingTop: '52px', paddingLeft: '80px' }}>
           <div className="flex items-center gap-3">
             <h1 className="text-lg font-semibold text-white">Wrapped</h1>
             <div className="flex gap-1 flex-wrap">
