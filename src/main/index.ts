@@ -190,29 +190,43 @@ function setupIpc(): void {
   ipcMain.handle('reset-indexing', () => { resetIndexing() })
   ipcMain.handle('recover-from-icloud', async (_event, id: number) => recoverAttachment(id))
 
-  ipcMain.handle('search-conversations-ai', async (_event, description: string, conversations: { display: string; identifier: string }[], apiKey: string) => {
+  ipcMain.handle('search-conversations-ai', async (_event, description: string, conversations: { display: string; identifier: string }[]) => {
+    const apiKey = process.env.ANTHROPIC_API_KEY
+    if (!apiKey) {
+      console.warn('[AI Search] ANTHROPIC_API_KEY not set in environment')
+      return { error: 'Set ANTHROPIC_API_KEY environment variable to use AI search', results: null }
+    }
     try {
+      const https = require('https')
       const chatList = conversations.map((c) => `- "${c.display}" (identifier: ${c.identifier})`).join('\n')
-      const { net } = require('electron')
-      const response = await new Promise<{ status: number; body: string }>((resolve, reject) => {
-        const request = net.request({ method: 'POST', url: 'https://api.anthropic.com/v1/messages' })
-        request.setHeader('Content-Type', 'application/json')
-        request.setHeader('x-api-key', apiKey)
-        request.setHeader('anthropic-version', '2023-06-01')
-        let body = ''
-        request.on('response', (resp: any) => {
-          resp.on('data', (chunk: Buffer) => { body += chunk.toString() })
-          resp.on('end', () => resolve({ status: resp.statusCode, body }))
-        })
-        request.on('error', reject)
-        request.write(JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 256,
-          system: 'You are helping a user find a specific iMessage conversation. You will be given a list of conversations with metadata and the user\'s description. Return ONLY a JSON array of identifier strings for the conversations that best match the description, ranked by confidence, max 5 results. No explanation, just the JSON array.',
-          messages: [{ role: 'user', content: `Conversations:\n${chatList}\n\nFind: ${description}` }]
-        }))
-        request.end()
+      const postData = JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 500,
+        system: 'You are helping a user find a specific iMessage conversation. You will be given a list of conversations and the user\'s description. Return ONLY a JSON array of identifier strings for the conversations that best match the description, ranked by confidence, max 5 results. No explanation, just the JSON array.',
+        messages: [{ role: 'user', content: `Conversations:\n${chatList}\n\nFind: ${description}` }]
       })
+
+      const response = await new Promise<{ status: number; body: string }>((resolve, reject) => {
+        const req = https.request({
+          hostname: 'api.anthropic.com',
+          path: '/v1/messages',
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': apiKey,
+            'anthropic-version': '2023-06-01',
+            'Content-Length': Buffer.byteLength(postData)
+          }
+        }, (res: any) => {
+          let body = ''
+          res.on('data', (chunk: string) => { body += chunk })
+          res.on('end', () => resolve({ status: res.statusCode, body }))
+        })
+        req.on('error', reject)
+        req.write(postData)
+        req.end()
+      })
+
       if (response.status !== 200) {
         console.error('[AI Search] API error:', response.status, response.body)
         return { error: `API error: ${response.status}`, results: null }
@@ -220,6 +234,7 @@ function setupIpc(): void {
       const data = JSON.parse(response.body)
       const text = data.content?.[0]?.text || '[]'
       const matches = JSON.parse(text) as string[]
+      console.log('[AI Search] Found', matches.length, 'matches')
       return { error: null, results: matches }
     } catch (err) {
       console.error('[AI Search] Error:', err)

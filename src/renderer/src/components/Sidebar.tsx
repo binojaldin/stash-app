@@ -75,25 +75,13 @@ export function Sidebar({ stats, filters, onFilterChange, onManageConversations,
     if (!finderQuery.trim()) return
     setFinderLoading(true); setFinderError(null); setFinderResults(null)
     try {
-      let apiKey = localStorage.getItem('stash-anthropic-key') || ''
-      if (!apiKey) {
-        const key = prompt('Enter your Anthropic API key to use conversation finder:')
-        if (!key) { setFinderError('API key required'); setFinderLoading(false); return }
-        localStorage.setItem('stash-anthropic-key', key)
-        apiKey = key
-      }
       const conversations = stats.chatNames.map((raw) => ({
         display: stats.chatNameMap?.[raw] || raw,
         identifier: raw
       }))
-      const result = await window.api.searchConversationsAi(finderQuery, conversations, apiKey)
+      const result = await window.api.searchConversationsAi(finderQuery, conversations)
       if (result.error) {
-        if (result.error.includes('401')) {
-          localStorage.removeItem('stash-anthropic-key')
-          setFinderError('Invalid API key — try again')
-        } else {
-          setFinderError(result.error)
-        }
+        setFinderError(result.error)
       } else if (result.results && result.results.length > 0) {
         setFinderResults(result.results)
       } else {
