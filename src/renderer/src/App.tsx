@@ -48,17 +48,15 @@ export default function App(): JSX.Element {
   // Persist view mode
   useEffect(() => { localStorage.setItem('stash-view-mode', viewMode) }, [viewMode])
 
-  // ── Startup flow ──
+  // ── Startup flow: getStats only, never getChatSummaries ──
   useEffect(() => {
     let cancelled = false
 
     const startup = async (): Promise<void> => {
-      // Step 1: Check disk access
       const access = await window.api.checkDiskAccess()
       if (cancelled) return
       if (!access) {
         setAppState('no-access')
-        // Poll for access
         const interval = setInterval(async () => {
           const ok = await window.api.checkDiskAccess()
           if (ok) { clearInterval(interval); if (!cancelled) startup() }
@@ -66,35 +64,28 @@ export default function App(): JSX.Element {
         return
       }
 
-      // Step 2: Check if DB has data (fast — no contact resolution)
+      // getStats is fast — no contact resolution
       setAppState('loading')
       try {
         const s = await window.api.getStats()
         if (cancelled) return
         if (s.total > 0) {
-          // Returning user — go straight to main view
           setStats(s)
           setAppState('main')
-          return
-        }
-      } catch (err) {
-        console.error('[App] getStats error:', err)
-      }
-
-      // Step 3: Empty DB — fetch chat summaries (fast, no contact resolution)
-      try {
-        const summaries = await window.api.getChatSummaries()
-        if (cancelled) return
-        if (summaries.length > 0) {
-          setChatSummaries(summaries)
-          setAppState('priority')
-          // Resolve contact names in background
-          window.api.resolveChatNames()
         } else {
-          setAppState('main')
+          // Empty DB — show priority screen (fetch summaries now, user asked for it)
+          const summaries = await window.api.getChatSummaries()
+          if (cancelled) return
+          if (summaries.length > 0) {
+            setChatSummaries(summaries)
+            setAppState('priority')
+            window.api.resolveChatNames()
+          } else {
+            setAppState('main')
+          }
         }
       } catch (err) {
-        console.error('[App] getChatSummaries error:', err)
+        console.error('[App] Startup error:', err)
         setAppState('main')
       }
     }
@@ -111,16 +102,24 @@ export default function App(): JSX.Element {
     return unsub
   }, [])
 
-  // Menu bar listeners
+  // Manage conversations — additive, no reset
   const handleManageConversations = useCallback(async () => {
-    const confirmed = await window.api.confirmReset()
-    if (!confirmed) return
-    await window.api.resetIndexing()
     setAppState('loading')
     const summaries = await window.api.getChatSummaries()
     setChatSummaries(summaries)
+    setAppState('priority')
+    window.api.resolveChatNames()
+  }, [])
+
+  // Full reset — only from explicit reset button
+  const handleResetEverything = useCallback(async () => {
+    const confirmed = await window.api.confirmReset()
+    if (!confirmed) return
+    await window.api.resetIndexing()
     setAttachments([])
     setStats({ total: 0, images: 0, videos: 0, documents: 0, audio: 0, unavailable: 0, chatNames: [] })
+    const summaries = await window.api.getChatSummaries()
+    setChatSummaries(summaries)
     setAppState('priority')
     window.api.resolveChatNames()
   }, [])
@@ -236,7 +235,15 @@ export default function App(): JSX.Element {
   }
 
   if (appState === 'no-access') return <PermissionScreen />
-  if (appState === 'priority') return <ChatPriorityScreen chats={chatSummaries} onStart={handleStartWithPriority} />
+  if (appState === 'priority') return (
+    <ChatPriorityScreen
+      chats={chatSummaries}
+      indexedChatNames={stats.chatNames}
+      onStart={handleStartWithPriority}
+      onReset={handleResetEverything}
+      onBack={stats.total > 0 ? () => setAppState('main') : undefined}
+    />
+  )
 
   const isImageView = viewMode === 'grid' && (!filters.type || filters.type === 'all' || filters.type === 'images')
 

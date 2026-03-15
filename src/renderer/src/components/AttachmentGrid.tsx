@@ -59,11 +59,20 @@ function ThumbnailImage({ attachment }: { attachment: Attachment }): JSX.Element
 
   useEffect(() => {
     if (!attachment.is_available) { setSrc(null); return }
-    if (attachment.thumbnail_path) {
-      window.api.getFileUrl(attachment.thumbnail_path).then((url) => setSrc(url))
-    } else if (attachment.is_image && attachment.original_path) {
-      window.api.getFileUrl(attachment.original_path).then((url) => setSrc(url))
+    // Try thumbnail first, then fall back to original file for images
+    const tryPath = async (): Promise<void> => {
+      if (attachment.thumbnail_path) {
+        const url = await window.api.getFileUrl(attachment.thumbnail_path)
+        if (url) { setSrc(url); return }
+      }
+      // No thumbnail or thumbnail missing — use original if it's an image
+      if (attachment.is_image && attachment.original_path) {
+        const url = await window.api.getFileUrl(attachment.original_path)
+        if (url) { setSrc(url); return }
+      }
+      setSrc(null)
     }
+    tryPath()
   }, [attachment])
 
   if (!src) {

@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3'
 import { homedir } from 'os'
-import { join } from 'path'
+import { join, basename } from 'path'
 import { existsSync } from 'fs'
 
 const CHAT_DB_PATH = join(homedir(), 'Library/Messages/chat.db')
@@ -125,6 +125,7 @@ export function readAllAttachments(): MessageAttachment[] {
     db.close()
     return rows.map((row) => ({
       ...row,
+      filename: row.filename ? basename(row.filename) : null,
       original_path: row.original_path ? row.original_path.replace('~', homedir()) : null,
       file_size: row.file_size || 0
     }))

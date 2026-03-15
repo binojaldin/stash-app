@@ -251,6 +251,12 @@ export function getStats(): {
   return { total, images, videos, documents, audio, unavailable, chatNames }
 }
 
+// Returns chat names with contact resolution applied
+export function getIndexedChatNames(): string[] {
+  const d = initDb()
+  return (d.prepare('SELECT DISTINCT chat_name FROM attachments WHERE chat_name IS NOT NULL ORDER BY chat_name').all() as { chat_name: string }[]).map((r) => r.chat_name)
+}
+
 export function getAttachmentById(id: number): StashAttachment | null {
   const d = initDb()
   return (d.prepare('SELECT * FROM attachments WHERE id = ?').get(id) as StashAttachment) || null

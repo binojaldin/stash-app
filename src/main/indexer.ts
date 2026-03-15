@@ -48,14 +48,27 @@ function isAudio(ext: string, mime: string | null): boolean {
 async function generateThumbnail(filePath: string, ext: string): Promise<string | null> {
   const lExt = ext.toLowerCase()
   if (!IMAGE_EXTENSIONS.has(lExt)) return null
-  if (lExt === '.heic') return null
+
+  const thumbDir = getThumbnailDir()
+  const thumbName = `${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`
+  const thumbPath = join(thumbDir, thumbName)
+
+  // Try sharp first (fast, handles most formats)
+  if (lExt !== '.heic' && lExt !== '.heif') {
+    try {
+      await sharp(filePath).resize(400, 400, { fit: 'inside', withoutEnlargement: true }).jpeg({ quality: 80 }).toFile(thumbPath)
+      return thumbPath
+    } catch { /* fall through to sips */ }
+  }
+
+  // Fallback: use macOS sips for HEIC and any sharp failures
   try {
-    const thumbDir = getThumbnailDir()
-    const thumbName = `${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`
-    const thumbPath = join(thumbDir, thumbName)
-    await sharp(filePath).resize(400, 400, { fit: 'inside', withoutEnlargement: true }).jpeg({ quality: 80 }).toFile(thumbPath)
-    return thumbPath
-  } catch { return null }
+    const { execSync } = require('child_process')
+    execSync(`sips -s format jpeg -Z 400 "${filePath}" --out "${thumbPath}"`, { timeout: 15000, stdio: 'ignore' })
+    if (existsSync(thumbPath)) return thumbPath
+  } catch { /* ignore */ }
+
+  return null
 }
 
 function sendProgress(win: BrowserWindow | null): void {

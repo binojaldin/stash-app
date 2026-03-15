@@ -141,7 +141,20 @@ function setupIpc(): void {
     return searchAttachments('', filters, page, limit, sortOrder)
   })
 
-  ipcMain.handle('get-stats', () => getStats())
+  ipcMain.handle('get-stats', () => {
+    const stats = getStats()
+    // Resolve chat names through contacts cache (non-blocking, uses cached values)
+    try {
+      const { resolveContact } = require('./contacts')
+      stats.chatNames = stats.chatNames.map((name: string) => {
+        if (name && (name.startsWith('+') || name.includes('@'))) {
+          return resolveContact(name) || name
+        }
+        return name
+      })
+    } catch { /* contacts not compiled yet, use raw names */ }
+    return stats
+  })
   ipcMain.handle('get-attachment', (_event, id: number) => getAttachmentById(id))
 
   ipcMain.handle('open-in-finder', (_event, filePath: string) => {

@@ -1,28 +1,25 @@
 import { useState, useMemo, useRef, useEffect } from 'react'
-import { Cloud } from 'lucide-react'
+import { Cloud, Check, ArrowLeft } from 'lucide-react'
 import type { ChatSummary } from '../types'
 
 interface Props {
   chats: ChatSummary[]
+  indexedChatNames: string[]
   onStart: (priorityChats: string[]) => void
+  onReset: () => void
+  onBack?: () => void
 }
 
 type SortMode = 'recent' | 'attachments'
 
-export function ChatPriorityScreen({ chats, onStart }: Props): JSX.Element {
-  // Use raw_chat_identifier as the unique key for selection (chat_name can have duplicates)
-  const [selected, setSelected] = useState<Record<string, boolean>>(() => {
-    const init: Record<string, boolean> = {}
-    chats.slice(0, 10).forEach((c) => { init[c.raw_chat_identifier] = true })
-    return init
-  })
+export function ChatPriorityScreen({ chats, indexedChatNames, onStart, onReset, onBack }: Props): JSX.Element {
+  const indexedSet = useMemo(() => new Set(indexedChatNames), [indexedChatNames])
+  const [selected, setSelected] = useState<Record<string, boolean>>({})
   const [sortMode, setSortMode] = useState<SortMode>('recent')
   const [search, setSearch] = useState('')
   const searchRef = useRef<HTMLInputElement>(null)
 
-  useEffect(() => {
-    searchRef.current?.focus()
-  }, [])
+  useEffect(() => { searchRef.current?.focus() }, [])
 
   const sorted = useMemo(() => {
     const filtered = search
@@ -38,16 +35,14 @@ export function ChatPriorityScreen({ chats, onStart }: Props): JSX.Element {
       : chats
 
     return [...filtered].sort((a, b) => {
-      if (sortMode === 'recent') {
-        return (b.last_message_date || '').localeCompare(a.last_message_date || '')
-      }
+      if (sortMode === 'recent') return (b.last_message_date || '').localeCompare(a.last_message_date || '')
       return b.attachment_count - a.attachment_count
     })
   }, [chats, sortMode, search])
 
-  const selectAll = (): void => {
+  const selectAllNew = (): void => {
     const next: Record<string, boolean> = {}
-    chats.forEach((c) => { next[c.raw_chat_identifier] = true })
+    chats.forEach((c) => { if (!indexedSet.has(c.chat_name)) next[c.raw_chat_identifier] = true })
     setSelected(next)
   }
   const selectNone = (): void => setSelected({})
@@ -81,13 +76,26 @@ export function ChatPriorityScreen({ chats, onStart }: Props): JSX.Element {
     onStart(selectedChatNames)
   }
 
+  const newSelectedCount = Object.keys(selected).length
+  const hasIndexedData = indexedSet.size > 0
+
   return (
     <div className="flex items-center justify-center h-screen bg-[#0a0a0a]">
       <div className="max-w-lg w-full px-8">
+        {/* Header with back button */}
         <div className="text-center mb-6">
-          <h2 className="text-xl font-semibold text-white mb-2">Prioritize conversations</h2>
+          {onBack && (
+            <button onClick={onBack} className="absolute left-6 top-6 flex items-center gap-1 text-sm text-[#636363] hover:text-white transition-colors">
+              <ArrowLeft className="w-4 h-4" /> Back
+            </button>
+          )}
+          <h2 className="text-xl font-semibold text-white mb-2">
+            {hasIndexedData ? 'Add conversations' : 'Choose conversations to index'}
+          </h2>
           <p className="text-sm text-[#a3a3a3]">
-            Choose which conversations to index first. Checked conversations will have their attachments processed with higher priority.
+            {hasIndexedData
+              ? 'Select additional conversations to index. Already indexed conversations are shown with a checkmark.'
+              : 'Select which conversations to index. You can add more later.'}
           </p>
         </div>
 
@@ -96,28 +104,16 @@ export function ChatPriorityScreen({ chats, onStart }: Props): JSX.Element {
           <div className="flex gap-1 bg-[#1c1c1c] rounded-lg p-0.5">
             <button
               onClick={() => setSortMode('recent')}
-              className={`px-3 py-1 text-xs rounded-md transition-colors ${
-                sortMode === 'recent' ? 'bg-[#2a2a2a] text-white' : 'text-[#636363] hover:text-[#a3a3a3]'
-              }`}
-            >
-              Recent
-            </button>
+              className={`px-3 py-1 text-xs rounded-md transition-colors ${sortMode === 'recent' ? 'bg-[#2a2a2a] text-white' : 'text-[#636363] hover:text-[#a3a3a3]'}`}
+            >Recent</button>
             <button
               onClick={() => setSortMode('attachments')}
-              className={`px-3 py-1 text-xs rounded-md transition-colors ${
-                sortMode === 'attachments' ? 'bg-[#2a2a2a] text-white' : 'text-[#636363] hover:text-[#a3a3a3]'
-              }`}
-            >
-              Most attachments
-            </button>
+              className={`px-3 py-1 text-xs rounded-md transition-colors ${sortMode === 'attachments' ? 'bg-[#2a2a2a] text-white' : 'text-[#636363] hover:text-[#a3a3a3]'}`}
+            >Most attachments</button>
           </div>
           <div className="flex gap-3">
-            <button onClick={selectAll} className="text-xs text-teal-400 hover:text-teal-300">
-              Select all
-            </button>
-            <button onClick={selectNone} className="text-xs text-[#636363] hover:text-[#a3a3a3]">
-              Deselect all
-            </button>
+            <button onClick={selectAllNew} className="text-xs text-teal-400 hover:text-teal-300">Select all new</button>
+            <button onClick={selectNone} className="text-xs text-[#636363] hover:text-[#a3a3a3]">Deselect all</button>
           </div>
         </div>
 
@@ -132,12 +128,7 @@ export function ChatPriorityScreen({ chats, onStart }: Props): JSX.Element {
             className="w-full px-3 py-2 bg-[#1c1c1c] border border-[#2a2a2a] rounded-lg text-sm text-white placeholder-[#636363] outline-none focus:border-[#444]"
           />
           {search && (
-            <button
-              onClick={() => setSearch('')}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#636363] hover:text-white text-base leading-none"
-            >
-              &times;
-            </button>
+            <button onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#636363] hover:text-white text-base leading-none">&times;</button>
           )}
         </div>
 
@@ -151,40 +142,43 @@ export function ChatPriorityScreen({ chats, onStart }: Props): JSX.Element {
             const rawSub = name !== chat.chat_name ? chat.chat_name : null
             const subtitle = rawSub && !isRawIdentifier(rawSub) ? rawSub : null
             const id = chat.raw_chat_identifier || `chat-${idx}`
-            const isChecked = !!selected[id]
+            const isIndexed = indexedSet.has(chat.chat_name)
+            const isChecked = isIndexed || !!selected[id]
             return (
               <div
                 key={id}
                 onClick={() => {
+                  if (isIndexed) return // Can't deselect already indexed
                   setSelected((prev) => {
                     const next = { ...prev }
-                    if (next[id]) {
-                      delete next[id]
-                    } else {
-                      next[id] = true
-                    }
+                    if (next[id]) delete next[id]
+                    else next[id] = true
                     return next
                   })
                 }}
-                className="flex items-center gap-3 px-4 py-2.5 hover:bg-[#141414] cursor-pointer border-b border-[#1c1c1c] last:border-b-0 select-none"
+                className={`flex items-center gap-3 px-4 py-2.5 border-b border-[#1c1c1c] last:border-b-0 select-none ${
+                  isIndexed ? 'opacity-60 cursor-default' : 'hover:bg-[#141414] cursor-pointer'
+                }`}
               >
-                <input
-                  type="checkbox"
-                  checked={isChecked}
-                  onChange={() => {}}
-                  className="w-4 h-4 rounded border-[#333] bg-[#1c1c1c] accent-teal-500 flex-shrink-0 pointer-events-none"
-                />
+                {isIndexed ? (
+                  <div className="w-4 h-4 rounded bg-teal-600 flex items-center justify-center flex-shrink-0">
+                    <Check className="w-3 h-3 text-white" />
+                  </div>
+                ) : (
+                  <input
+                    type="checkbox"
+                    checked={isChecked}
+                    onChange={() => {}}
+                    className="w-4 h-4 rounded border-[#333] bg-[#1c1c1c] accent-teal-500 flex-shrink-0 pointer-events-none"
+                  />
+                )}
                 <div className="flex-1 min-w-0">
-                  <span className="text-sm text-white block truncate">{name}</span>
-                  {subtitle && (
-                    <span className="text-xs text-[#4a4a4a] block truncate">{subtitle}</span>
-                  )}
+                  <span className={`text-sm block truncate ${isIndexed ? 'text-[#8b8b8b]' : 'text-white'}`}>{name}</span>
+                  {subtitle && <span className="text-xs text-[#4a4a4a] block truncate">{subtitle}</span>}
+                  {isIndexed && <span className="text-[10px] text-teal-600">Indexed</span>}
                 </div>
                 <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    window.api.openImessage(chat.raw_chat_identifier)
-                  }}
+                  onClick={(e) => { e.stopPropagation(); window.api.openImessage(chat.raw_chat_identifier) }}
                   className="flex-shrink-0 p-1.5 rounded-md text-[#4a4a4a] hover:text-teal-400 hover:bg-[#1c1c1c] transition-colors"
                   title="Opens this conversation in Messages to trigger iCloud download of older attachments"
                 >
@@ -192,9 +186,7 @@ export function ChatPriorityScreen({ chats, onStart }: Props): JSX.Element {
                 </button>
                 <div className="flex flex-col items-end flex-shrink-0 gap-0.5">
                   <span className="text-xs text-[#636363] tabular-nums">{chat.attachment_count.toLocaleString()}</span>
-                  {chat.last_message_date && (
-                    <span className="text-[10px] text-[#4a4a4a]">{formatDate(chat.last_message_date)}</span>
-                  )}
+                  {chat.last_message_date && <span className="text-[10px] text-[#4a4a4a]">{formatDate(chat.last_message_date)}</span>}
                 </div>
               </div>
             )
@@ -205,16 +197,27 @@ export function ChatPriorityScreen({ chats, onStart }: Props): JSX.Element {
 
         <button
           onClick={handleStart}
-          className="w-full py-2.5 rounded-lg bg-teal-600 text-sm font-medium text-white hover:bg-teal-500 transition-colors"
+          disabled={newSelectedCount === 0}
+          className="w-full py-2.5 rounded-lg bg-teal-600 text-sm font-medium text-white hover:bg-teal-500 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
         >
-          Start indexing
+          {newSelectedCount > 0 ? `Index ${newSelectedCount} conversation${newSelectedCount > 1 ? 's' : ''}` : 'Select conversations to index'}
         </button>
 
+        {!hasIndexedData && (
+          <button
+            onClick={() => onStart([])}
+            className="mt-2 w-full py-2 rounded-lg bg-[#1c1c1c] text-sm text-[#a3a3a3] hover:bg-[#262626] hover:text-white transition-colors"
+          >
+            Skip — index everything equally
+          </button>
+        )}
+
+        {/* Reset button — small, muted, at the very bottom */}
         <button
-          onClick={() => onStart([])}
-          className="mt-2 w-full py-2 rounded-lg bg-[#1c1c1c] text-sm text-[#a3a3a3] hover:bg-[#262626] hover:text-white transition-colors"
+          onClick={onReset}
+          className="mt-6 w-full py-1.5 text-[11px] text-[#4a4a4a] hover:text-red-400 transition-colors"
         >
-          Skip — index everything equally
+          Reset everything
         </button>
       </div>
     </div>
