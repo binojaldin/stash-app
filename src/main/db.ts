@@ -301,6 +301,8 @@ export interface ChatNameEntry {
   sentCount: number
   receivedCount: number
   initiationCount: number
+  laughsGenerated: number
+  laughsReceived: number
 }
 
 export function getStats(chatNameFilter?: string): {
@@ -323,7 +325,7 @@ export function getStats(chatNameFilter?: string): {
     .filter((r) => !hidden.has(r.chat_name))
 
   // Enrich with message counts from chat.db
-  let msgStats = new Map<string, { messageCount: number; sentCount: number; receivedCount: number; initiationCount: number }>()
+  let msgStats = new Map<string, { messageCount: number; sentCount: number; receivedCount: number; initiationCount: number; laughsGenerated: number; laughsReceived: number }>()
   try {
     const { homedir } = require('os')
     const { join } = require('path')
@@ -357,12 +359,50 @@ export function getStats(chatNameFilter?: string): {
       `).all() as { chat_name: string; init_days: number }[]
 
       const initMap = new Map(initRows.map((r) => [r.chat_name, r.init_days]))
+
+      // Laugh detection
+      const laughMap = new Map<string, { generated: number; received: number }>()
+      try {
+        const LAUGH_RE = /\b(lol|lmao|lmfao|rofl|hehe|omg dead|im dead|i'm dead|i cant|i can't)\b|ha{2,}|he{2,}/i
+        const LAUGH_EMOJI = /[\u{1F602}\u{1F923}\u{1F480}]/u
+        const FIVE_MIN_NS = 300000000000
+
+        const laughRows = chatDb.prepare(`
+          SELECT
+            COALESCE(NULLIF(c.display_name, ''), c.chat_identifier) as chat_name,
+            m.is_from_me,
+            m.text,
+            m.date,
+            LAG(m.date) OVER (PARTITION BY cmj.chat_id ORDER BY m.date) as prev_date,
+            LAG(m.is_from_me) OVER (PARTITION BY cmj.chat_id ORDER BY m.date) as prev_is_from_me
+          FROM message m
+          JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
+          JOIN chat c ON cmj.chat_id = c.ROWID
+          WHERE m.text IS NOT NULL
+        `).all() as { chat_name: string; is_from_me: number; text: string; date: number; prev_date: number | null; prev_is_from_me: number | null }[]
+
+        for (const row of laughRows) {
+          if (row.prev_date === null || row.prev_is_from_me === null) continue
+          if (row.is_from_me === row.prev_is_from_me) continue // same sender
+          if (row.date - row.prev_date > FIVE_MIN_NS) continue // too long gap
+          const isLaugh = LAUGH_RE.test(row.text) || LAUGH_EMOJI.test(row.text)
+          if (!isLaugh) continue
+          if (!laughMap.has(row.chat_name)) laughMap.set(row.chat_name, { generated: 0, received: 0 })
+          const entry = laughMap.get(row.chat_name)!
+          if (row.is_from_me === 0) entry.generated++ // they laughed at your message
+          else entry.received++ // you laughed at their message
+        }
+      } catch { /* laugh detection failed, ignore */ }
+
       for (const r of rows) {
+        const laughs = laughMap.get(r.chat_name)
         msgStats.set(r.chat_name, {
           messageCount: r.message_count,
           sentCount: r.sent_count,
           receivedCount: r.received_count,
-          initiationCount: initMap.get(r.chat_name) || 0
+          initiationCount: initMap.get(r.chat_name) || 0,
+          laughsGenerated: laughs?.generated || 0,
+          laughsReceived: laughs?.received || 0
         })
       }
       chatDb.close()
@@ -378,7 +418,9 @@ export function getStats(chatNameFilter?: string): {
       messageCount: ms?.messageCount || 0,
       sentCount: ms?.sentCount || 0,
       receivedCount: ms?.receivedCount || 0,
-      initiationCount: ms?.initiationCount || 0
+      initiationCount: ms?.initiationCount || 0,
+      laughsGenerated: ms?.laughsGenerated || 0,
+      laughsReceived: ms?.laughsReceived || 0
     }
   })
 

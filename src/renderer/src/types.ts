@@ -40,6 +40,8 @@ export interface ChatNameEntry {
   sentCount: number
   receivedCount: number
   initiationCount: number
+  laughsGenerated: number
+  laughsReceived: number
 }
 
 export interface Stats {

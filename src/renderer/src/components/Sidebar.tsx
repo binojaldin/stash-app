@@ -88,6 +88,8 @@ export function Sidebar({ stats, filters, onFilterChange, onManageConversations,
         case 'most-sent': return b.sentCount - a.sentCount
         case 'most-received': return b.receivedCount - a.receivedCount
         case 'most-initiations': return b.initiationCount - a.initiationCount
+        case 'most-laughs-generated': return b.laughsGenerated - a.laughsGenerated
+        case 'most-laughs-received': return b.laughsReceived - a.laughsReceived
         default: return b.attachmentCount - a.attachmentCount
       }
     })
@@ -204,6 +206,8 @@ export function Sidebar({ stats, filters, onFilterChange, onManageConversations,
             <option value="most-sent">Most sent by you</option>
             <option value="most-received">Most received</option>
             <option value="most-initiations">You initiate most</option>
+            <option value="most-laughs-generated">Made them laugh most</option>
+            <option value="most-laughs-received">They make you laugh most</option>
           </select>
 
           {/* AI finder button */}
