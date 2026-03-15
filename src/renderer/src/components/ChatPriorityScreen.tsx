@@ -1,10 +1,10 @@
 import { useState, useMemo, useRef, useEffect } from 'react'
-import { Cloud, Check, ChevronLeft } from 'lucide-react'
-import type { ChatSummary } from '../types'
+import { Cloud, Check, ChevronLeft, Clock } from 'lucide-react'
+import type { ChatSummary, ChatNameEntry } from '../types'
 
 interface Props {
   chats: ChatSummary[]
-  indexedChatNames: string[]
+  indexedChats: ChatNameEntry[]
   onStart: (priorityChats: string[]) => void
   onReset: () => void
   onBack?: () => void
@@ -12,10 +12,22 @@ interface Props {
 
 type SortMode = 'recent' | 'attachments'
 type FilterMode = 'all' | 'new' | 'indexed'
+type ChatStatus = 'indexed' | 'queued' | 'new'
 
-export function ChatPriorityScreen({ chats, indexedChatNames, onStart, onReset, onBack }: Props): JSX.Element {
-  const indexedSet = useMemo(() => new Set(indexedChatNames), [indexedChatNames])
-  const hasIndexedData = indexedSet.size > 0
+export function ChatPriorityScreen({ chats, indexedChats, onStart, onReset, onBack }: Props): JSX.Element {
+  // Build a map of indexed chat names -> attachment count
+  const indexedMap = useMemo(() => {
+    const m = new Map<string, number>()
+    for (const c of indexedChats) m.set(c.rawName, c.attachmentCount)
+    return m
+  }, [indexedChats])
+
+  const getChatStatus = (chatName: string): ChatStatus => {
+    if (!indexedMap.has(chatName)) return 'new'
+    return (indexedMap.get(chatName) || 0) > 0 ? 'indexed' : 'queued'
+  }
+
+  const hasIndexedData = indexedChats.length > 0
   const [selected, setSelected] = useState<Record<string, boolean>>({})
   const [sortMode, setSortMode] = useState<SortMode>('recent')
   const [filterMode, setFilterMode] = useState<FilterMode>(hasIndexedData ? 'new' : 'all')
@@ -39,8 +51,8 @@ export function ChatPriorityScreen({ chats, indexedChatNames, onStart, onReset, 
     }
 
     // Indexed/new filter
-    if (filterMode === 'new') list = list.filter((c) => !indexedSet.has(c.chat_name))
-    else if (filterMode === 'indexed') list = list.filter((c) => indexedSet.has(c.chat_name))
+    if (filterMode === 'new') list = list.filter((c) => getChatStatus(c.chat_name) !== 'indexed')
+    else if (filterMode === 'indexed') list = list.filter((c) => getChatStatus(c.chat_name) === 'indexed')
 
     // Sort
     const sortFn = (a: ChatSummary, b: ChatSummary): number => {
@@ -50,17 +62,17 @@ export function ChatPriorityScreen({ chats, indexedChatNames, onStart, onReset, 
 
     if (filterMode === 'all') {
       // Unindexed first, then indexed
-      const unindexed = list.filter((c) => !indexedSet.has(c.chat_name)).sort(sortFn)
-      const indexed = list.filter((c) => indexedSet.has(c.chat_name)).sort(sortFn)
+      const unindexed = list.filter((c) => getChatStatus(c.chat_name) !== 'indexed').sort(sortFn)
+      const indexed = list.filter((c) => getChatStatus(c.chat_name) === 'indexed').sort(sortFn)
       return { unindexed, indexed }
     }
 
     return { unindexed: list.sort(sortFn), indexed: [] }
-  }, [chats, sortMode, search, filterMode, indexedSet])
+  }, [chats, sortMode, search, filterMode, indexedMap])
 
   const selectAllNew = (): void => {
     const next: Record<string, boolean> = {}
-    chats.forEach((c) => { if (!indexedSet.has(c.chat_name)) next[String(c.chat_id)] = true })
+    chats.forEach((c) => { if (getChatStatus(c.chat_name) !== 'indexed') next[String(c.chat_id)] = true })
     setSelected(next)
   }
   const selectNone = (): void => setSelected({})
@@ -95,30 +107,35 @@ export function ChatPriorityScreen({ chats, indexedChatNames, onStart, onReset, 
   const newSelectedCount = Object.keys(selected).length
 
   const renderRow = (chat: ChatSummary): JSX.Element => {
-    const name = chat.display_name?.trim() || 'Unknown'
+    let name = chat.display_name?.trim() || 'Unknown'
+    if (name.startsWith('#')) name = 'Group chat'
     const rawSub = name !== chat.chat_name ? chat.chat_name : null
-    const subtitle = rawSub && !isRawIdentifier(rawSub) ? rawSub : null
+    const subtitle = rawSub && !isRawIdentifier(rawSub) && !rawSub.startsWith('#') ? rawSub : null
     const id = String(chat.chat_id)
-    const isIndexed = indexedSet.has(chat.chat_name)
-    const isChecked = isIndexed || !!selected[id]
+    const status = getChatStatus(chat.chat_name)
+    const isLocked = status === 'indexed'
+    const isChecked = isLocked || !!selected[id]
     return (
       <div
         key={id}
         onClick={(e) => {
           e.stopPropagation()
-          if (isIndexed) return
+          if (isLocked) return
           setSelected((prev) => { const next = { ...prev }; if (next[id]) delete next[id]; else next[id] = true; return next })
         }}
-        className={`flex items-center gap-3 px-4 py-2.5 border-b border-[#1c1c1c] last:border-b-0 select-none ${isIndexed ? 'opacity-50 cursor-default' : 'hover:bg-[#141414] cursor-pointer'}`}
+        className={`flex items-center gap-3 px-4 py-2.5 border-b border-[#1c1c1c] last:border-b-0 select-none ${isLocked ? 'opacity-50 cursor-default' : 'hover:bg-[#141414] cursor-pointer'}`}
       >
-        {isIndexed ? (
+        {status === 'indexed' ? (
           <div className="w-4 h-4 rounded bg-teal-600 flex items-center justify-center flex-shrink-0"><Check className="w-3 h-3 text-white" /></div>
+        ) : status === 'queued' ? (
+          <div className="w-4 h-4 rounded bg-[#333] flex items-center justify-center flex-shrink-0"><Clock className="w-3 h-3 text-[#636363]" /></div>
         ) : (
           <input type="checkbox" checked={isChecked} onChange={() => {}} className="w-4 h-4 rounded border-[#333] bg-[#1c1c1c] accent-teal-500 flex-shrink-0 pointer-events-none" />
         )}
         <div className="flex-1 min-w-0">
-          <span className={`text-sm block truncate ${isIndexed ? 'text-[#8b8b8b]' : 'text-white'}`}>{name}</span>
+          <span className={`text-sm block truncate ${isLocked ? 'text-[#8b8b8b]' : 'text-white'}`}>{name}</span>
           {subtitle && <span className="text-xs text-[#4a4a4a] block truncate">{subtitle}</span>}
+          {status === 'queued' && <span className="text-[10px] text-[#636363]">Queued</span>}
         </div>
         <button
           onClick={(e) => { e.stopPropagation(); window.api.openImessage(chat.raw_chat_identifier) }}

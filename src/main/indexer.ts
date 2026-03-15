@@ -113,13 +113,19 @@ function isGroupChatIdentifier(identifier: string): boolean {
 }
 
 function resolveDisplayName(summary: ChatSummary): string {
-  if (summary.display_name && !summary.display_name.startsWith('+') && !summary.display_name.includes('@') && !isGroupChatIdentifier(summary.display_name)) {
+  // Named group chats with proper display names (not hash/phone/email/chat IDs)
+  if (summary.display_name && !summary.display_name.startsWith('+') && !summary.display_name.includes('@') && !summary.display_name.startsWith('#') && !isGroupChatIdentifier(summary.display_name)) {
     return summary.display_name
   }
-  if (isGroupChatIdentifier(summary.raw_chat_identifier) && summary.participant_handles.length > 0) {
-    const count = summary.participant_handles.length + 1 // +1 for you
+  // Group chats (by identifier pattern or hash prefix)
+  if ((isGroupChatIdentifier(summary.raw_chat_identifier) || summary.chat_name?.startsWith('#') || summary.display_name?.startsWith('#')) && summary.participant_handles.length > 0) {
+    const count = summary.participant_handles.length + 1
     return `Group chat · ${count} members`
   }
+  if (summary.chat_name?.startsWith('#') || summary.display_name?.startsWith('#')) {
+    return 'Group chat'
+  }
+  // Single chat — resolve handle
   const identifier = summary.raw_chat_identifier || summary.chat_name
   if (identifier && (identifier.startsWith('+') || identifier.includes('@'))) return resolveContact(identifier)
   return summary.chat_name

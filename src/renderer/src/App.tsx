@@ -242,7 +242,7 @@ export default function App(): JSX.Element {
   if (appState === 'priority') return (
     <ChatPriorityScreen
       chats={chatSummaries}
-      indexedChatNames={stats.chatNames}
+      indexedChats={stats.chatNames}
       onStart={handleStartWithPriority}
       onReset={handleResetEverything}
       onBack={stats.total > 0 ? () => setAppState('main') : undefined}

@@ -273,7 +273,8 @@ export function Sidebar({ stats, filters, onFilterChange, onManageConversations,
 
           <div className="max-h-60 overflow-y-auto">
             {filteredChats.map((chat) => {
-              const displayName = stats.chatNameMap?.[chat.rawName] || chat.rawName
+              let displayName = stats.chatNameMap?.[chat.rawName] || chat.rawName
+              if (displayName.startsWith('#')) displayName = 'Group chat'
               const active = filters.chatName === chat.rawName
               const highlighted = finderSet.has(chat.rawName)
               return (
