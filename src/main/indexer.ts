@@ -117,9 +117,8 @@ function resolveDisplayName(summary: ChatSummary): string {
     return summary.display_name
   }
   if (isGroupChatIdentifier(summary.raw_chat_identifier) && summary.participant_handles.length > 0) {
-    const names = summary.participant_handles.slice(0, 4).map((h) => resolveContact(h))
-    const label = names.join(', ')
-    return summary.participant_handles.length > 4 ? `Group: ${label} +${summary.participant_handles.length - 4}` : `Group: ${label}`
+    const count = summary.participant_handles.length + 1 // +1 for you
+    return `Group chat · ${count} members`
   }
   const identifier = summary.raw_chat_identifier || summary.chat_name
   if (identifier && (identifier.startsWith('+') || identifier.includes('@'))) return resolveContact(identifier)
