@@ -123,12 +123,18 @@ export function readAllAttachments(): MessageAttachment[] {
   try {
     const rows = db.prepare(query).all() as MessageAttachment[]
     db.close()
-    return rows.map((row) => ({
-      ...row,
-      filename: row.filename ? basename(row.filename) : null,
-      original_path: row.original_path ? row.original_path.replace('~', homedir()) : null,
-      file_size: row.file_size || 0
-    }))
+    const JUNK_EXTENSIONS = ['.pluginPayloadAttachment', '.pluginPayloadData', '.archive']
+    return rows
+      .filter((row) => {
+        if (!row.filename) return false
+        return !JUNK_EXTENSIONS.some((ext) => row.filename!.includes(ext))
+      })
+      .map((row) => ({
+        ...row,
+        filename: row.filename ? basename(row.filename) : null,
+        original_path: row.original_path ? row.original_path.replace('~', homedir()) : null,
+        file_size: row.file_size || 0
+      }))
   } catch (err) {
     console.error('Error reading Messages database:', err)
     db.close()
