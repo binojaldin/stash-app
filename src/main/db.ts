@@ -451,9 +451,11 @@ export function getStats(chatNameFilter?: string, dateFrom?: string, dateTo?: st
             SELECT
               c.chat_identifier as chat_name,
               COUNT(*) as total,
-              SUM(CASE WHEN CAST(strftime('%H', datetime(m.date/1000000000 + 978307200, 'unixepoch', 'localtime')) AS INTEGER) >= 23
-                       OR CAST(strftime('%H', datetime(m.date/1000000000 + 978307200, 'unixepoch', 'localtime')) AS INTEGER) < 4
-                       THEN 1 ELSE 0 END) as late_night_count
+              SUM(CASE
+                WHEN CAST(strftime('%H', datetime(m.date/1000000000 + 978307200, 'unixepoch', 'localtime')) AS INTEGER) >= 23 THEN 1
+                WHEN CAST(strftime('%H', datetime(m.date/1000000000 + 978307200, 'unixepoch', 'localtime')) AS INTEGER) < 4 THEN 1
+                ELSE 0
+              END) as late_night_count
             FROM message m
             JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
             JOIN chat c ON cmj.chat_id = c.ROWID
@@ -463,15 +465,17 @@ export function getStats(chatNameFilter?: string, dateFrom?: string, dateTo?: st
 
           lateNightCache.clear()
           for (const r of lateNightRows) {
-            if (r.total > 0) lateNightCache.set(r.chat_name, Math.round((r.late_night_count / r.total) * 100))
+            if (r.total > 0 && r.late_night_count > 0) {
+              lateNightCache.set(r.chat_name, Math.round((r.late_night_count / r.total) * 100))
+            }
           }
           if (lateNightRows.length > 0) {
             lateNightCacheValid = true
-            console.log(`[LateNight] Cached ${lateNightCache.size} conversations`)
+            console.log(`[LateNight] Cached ${lateNightCache.size} chats, sample:`, [...lateNightCache.entries()].slice(0, 3))
           } else {
-            console.log('[LateNight] No rows returned — will retry next call')
+            console.log('[LateNight] No rows returned')
           }
-        } catch { /* ignore */ }
+        } catch (err) { console.error('[LateNight] Error:', err) }
       }
 
       // Reply latency — cached per session
@@ -504,11 +508,11 @@ export function getStats(chatNameFilter?: string, dateFrom?: string, dateTo?: st
           }
           if (replyLatencyCache.size > 0) {
             replyLatencyCacheValid = true
-            console.log(`[ReplyLatency] Cached ${replyLatencyCache.size} conversations`)
+            console.log(`[ReplyLatency] Cached ${replyLatencyCache.size} chats, sample:`, [...replyLatencyCache.entries()].slice(0, 3))
           } else {
             console.log('[ReplyLatency] No data cached — will retry next call')
           }
-        } catch { /* ignore */ }
+        } catch (err) { console.error('[ReplyLatency] Error:', err) }
       }
 
       for (const r of rows) {
