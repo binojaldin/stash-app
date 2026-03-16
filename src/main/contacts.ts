@@ -1,11 +1,11 @@
 import { execFileSync, execSync } from 'child_process'
-import { existsSync, statSync } from 'fs'
+import { existsSync, unlinkSync } from 'fs'
 import { join } from 'path'
 import { app } from 'electron'
 
 let contactsBinaryPath: string | null = null
 const contactCache = new Map<string, string>()
-const photoCache = new Map<string, string>() // handle -> base64 photo
+const photoCache = new Map<string, string>()
 
 function getContactsBinaryPath(): string {
   return join(app.getPath('appData'), 'Stash', 'contacts_helper')
@@ -23,30 +23,28 @@ export function compileContactsHelper(): boolean {
   const binaryPath = getContactsBinaryPath()
   const sourcePath = getContactsSourcePath()
 
-  if (existsSync(binaryPath)) {
-    try {
-      if (existsSync(sourcePath) && statSync(sourcePath).mtimeMs > statSync(binaryPath).mtimeMs) {
-        // Source is newer — delete old binary and recompile
-        try { require('fs').unlinkSync(binaryPath) } catch { /* ignore */ }
-      } else {
-        contactsBinaryPath = binaryPath
-        return true
-      }
-    } catch {
-      contactsBinaryPath = binaryPath
-      return true
-    }
+  if (!existsSync(sourcePath)) {
+    console.error('[Contacts] Swift source not found at:', sourcePath)
+    return false
   }
 
-  if (!existsSync(sourcePath)) return false
+  // Always delete existing binary to force fresh compile
+  if (existsSync(binaryPath)) {
+    try {
+      unlinkSync(binaryPath)
+      console.log('[Contacts] Deleted old binary, recompiling...')
+    } catch (err) {
+      console.error('[Contacts] Could not delete old binary:', err)
+    }
+  }
 
   try {
     execSync(`swiftc -O "${sourcePath}" -o "${binaryPath}" -framework Contacts`, { timeout: 120000 })
     contactsBinaryPath = binaryPath
-    console.log('Contacts helper compiled successfully')
+    console.log('[Contacts] Compiled successfully')
     return true
   } catch (err) {
-    console.error('Failed to compile contacts helper:', err)
+    console.error('[Contacts] Compile failed:', err)
     return false
   }
 }
