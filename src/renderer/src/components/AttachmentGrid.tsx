@@ -106,32 +106,65 @@ function resolveName(raw: string | null, map?: Record<string, string>): string {
   return resolved
 }
 
+function typeBadge(mime: string | null, ext: string | null): { label: string; bg: string; color: string } {
+  const e = (ext || '').toLowerCase().replace('.', '')
+  const m = mime || ''
+  if (e === 'heic' || e === 'heif') return { label: 'HEIC', bg: '#2EC4A0', color: '#04342C' }
+  if (e === 'gif') return { label: 'GIF', bg: '#854F0B', color: '#FAEEDA' }
+  if (e === 'pdf') return { label: 'PDF', bg: '#993C1D', color: '#FAECE7' }
+  if (m.startsWith('video/') || ['mov', 'mp4', 'm4v'].includes(e)) return { label: e.toUpperCase() || 'VID', bg: '#3A3030', color: '#C8A090' }
+  if (m.startsWith('audio/') || ['m4a', 'mp3', 'aac'].includes(e)) return { label: e.toUpperCase() || 'AUD', bg: '#854F0B', color: '#FAEEDA' }
+  if (e === 'png') return { label: 'PNG', bg: '#534AB7', color: '#EEEDFE' }
+  if (['jpg', 'jpeg'].includes(e)) return { label: 'JPG', bg: '#534AB7', color: '#EEEDFE' }
+  return { label: (e || 'FILE').toUpperCase().slice(0, 4), bg: '#2A2520', color: '#9a948f' }
+}
+
 function ImageCard({ attachment, selected, onClick, chatNameMap }: { attachment: Attachment; selected: boolean; onClick: () => void; chatNameMap?: Record<string, string> }): JSX.Element {
-  const unavailable = !attachment.is_available
-  const displayContact = attachment.chat_name ? resolveName(attachment.chat_name, chatNameMap) : ''
+  const badge = typeBadge(attachment.mime_type, attachment.file_extension)
+  const isVideo = attachment.is_video === 1 || attachment.mime_type?.startsWith('video/')
+  const isAudio = attachment.mime_type?.startsWith('audio/')
+  const senderName = resolveName(attachment.chat_name, chatNameMap)
+  const dateStr = attachment.created_at ? new Date(attachment.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''
+
   return (
-    <button
-      onClick={onClick}
-      className="group overflow-hidden transition-all cursor-pointer text-left relative"
-      style={{
-        borderRadius: 10,
-        border: selected ? '1.5px solid #E8604A' : unavailable ? '1px dashed rgba(255,255,255,0.06)' : '1px solid rgba(255,255,255,0.06)',
-        background: '#201C19',
-        opacity: unavailable ? 0.6 : 1
-      }}
-    >
-      <div className="aspect-square overflow-hidden relative" style={{ background: '#1A1714' }}>
+    <div onClick={onClick}
+      style={{ background: '#201C19', borderRadius: 12, overflow: 'hidden', cursor: 'pointer', position: 'relative' }}
+      onMouseEnter={(e) => { const el = e.currentTarget; el.querySelector<HTMLElement>('.card-overlay')?.style.setProperty('opacity', '1'); el.querySelector<HTMLElement>('.card-actions')?.style.setProperty('opacity', '1') }}
+      onMouseLeave={(e) => { const el = e.currentTarget; el.querySelector<HTMLElement>('.card-overlay')?.style.setProperty('opacity', '0'); el.querySelector<HTMLElement>('.card-actions')?.style.setProperty('opacity', '0') }}>
+
+      <div style={{ aspectRatio: '1', background: '#2A2520', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', position: 'relative' }}>
         <ThumbnailImage attachment={attachment} />
       </div>
-      <div style={{ padding: '8px 10px' }}>
-        <p className="truncate" style={{ fontSize: 11, fontWeight: 500, color: unavailable ? '#636363' : '#FFFFFF' }}>{attachment.filename}</p>
-        <p className="truncate" style={{ fontSize: 10 }}>
-          <span style={{ color: '#E8604A', fontWeight: 400 }}>{displayContact}</span>
-          {displayContact && attachment.created_at && <span style={{ color: '#444444' }}> · </span>}
-          {attachment.created_at && <span style={{ color: '#555555', fontWeight: 300 }}>{format(new Date(attachment.created_at), 'MMM d, yyyy')}</span>}
-        </p>
+
+      {/* Type badge */}
+      <div style={{ position: 'absolute', top: 6, left: 6, background: badge.bg, color: badge.color, borderRadius: 4, padding: '2px 5px', fontSize: 9, fontWeight: 600, letterSpacing: '0.06em', fontFamily: "'DM Sans'" }}>{badge.label}</div>
+
+      {/* Scene tag placeholder */}
+      <div style={{ position: 'absolute', bottom: 36, left: 6, border: '1px dashed rgba(46,196,160,0.35)', borderRadius: 4, padding: '2px 6px', fontSize: 9, color: 'rgba(46,196,160,0.5)', display: 'flex', alignItems: 'center', gap: 3, fontFamily: "'DM Sans'" }}>
+        <div style={{ width: 4, height: 4, borderRadius: '50%', background: 'rgba(46,196,160,0.5)', flexShrink: 0 }} />scene · V2
       </div>
-    </button>
+
+      {/* Hover actions */}
+      <div className="card-actions" style={{ position: 'absolute', bottom: 36, right: 6, opacity: 0, display: 'flex', gap: 4, transition: 'opacity 0.15s' }}>
+        <button onClick={(e) => { e.stopPropagation() }}
+          style={{ width: 24, height: 24, borderRadius: 6, background: 'rgba(232,96,74,0.8)', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M8 1l3 3-3 3M11 4H5a3 3 0 000 6h1" /></svg>
+        </button>
+      </div>
+
+      {/* Hover border */}
+      <div className="card-overlay" style={{ position: 'absolute', inset: 0, border: selected ? '1.5px solid #E8604A' : '1.5px solid #E8604A', borderRadius: 12, opacity: selected ? 1 : 0, pointerEvents: 'none', transition: 'opacity 0.15s' }} />
+
+      {/* Card info */}
+      <div style={{ padding: '6px 8px 8px' }}>
+        <div style={{ fontSize: 11, color: '#d0ccc8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginBottom: 1, fontWeight: 500, fontFamily: "'DM Sans'" }}>{attachment.filename}</div>
+        <div style={{ fontSize: 10, color: '#4a4542', display: 'flex', alignItems: 'center', gap: 3, fontFamily: "'DM Sans'" }}>
+          <span style={{ color: '#E8604A' }}>{senderName}</span>
+          {senderName && dateStr && <span>·</span>}
+          <span>{dateStr}</span>
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -201,7 +234,7 @@ export function AttachmentGrid({ attachments, selectedId, onSelect, onLoadMore, 
   if (isImageView) {
     return (
       <>
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 7 }}>
           {attachments.map((att) => (
             <ImageCard key={att.id} attachment={att} selected={selectedId === att.id} onClick={() => onSelect(att)} chatNameMap={chatNameMap} />
           ))}

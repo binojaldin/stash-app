@@ -278,31 +278,48 @@ export default function App(): JSX.Element {
           </div>
         )}
 
-        {/* Search bar + toolbar — only in attachment views */}
+        {/* Control bar — type pills + count + sort + view toggle */}
         {showAttachments && (
-          <>
-            <div style={{ padding: '10px 14px 0' }} className="flex-shrink-0">
-              <SearchBar ref={searchBarRef} value={query} onChange={(v) => setQuery(v)} />
+          <div style={{ height: 48, background: '#F6F3EF', borderBottom: '1px solid #EAE5DF', display: 'flex', alignItems: 'center', gap: 6, padding: '0 14px', flexShrink: 0 }}>
+            {[
+              { label: 'All', type: 'all', color: '#888' },
+              { label: 'Images', type: 'images', color: '#E8604A' },
+              { label: 'Videos', type: 'videos', color: '#2EC4A0' },
+              { label: 'Docs', type: 'documents', color: '#7F77DD' },
+              { label: 'Audio', type: 'audio', color: '#BA7517' }
+            ].map(({ label, type: t, color }) => (
+              <button key={t} onClick={() => setFilters({ ...filters, type: t })}
+                style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 10px', borderRadius: 999, fontSize: 12, cursor: 'pointer', border: `1px solid ${(filters.type || 'all') === t ? 'rgba(0,0,0,0.1)' : 'transparent'}`, background: (filters.type || 'all') === t ? '#fff' : 'transparent', color: (filters.type || 'all') === t ? '#1A1A1A' : '#8a8480', fontWeight: (filters.type || 'all') === t ? 500 : 400, fontFamily: "'DM Sans'" }}>
+                <div style={{ width: 6, height: 6, borderRadius: '50%', background: color, flexShrink: 0 }} />{label}
+              </button>
+            ))}
+            <div style={{ width: 1, height: 20, background: '#EAE5DF', flexShrink: 0, margin: '0 4px' }} />
+            <span style={{ fontSize: 11, color: '#9a948f', whiteSpace: 'nowrap' }}>{attachments.length} files</span>
+            <div style={{ flex: 1 }} />
+            <div style={{ position: 'relative' }}>
+              <button onClick={(e) => { e.stopPropagation(); setShowSortMenu(!showSortMenu) }}
+                style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 8, fontSize: 12, color: '#6f6a65', cursor: 'pointer', border: '1px solid #EAE5DF', background: '#fff', fontFamily: "'DM Sans'", whiteSpace: 'nowrap' }}>
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M1 3h10M3 6h6M5 9h2"/></svg>
+                {SORT_OPTIONS.find((o) => o.value === sortOrder)?.label}
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M2 4l3 3 3-3"/></svg>
+              </button>
+              {showSortMenu && (
+                <div style={{ position: 'absolute', top: 'calc(100% + 4px)', right: 0, background: '#fff', border: '1px solid #EAE5DF', borderRadius: 10, overflow: 'hidden', width: 148, zIndex: 100, boxShadow: '0 4px 20px rgba(0,0,0,0.1)' }}>
+                  {SORT_OPTIONS.map((opt) => (
+                    <button key={opt.value} onClick={() => { setSortOrder(opt.value); setShowSortMenu(false) }}
+                      style={{ width: '100%', textAlign: 'left', padding: '9px 14px', fontSize: 12, color: sortOrder === opt.value ? '#E8604A' : '#6f6a65', fontWeight: sortOrder === opt.value ? 500 : 400, background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: "'DM Sans'" }}>{opt.label}</button>
+                  ))}
+                </div>
+              )}
             </div>
-            <div className="flex items-center justify-between flex-shrink-0" style={{ padding: '8px 14px' }}>
-              <div className="flex items-center gap-1">
-                <button onClick={() => setViewMode('grid')} style={{ padding: 6, borderRadius: 6, background: viewMode === 'grid' ? '#E8E3DC' : 'transparent', color: viewMode === 'grid' ? '#1A1A1A' : '#8a8480' }}><Grid style={{ width: 14, height: 14 }} /></button>
-                <button onClick={() => setViewMode('list')} style={{ padding: 6, borderRadius: 6, background: viewMode === 'list' ? '#E8E3DC' : 'transparent', color: viewMode === 'list' ? '#1A1A1A' : '#8a8480' }}><List style={{ width: 14, height: 14 }} /></button>
-              </div>
-              <div className="relative">
-                <button onClick={(e) => { e.stopPropagation(); setShowSortMenu(!showSortMenu) }} className="flex items-center gap-1.5" style={{ fontSize: 11, fontWeight: 300, color: '#6f6a65', background: 'transparent', border: 'none', cursor: 'pointer' }}>
-                  {SORT_OPTIONS.find((o) => o.value === sortOrder)?.label}<ChevronDown style={{ width: 12, height: 12 }} />
-                </button>
-                {showSortMenu && (
-                  <div className="absolute right-0 top-full mt-1 w-40 rounded-lg shadow-lg z-20 overflow-hidden" style={{ background: '#FFFFFF', border: '1px solid #EAE5DF' }}>
-                    {SORT_OPTIONS.map((opt) => (
-                      <button key={opt.value} onClick={() => { setSortOrder(opt.value); setShowSortMenu(false) }} className="w-full text-left px-3 py-2 transition-colors" style={{ fontSize: 11, color: sortOrder === opt.value ? '#1A1A1A' : '#6f6a65', background: sortOrder === opt.value ? '#F5F0EA' : 'transparent' }}>{opt.label}</button>
-                    ))}
-                  </div>
-                )}
-              </div>
+            <div style={{ width: 1, height: 20, background: '#EAE5DF', flexShrink: 0, margin: '0 4px' }} />
+            <div style={{ display: 'flex', background: '#EAE5DF', borderRadius: 8, padding: 2, gap: 1 }}>
+              <button onClick={() => setViewMode('grid')} style={{ width: 28, height: 28, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', background: viewMode === 'grid' ? '#fff' : 'transparent', border: 'none', cursor: 'pointer' }}>
+                <Grid style={{ width: 14, height: 14, stroke: viewMode === 'grid' ? '#1A1A1A' : '#8a8480' }} /></button>
+              <button onClick={() => setViewMode('list')} style={{ width: 28, height: 28, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', background: viewMode === 'list' ? '#fff' : 'transparent', border: 'none', cursor: 'pointer' }}>
+                <List style={{ width: 14, height: 14, stroke: viewMode === 'list' ? '#1A1A1A' : '#8a8480' }} /></button>
             </div>
-          </>
+          </div>
         )}
 
         {/* Insights label */}

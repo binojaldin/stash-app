@@ -90,8 +90,8 @@ export function Sidebar({ stats, filters, onFilterChange, onManageConversations,
     return (
       <div style={{ width: 240, minWidth: 240, flexShrink: 0, height: '100%', background: '#0F0F0F', borderRight: '1px solid #1A1A1A', display: 'flex', flexDirection: 'column', fontFamily: "'DM Sans', sans-serif" }}>
         <div style={{ height: 44, display: 'flex', alignItems: 'center', paddingLeft: 36, flexShrink: 0, borderBottom: '1px solid #1A1A1A', cursor: 'pointer', WebkitAppRegion: 'drag' } as React.CSSProperties} onClick={() => onScopePerson?.(null)}>
-          <span style={{ color: '#2EC4A0', fontSize: 13, marginRight: 6, WebkitAppRegion: 'no-drag' } as React.CSSProperties}>←</span>
-          <span style={{ fontFamily: "'Unbounded', sans-serif", fontSize: 18, letterSpacing: '0.22em' }}>
+          <span style={{ color: '#2EC4A0', fontSize: 13, marginRight: 8, fontFamily: "'DM Sans'", WebkitAppRegion: 'no-drag' } as React.CSSProperties}>←</span>
+          <span style={{ fontFamily: "'Unbounded', sans-serif", fontSize: 18, letterSpacing: '0.22em', WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
             <span style={{ fontWeight: 200, color: '#FFFFFF' }}>ST</span>
             <span style={{ fontWeight: 400, color: '#E8604A' }}>ASH</span>
           </span>
