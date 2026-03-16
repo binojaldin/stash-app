@@ -337,7 +337,7 @@ export function getStats(chatNameFilter?: string): {
       const chatDb = new Database(chatDbPath, { readonly: true })
       const rows = chatDb.prepare(`
         SELECT
-          COALESCE(NULLIF(c.display_name, ''), c.chat_identifier) as chat_name,
+          c.chat_identifier as chat_name,
           COUNT(m.ROWID) as message_count,
           SUM(CASE WHEN m.is_from_me = 1 THEN 1 ELSE 0 END) as sent_count,
           SUM(CASE WHEN m.is_from_me = 0 THEN 1 ELSE 0 END) as received_count
@@ -351,7 +351,7 @@ export function getStats(chatNameFilter?: string): {
       // Initiation count: days where user sent first message
       const initRows = chatDb.prepare(`
         SELECT
-          COALESCE(NULLIF(c.display_name, ''), c.chat_identifier) as chat_name,
+          c.chat_identifier as chat_name,
           COUNT(DISTINCT date(datetime(m.date/1000000000 + 978307200, 'unixepoch', 'localtime'))) as init_days
         FROM message m
         JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
@@ -362,10 +362,19 @@ export function getStats(chatNameFilter?: string): {
 
       const initMap = new Map(initRows.map((r) => [r.chat_name, r.init_days]))
 
+      // Build display_name → chat_identifier map for bridging named groups
+      const displayToIdentifier = new Map<string, string>()
+      try {
+        const dnRows = chatDb.prepare(`
+          SELECT NULLIF(display_name, '') as dn, chat_identifier as ci FROM chat WHERE display_name IS NOT NULL AND display_name != ''
+        `).all() as { dn: string; ci: string }[]
+        for (const r of dnRows) if (r.dn) displayToIdentifier.set(r.dn, r.ci)
+      } catch { /* ignore */ }
+
       // Participant counts to identify group chats
       try {
         const partRows = chatDb.prepare(`
-          SELECT COALESCE(NULLIF(c.display_name, ''), c.chat_identifier) as chat_name, COUNT(chj.handle_id) as participant_count
+          SELECT c.chat_identifier as chat_name, COUNT(chj.handle_id) as participant_count
           FROM chat c LEFT JOIN chat_handle_join chj ON c.ROWID = chj.chat_id GROUP BY c.ROWID
         `).all() as { chat_name: string; participant_count: number }[]
         for (const r of partRows) participantMap.set(r.chat_name, r.participant_count)
@@ -380,7 +389,7 @@ export function getStats(chatNameFilter?: string): {
 
         const laughRows = chatDb.prepare(`
           SELECT
-            COALESCE(NULLIF(c.display_name, ''), c.chat_identifier) as chat_name,
+            c.chat_identifier as chat_name,
             m.is_from_me,
             m.text,
             m.date,
@@ -424,7 +433,12 @@ export function getStats(chatNameFilter?: string): {
   let matched = 0, unmatched = 0
   const chatNames = chatDetails.map((r) => {
     let ms = msgStats.get(r.chat_name)
-    // Fallback: try case-insensitive match if exact key misses
+    // Fallback 1: try display_name → chat_identifier bridge (named groups)
+    if (!ms) {
+      const bridged = displayToIdentifier.get(r.chat_name)
+      if (bridged) ms = msgStats.get(bridged)
+    }
+    // Fallback 2: case-insensitive match
     if (!ms) {
       const key = r.chat_name?.toLowerCase()
       for (const [k, v] of msgStats) {
@@ -442,7 +456,7 @@ export function getStats(chatNameFilter?: string): {
       initiationCount: ms?.initiationCount || 0,
       laughsGenerated: ms?.laughsGenerated || 0,
       laughsReceived: ms?.laughsReceived || 0,
-      isGroup: (participantMap.get(r.chat_name) ?? 0) > 1 || /^chat\d+/i.test(r.chat_name || '')
+      isGroup: (participantMap.get(r.chat_name) ?? participantMap.get(displayToIdentifier.get(r.chat_name) || '') ?? 0) > 1 || /^chat\d+/i.test(r.chat_name || '')
     }
   })
   if (unmatched > 0) console.log(`[getStats] ${matched} chats matched, ${unmatched} unmatched`)
