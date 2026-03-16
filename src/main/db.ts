@@ -465,8 +465,12 @@ export function getStats(chatNameFilter?: string, dateFrom?: string, dateTo?: st
           for (const r of lateNightRows) {
             if (r.total > 0) lateNightCache.set(r.chat_name, Math.round((r.late_night_count / r.total) * 100))
           }
-          lateNightCacheValid = true
-          console.log(`[LateNight] Cached ${lateNightCache.size} conversations`)
+          if (lateNightRows.length > 0) {
+            lateNightCacheValid = true
+            console.log(`[LateNight] Cached ${lateNightCache.size} conversations`)
+          } else {
+            console.log('[LateNight] No rows returned — will retry next call')
+          }
         } catch { /* ignore */ }
       }
 
@@ -498,8 +502,12 @@ export function getStats(chatNameFilter?: string, dateFrom?: string, dateTo?: st
               replyLatencyCache.set(chat.chat_name, Math.round(responseTimes.reduce((a, b) => a + b, 0) / responseTimes.length))
             }
           }
-          replyLatencyCacheValid = true
-          console.log(`[ReplyLatency] Cached ${replyLatencyCache.size} conversations`)
+          if (replyLatencyCache.size > 0) {
+            replyLatencyCacheValid = true
+            console.log(`[ReplyLatency] Cached ${replyLatencyCache.size} conversations`)
+          } else {
+            console.log('[ReplyLatency] No data cached — will retry next call')
+          }
         } catch { /* ignore */ }
       }
 
@@ -722,6 +730,16 @@ export function invalidateLaughCache(): void {
   replyLatencyCache.clear()
 }
 
+export function invalidateLateNightCache(): void {
+  lateNightCacheValid = false
+  lateNightCache.clear()
+}
+
+export function invalidateReplyLatencyCache(): void {
+  replyLatencyCacheValid = false
+  replyLatencyCache.clear()
+}
+
 export function updateReactionCounts(): void {
   const d = initDb()
   try {
@@ -760,12 +778,18 @@ export function updateReactionCounts(): void {
     const updateStmt = d.prepare('UPDATE attachments SET reaction_count = ? WHERE filename = ? AND reaction_count != ?')
     let updated = 0
 
+    const pathStmt = d.prepare('UPDATE attachments SET reaction_count = ? WHERE original_path LIKE ? AND reaction_count != ?')
     const tx = d.transaction(() => {
       for (const row of attGuids) {
         const count = reactionMap.get(row.guid) || 0
         if (count > 0) {
           const fname = basename(row.filename)
-          const result = updateStmt.run(count, fname, count)
+          // Try filename match first
+          let result = updateStmt.run(count, fname, count)
+          // Fallback: try original_path match
+          if (result.changes === 0) {
+            result = pathStmt.run(count, `%${fname}`, count)
+          }
           updated += result.changes
         }
       }

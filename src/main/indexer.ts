@@ -18,7 +18,8 @@ import {
   updateAvailability,
   clearAllAttachments,
   getAttachmentById,
-  updateReactionCounts
+  updateReactionCounts,
+  invalidateLaughCache
 } from './db'
 import { compileOcrHelper, runOcr } from './ocr'
 import { compileContactsHelper, resolveContact, resolveContactsBatch } from './contacts'
@@ -424,6 +425,8 @@ export async function startIndexing(win: BrowserWindow | null, selectedChats?: s
     }
   }
 
+  // Invalidate stat caches so next getStats() re-queries
+  invalidateLaughCache()
   // Update reaction counts from chat.db
   try { updateReactionCounts() } catch (e) { console.error('[Reactions] Error updating counts:', e) }
 

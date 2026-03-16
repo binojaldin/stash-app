@@ -2,7 +2,7 @@ import { app, shell, BrowserWindow, ipcMain, dialog, Menu, Tray, nativeImage } f
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import { checkFullDiskAccess } from './messagesReader'
-import { initDb, searchAttachments, getStats, getAttachmentById, closeDb, hideChat, getHiddenChats, getConversationStats, updateReactionCounts } from './db'
+import { initDb, searchAttachments, getStats, getAttachmentById, closeDb, hideChat, getHiddenChats, getConversationStats, updateReactionCounts, invalidateLaughCache } from './db'
 import { startIndexing, getIndexingProgress, fetchChatSummaries, saveChatPriorities, getSavedPriorityChats, resetIndexing, recoverAttachment, resolveNamesInBackground } from './indexer'
 import { compileContactsHelper, resolveContact, resolveContactsBatch } from './contacts'
 import { generateWrapped, getAvailableYears } from './wrapped'
@@ -358,6 +358,8 @@ function setupLoginItem(): void {
 app.whenReady().then(() => {
   app.setName('Stash')
   initDb()
+  // Force all stat caches to refresh on startup
+  invalidateLaughCache()
   createMenu()
   createTray()
   setupLoginItem()
