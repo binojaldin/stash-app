@@ -117,7 +117,7 @@ export function Sidebar({ stats, filters, onFilterChange, onManageConversations,
           ))}
         </div>
         <div style={{ padding: '12px 14px', flex: 1 }}>
-          <div style={{ fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase', color: '#2EC4A0', marginBottom: 10 }}>This relationship</div>
+          <div style={{ fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase', color: '#2EC4A0', marginBottom: 10 }}>The Dynamic</div>
           {[{ label: 'Insights', count: '5 cards' }, { label: 'Attachments', count: compactNum(personData?.attachmentCount || 0) }].map(({ label, count }) => (
             <div key={label} style={{ padding: '8px 10px', borderRadius: 8, color: '#7c7c7c', fontSize: 13, cursor: 'pointer', marginBottom: 4, display: 'flex', justifyContent: 'space-between' }}>
               <span>{label}</span><span style={{ fontSize: 12, color: '#E8604A' }}>{count}</span>

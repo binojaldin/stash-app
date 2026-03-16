@@ -225,7 +225,13 @@ export default function App(): JSX.Element {
       {showWrapped && <WrappedView onClose={() => setShowWrapped(false)} />}
       {isIndexing && showIndexing && indexingProgress.total > 0 && <IndexingOverlay progress={indexingProgress} onBrowse={() => setShowIndexing(false)} />}
 
-      <IconRail />
+      <IconRail
+        mainView={mainView}
+        onNavigate={(kind) => setMainView({ kind })}
+        indexProgress={isIndexing ? Math.round((indexingProgress.processed / Math.max(indexingProgress.total, 1)) * 100) : stats.total > 0 ? 100 : 0}
+        attachmentCount={stats.total}
+        hasNewInsights={stats.total > 0}
+      />
 
       <div className="flex flex-col" style={{ background: '#0F0F0F' }}>
         {showSidebar && (
