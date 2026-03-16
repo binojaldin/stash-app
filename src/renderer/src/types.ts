@@ -45,6 +45,8 @@ export interface ChatNameEntry {
   laughsGenerated: number
   laughsReceived: number
   isGroup: boolean
+  lateNightRatio: number
+  avgReplyMinutes: number
 }
 
 export interface Stats {

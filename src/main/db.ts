@@ -6,6 +6,10 @@ import { mkdirSync } from 'fs'
 let db: Database.Database | null = null
 let laughCacheValid = false
 const laughCache = new Map<string, { generated: number; received: number }>()
+let lateNightCacheValid = false
+const lateNightCache = new Map<string, number>()
+let replyLatencyCacheValid = false
+const replyLatencyCache = new Map<string, number>()
 
 export interface StashAttachment {
   id?: number
@@ -316,6 +320,8 @@ export interface ChatNameEntry {
   laughsGenerated: number
   laughsReceived: number
   isGroup: boolean
+  lateNightRatio: number
+  avgReplyMinutes: number
 }
 
 export function getStats(chatNameFilter?: string, dateFrom?: string, dateTo?: string): {
@@ -346,7 +352,7 @@ export function getStats(chatNameFilter?: string, dateFrom?: string, dateTo?: st
     .filter((r) => !hidden.has(r.chat_name))
 
   // Enrich with message counts from chat.db
-  let msgStats = new Map<string, { messageCount: number; sentCount: number; receivedCount: number; initiationCount: number; laughsGenerated: number; laughsReceived: number }>()
+  let msgStats = new Map<string, { messageCount: number; sentCount: number; receivedCount: number; initiationCount: number; laughsGenerated: number; laughsReceived: number; lateNightRatio: number; avgReplyMinutes: number }>()
   let participantMap = new Map<string, number>()
   let displayToIdentifier = new Map<string, string>()
   try {
@@ -438,6 +444,65 @@ export function getStats(chatNameFilter?: string, dateFrom?: string, dateTo?: st
         } catch { /* laugh detection failed, ignore */ }
       }
 
+      // Late-night ratio — cached per session
+      if (!lateNightCacheValid) {
+        try {
+          const lateNightRows = chatDb.prepare(`
+            SELECT
+              c.chat_identifier as chat_name,
+              COUNT(*) as total,
+              SUM(CASE WHEN CAST(strftime('%H', datetime(m.date/1000000000 + 978307200, 'unixepoch', 'localtime')) AS INTEGER) >= 23
+                       OR CAST(strftime('%H', datetime(m.date/1000000000 + 978307200, 'unixepoch', 'localtime')) AS INTEGER) < 4
+                       THEN 1 ELSE 0 END) as late_night_count
+            FROM message m
+            JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
+            JOIN chat c ON cmj.chat_id = c.ROWID
+            WHERE (m.text IS NOT NULL OR m.cache_has_attachments = 1)${dateCond}
+            GROUP BY c.chat_identifier
+          `).all() as { chat_name: string; total: number; late_night_count: number }[]
+
+          lateNightCache.clear()
+          for (const r of lateNightRows) {
+            if (r.total > 0) lateNightCache.set(r.chat_name, Math.round((r.late_night_count / r.total) * 100))
+          }
+          lateNightCacheValid = true
+          console.log(`[LateNight] Cached ${lateNightCache.size} conversations`)
+        } catch { /* ignore */ }
+      }
+
+      // Reply latency — cached per session
+      if (!replyLatencyCacheValid) {
+        try {
+          const chatIds = chatDb.prepare(`SELECT ROWID as chat_id, chat_identifier as chat_name FROM chat`).all() as { chat_id: number; chat_name: string }[]
+
+          replyLatencyCache.clear()
+          for (const chat of chatIds.slice(0, 50)) {
+            const msgs = chatDb.prepare(`
+              SELECT m.date, m.is_from_me
+              FROM message m
+              JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
+              WHERE cmj.chat_id = ?
+                AND (m.text IS NOT NULL OR m.cache_has_attachments = 1)${dateCond}
+              ORDER BY m.date DESC
+              LIMIT 200
+            `).all(chat.chat_id) as { date: number; is_from_me: number }[]
+
+            const responseTimes: number[] = []
+            for (let i = msgs.length - 1; i > 0; i--) {
+              if (msgs[i].is_from_me === 0 && msgs[i - 1].is_from_me === 1) {
+                const diffMinutes = (msgs[i - 1].date - msgs[i].date) / 1000000000 / 60
+                if (diffMinutes > 0 && diffMinutes < 1440) responseTimes.push(diffMinutes)
+              }
+            }
+            if (responseTimes.length > 0) {
+              replyLatencyCache.set(chat.chat_name, Math.round(responseTimes.reduce((a, b) => a + b, 0) / responseTimes.length))
+            }
+          }
+          replyLatencyCacheValid = true
+          console.log(`[ReplyLatency] Cached ${replyLatencyCache.size} conversations`)
+        } catch { /* ignore */ }
+      }
+
       for (const r of rows) {
         const laughs = laughCache.get(r.chat_name)
         msgStats.set(r.chat_name, {
@@ -446,7 +511,9 @@ export function getStats(chatNameFilter?: string, dateFrom?: string, dateTo?: st
           receivedCount: r.received_count,
           initiationCount: initMap.get(r.chat_name) || 0,
           laughsGenerated: laughs?.generated || 0,
-          laughsReceived: laughs?.received || 0
+          laughsReceived: laughs?.received || 0,
+          lateNightRatio: lateNightCache.get(r.chat_name) || 0,
+          avgReplyMinutes: replyLatencyCache.get(r.chat_name) || 0
         })
       }
       chatDb.close()
@@ -470,7 +537,9 @@ export function getStats(chatNameFilter?: string, dateFrom?: string, dateTo?: st
       initiationCount: ms?.initiationCount || 0,
       laughsGenerated: ms?.laughsGenerated || 0,
       laughsReceived: ms?.laughsReceived || 0,
-      isGroup: (participantMap.get(r.chat_name) ?? participantMap.get(displayToIdentifier.get(r.chat_name) || '') ?? 0) > 1 || /^chat\d+/i.test(r.chat_name || '')
+      isGroup: (participantMap.get(r.chat_name) ?? participantMap.get(displayToIdentifier.get(r.chat_name) || '') ?? 0) > 1 || /^chat\d+/i.test(r.chat_name || ''),
+      lateNightRatio: ms?.lateNightRatio || 0,
+      avgReplyMinutes: ms?.avgReplyMinutes || 0
     }
   })
 
@@ -647,6 +716,10 @@ export function getConversationStats(chatIdentifier: string, isGroup: boolean): 
 export function invalidateLaughCache(): void {
   laughCacheValid = false
   laughCache.clear()
+  lateNightCacheValid = false
+  lateNightCache.clear()
+  replyLatencyCacheValid = false
+  replyLatencyCache.clear()
 }
 
 export function updateReactionCounts(): void {

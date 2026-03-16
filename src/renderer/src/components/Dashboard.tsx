@@ -303,7 +303,12 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
                   sentence="Your average reply time."
                   flavor={convStats.avgResponseTimeMinutes < 5 ? 'Lightning fast.' : convStats.avgResponseTimeMinutes > 60 ? 'You take your time.' : ''} />
               )}
-              <SoonCard emoji="🌙" title="Night Owls" span={4} />
+              {pd && pd.lateNightRatio > 0 ? (
+                <RelCard emoji="🌙" title="Night Owls" span={4}
+                  metric={`${pd.lateNightRatio}%`}
+                  sentence={`${pd.lateNightRatio}% of your messages happen after 11pm.`}
+                  flavor={pd.lateNightRatio > 40 ? 'This is a late-night relationship.' : 'Mostly daytime people.'} />
+              ) : <SoonCard emoji="🌙" title="Night Owls" span={4} />}
             </div>
           )}
         </div>
@@ -417,8 +422,21 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
           ) : <div style={{ color: '#6f6a65' }}>No data yet</div>}
         </div>
 
-        {/* Tile 6 — Late night (coming soon) */}
-        <ComingSoonTile label="After 11pm" span={4} />
+        {/* Tile 6 — Night owl connection */}
+        {(() => {
+          const topLateNight = [...individuals]
+            .filter(c => c.lateNightRatio > 0)
+            .sort((a, b) => b.lateNightRatio - a.lateNightRatio)[0]
+          return topLateNight ? (
+            <div style={{ ...tileBase, gridColumn: 'span 4' }}>
+              <TileLabel text="Night owl connection" />
+              <Metric
+                value={resolveName(topLateNight.rawName, chatNameMap)}
+                sub={`${topLateNight.lateNightRatio}% of your messages happen after 11pm`}
+              />
+            </div>
+          ) : <ComingSoonTile label="Night owl connection" span={4} />
+        })()}
 
         {/* Tile 7 — Most active group */}
         <div style={{ ...tileBase, gridColumn: 'span 4' }}>
@@ -443,6 +461,22 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
             ) : <div style={{ color: '#6f6a65' }}>Everyone's been in touch recently</div>
           })()}
         </div>
+
+        {/* Tile — Fastest responder */}
+        {(() => {
+          const fastest = [...individuals]
+            .filter(c => c.avgReplyMinutes > 0 && c.avgReplyMinutes < 60)
+            .sort((a, b) => a.avgReplyMinutes - b.avgReplyMinutes)[0]
+          return fastest ? (
+            <div style={{ ...tileBase, gridColumn: 'span 4' }}>
+              <TileLabel text="Fastest responder" />
+              <Metric
+                value={resolveName(fastest.rawName, chatNameMap)}
+                sub={`Replies in ${fastest.avgReplyMinutes < 1 ? 'under a minute' : `~${fastest.avgReplyMinutes} minutes`} on average`}
+              />
+            </div>
+          ) : <ComingSoonTile label="Fastest responder" span={4} />
+        })()}
 
         {/* Tile 8 — Who you reach out to most (full width leaderboard) */}
         <div style={{ ...tileBase, gridColumn: 'span 12' }}>
