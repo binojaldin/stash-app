@@ -105,6 +105,7 @@ export function initDb(): Database.Database {
   addColumnIfMissing('metadata_only', 'INTEGER DEFAULT 0')
   addColumnIfMissing('is_available', 'INTEGER DEFAULT 1')
   addColumnIfMissing('source', "TEXT DEFAULT 'messages'")
+  addColumnIfMissing('reaction_count', 'INTEGER DEFAULT 0')
 
   // Backfill null chat_name from Messages chat.db
   try {
@@ -646,6 +647,62 @@ export function getConversationStats(chatIdentifier: string, isGroup: boolean): 
 export function invalidateLaughCache(): void {
   laughCacheValid = false
   laughCache.clear()
+}
+
+export function updateReactionCounts(): void {
+  const d = initDb()
+  try {
+    const { homedir } = require('os')
+    const { join } = require('path')
+    const fs = require('fs')
+    const chatDbPath = join(homedir(), 'Library/Messages/chat.db')
+    if (!fs.existsSync(chatDbPath)) return
+
+    const chatDb = new Database(chatDbPath, { readonly: true })
+
+    // Count reactions per message guid (tapbacks 2000-2005)
+    const reactionRows = chatDb.prepare(`
+      SELECT associated_message_guid as guid, COUNT(*) as cnt
+      FROM message
+      WHERE associated_message_type >= 2000 AND associated_message_type <= 2006
+        AND associated_message_guid IS NOT NULL
+      GROUP BY associated_message_guid
+    `).all() as { guid: string; cnt: number }[]
+
+    if (reactionRows.length === 0) { chatDb.close(); return }
+    const reactionMap = new Map(reactionRows.map((r) => [r.guid, r.cnt]))
+
+    // Map message guids to attachment filenames
+    const attGuids = chatDb.prepare(`
+      SELECT a.filename, m.guid FROM attachment a
+      JOIN message_attachment_join maj ON a.ROWID = maj.attachment_id
+      JOIN message m ON maj.message_id = m.ROWID
+      WHERE m.guid IS NOT NULL AND a.filename IS NOT NULL
+    `).all() as { filename: string; guid: string }[]
+
+    chatDb.close()
+
+    // Update stash.db — match by filename basename
+    const { basename } = require('path')
+    const updateStmt = d.prepare('UPDATE attachments SET reaction_count = ? WHERE filename = ? AND reaction_count != ?')
+    let updated = 0
+
+    const tx = d.transaction(() => {
+      for (const row of attGuids) {
+        const count = reactionMap.get(row.guid) || 0
+        if (count > 0) {
+          const fname = basename(row.filename)
+          const result = updateStmt.run(count, fname, count)
+          updated += result.changes
+        }
+      }
+    })
+    tx()
+
+    if (updated > 0) console.log(`[Reactions] Updated ${updated} attachments`)
+  } catch (err) {
+    console.error('[Reactions] Error:', err)
+  }
 }
 
 export function closeDb(): void {

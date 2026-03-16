@@ -2,7 +2,7 @@ import { app, shell, BrowserWindow, ipcMain, dialog, Menu, Tray, nativeImage } f
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import { checkFullDiskAccess } from './messagesReader'
-import { initDb, searchAttachments, getStats, getAttachmentById, closeDb, hideChat, getHiddenChats, getConversationStats } from './db'
+import { initDb, searchAttachments, getStats, getAttachmentById, closeDb, hideChat, getHiddenChats, getConversationStats, updateReactionCounts } from './db'
 import { startIndexing, getIndexingProgress, fetchChatSummaries, saveChatPriorities, getSavedPriorityChats, resetIndexing, recoverAttachment, resolveNamesInBackground } from './indexer'
 import { compileContactsHelper, resolveContact, resolveContactsBatch } from './contacts'
 import { generateWrapped, getAvailableYears } from './wrapped'
@@ -266,6 +266,7 @@ function setupIpc(): void {
       return { error: String(err), results: null }
     }
   })
+  ipcMain.handle('refresh-reactions', () => { updateReactionCounts() })
   ipcMain.handle('hide-chat', (_event, chatIdentifier: string) => { hideChat(chatIdentifier) })
   ipcMain.handle('get-hidden-chats', () => getHiddenChats())
   ipcMain.handle('generate-wrapped', (_event, year: number) => generateWrapped(year))
@@ -366,6 +367,9 @@ app.whenReady().then(() => {
 
   setupIpc()
   createWindow()
+
+  // Deferred reaction count sync
+  setTimeout(() => { try { updateReactionCounts() } catch (e) { console.error('[Reactions]', e) } }, 3000)
 
   // Hide to tray instead of quitting on window close
   mainWindow!.on('close', (e) => {

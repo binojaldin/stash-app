@@ -17,7 +17,8 @@ import {
   getIdByPath,
   updateAvailability,
   clearAllAttachments,
-  getAttachmentById
+  getAttachmentById,
+  updateReactionCounts
 } from './db'
 import { compileOcrHelper, runOcr } from './ocr'
 import { compileContactsHelper, resolveContact, resolveContactsBatch } from './contacts'
@@ -422,6 +423,9 @@ export async function startIndexing(win: BrowserWindow | null, selectedChats?: s
       if (indexingProgress.processed % 10 === 0) sendProgress(win)
     }
   }
+
+  // Update reaction counts from chat.db
+  try { updateReactionCounts() } catch (e) { console.error('[Reactions] Error updating counts:', e) }
 
   isIndexing = false
   const finalTotal = Math.max(totalEnrich, targetAttachments.length, 1)
