@@ -365,18 +365,23 @@ app.whenReady().then(() => {
   createTray()
   setupLoginItem()
 
-  // Compile contacts binary early and trigger permission dialog
+  // Compile contacts binary early, before window
   compileContactsHelper()
-  try {
-    const binaryPath = join(app.getPath('appData'), 'Stash', 'contacts_helper')
-    if (existsSync(binaryPath)) {
-      const { execFileSync } = require('child_process')
-      execFileSync(binaryPath, ['test@test.com'], { timeout: 5000 })
-    }
-  } catch { /* permission dialog may appear */ }
 
   setupIpc()
   createWindow()
+
+  // Trigger contacts permission AFTER window exists — macOS requires
+  // a visible window to show the permission dialog
+  setTimeout(() => {
+    try {
+      const binaryPath = join(app.getPath('appData'), 'Stash', 'contacts_helper')
+      if (existsSync(binaryPath)) {
+        const { execSync: exec } = require('child_process')
+        exec(`"${binaryPath}" test@test.com`, { timeout: 5000 })
+      }
+    } catch { /* permission dialog fires asynchronously */ }
+  }, 2000)
 
   // Hide to tray instead of quitting on window close
   mainWindow!.on('close', (e) => {
