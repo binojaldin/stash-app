@@ -4,6 +4,8 @@ import { join } from 'path'
 import { mkdirSync } from 'fs'
 
 let db: Database.Database | null = null
+let laughCacheValid = false
+const laughCache = new Map<string, { generated: number; received: number }>()
 
 export interface StashAttachment {
   id?: number
@@ -403,42 +405,40 @@ export function getStats(chatNameFilter?: string, dateFrom?: string, dateTo?: st
         for (const r of partRows) participantMap.set(r.chat_name, r.participant_count)
       } catch { /* fallback to heuristic */ }
 
-      // Laugh detection
-      const laughMap = new Map<string, { generated: number; received: number }>()
-      try {
-        const LAUGH_RE = /\b(lol|lmao|lmfao|rofl|hehe|omg dead|im dead|i'm dead|i cant|i can't)\b|ha{2,}|he{2,}/i
-        const LAUGH_EMOJI = /[\u{1F602}\u{1F923}\u{1F480}]/u
-        const FIVE_MIN_NS = 300000000000
+      // Laugh detection — cached per session (expensive full-table scan)
+      if (!laughCacheValid) {
+        try {
+          const LAUGH_RE = /\b(lol|lmao|lmfao|rofl|hehe|omg dead|im dead|i'm dead|i cant|i can't)\b|ha{2,}|he{2,}/i
+          const LAUGH_EMOJI = /[\u{1F602}\u{1F923}\u{1F480}]/u
+          const FIVE_MIN_NS = 300000000000
 
-        const laughRows = chatDb.prepare(`
-          SELECT
-            c.chat_identifier as chat_name,
-            m.is_from_me,
-            m.text,
-            m.date,
-            LAG(m.date) OVER (PARTITION BY cmj.chat_id ORDER BY m.date) as prev_date,
-            LAG(m.is_from_me) OVER (PARTITION BY cmj.chat_id ORDER BY m.date) as prev_is_from_me
-          FROM message m
-          JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
-          JOIN chat c ON cmj.chat_id = c.ROWID
-          WHERE m.text IS NOT NULL${dateCond}
-        `).all() as { chat_name: string; is_from_me: number; text: string; date: number; prev_date: number | null; prev_is_from_me: number | null }[]
+          const laughRows = chatDb.prepare(`
+            SELECT c.chat_identifier as chat_name, m.is_from_me, m.text, m.date,
+              LAG(m.date) OVER (PARTITION BY cmj.chat_id ORDER BY m.date) as prev_date,
+              LAG(m.is_from_me) OVER (PARTITION BY cmj.chat_id ORDER BY m.date) as prev_is_from_me
+            FROM message m JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
+            JOIN chat c ON cmj.chat_id = c.ROWID WHERE m.text IS NOT NULL
+          `).all() as { chat_name: string; is_from_me: number; text: string; date: number; prev_date: number | null; prev_is_from_me: number | null }[]
 
-        for (const row of laughRows) {
-          if (row.prev_date === null || row.prev_is_from_me === null) continue
-          if (row.is_from_me === row.prev_is_from_me) continue // same sender
-          if (row.date - row.prev_date > FIVE_MIN_NS) continue // too long gap
-          const isLaugh = LAUGH_RE.test(row.text) || LAUGH_EMOJI.test(row.text)
-          if (!isLaugh) continue
-          if (!laughMap.has(row.chat_name)) laughMap.set(row.chat_name, { generated: 0, received: 0 })
-          const entry = laughMap.get(row.chat_name)!
-          if (row.is_from_me === 0) entry.generated++ // they laughed at your message
-          else entry.received++ // you laughed at their message
-        }
-      } catch { /* laugh detection failed, ignore */ }
+          laughCache.clear()
+          for (const row of laughRows) {
+            if (row.prev_date === null || row.prev_is_from_me === null) continue
+            if (row.is_from_me === row.prev_is_from_me) continue
+            if (row.date - row.prev_date > FIVE_MIN_NS) continue
+            const isLaugh = LAUGH_RE.test(row.text) || LAUGH_EMOJI.test(row.text)
+            if (!isLaugh) continue
+            if (!laughCache.has(row.chat_name)) laughCache.set(row.chat_name, { generated: 0, received: 0 })
+            const entry = laughCache.get(row.chat_name)!
+            if (row.is_from_me === 0) entry.generated++
+            else entry.received++
+          }
+          laughCacheValid = true
+          console.log(`[Laugh] Cached ${laughCache.size} conversations`)
+        } catch { /* laugh detection failed, ignore */ }
+      }
 
       for (const r of rows) {
-        const laughs = laughMap.get(r.chat_name)
+        const laughs = laughCache.get(r.chat_name)
         msgStats.set(r.chat_name, {
           messageCount: r.message_count,
           sentCount: r.sent_count,
@@ -507,6 +507,11 @@ export function hideChat(chatIdentifier: string): void {
 export function getHiddenChats(): string[] {
   const d = initDb()
   return (d.prepare('SELECT chat_identifier FROM hidden_chats').all() as { chat_identifier: string }[]).map((r) => r.chat_identifier)
+}
+
+export function invalidateLaughCache(): void {
+  laughCacheValid = false
+  laughCache.clear()
 }
 
 export function closeDb(): void {

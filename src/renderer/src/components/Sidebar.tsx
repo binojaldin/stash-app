@@ -194,8 +194,8 @@ export function Sidebar({ stats, filters, onFilterChange, onManageConversations,
                 background: active ? 'rgba(255,255,255,0.04)' : 'transparent', display: 'block'
               }}>
               <div style={{ fontSize: 14, color: '#d8d8d8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{dn}</div>
-              <div style={{ fontSize: 12, color: '#7c7c7c', marginTop: 3 }}>
-                {compactNum(chat.messageCount)} messages <span style={{ color: '#E8604A' }}>·</span> {compactNum(chat.attachmentCount)} attachments
+              <div style={{ fontSize: 11, color: '#5a5550', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {compactNum(chat.messageCount)} msgs <span style={{ color: '#E8604A' }}>·</span> {compactNum(chat.attachmentCount)} files
               </div>
             </button>
           )

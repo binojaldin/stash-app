@@ -136,9 +136,8 @@ export default function App(): JSX.Element {
     setStats(s)
   }, [dateRange])
 
-  useEffect(() => { if (appState === 'main') loadStats(scopedPerson ?? undefined) }, [dateRange, scopedPerson, appState])
-  useEffect(() => { if (!isIndexing && appState === 'main') loadStats(scopedPerson || undefined) }, [isIndexing])
-  useEffect(() => { if (appState === 'main') loadStats() }, [appState])
+  useEffect(() => { if (appState === 'main') loadStats() }, [dateRange, appState])
+  useEffect(() => { if (!isIndexing && appState === 'main') loadStats() }, [isIndexing])
 
   // ── Navigation helpers ──
   const goHome = (): void => { setMainView({ kind: 'global-insights' }); setFilters({ type: 'all' }) }
