@@ -1,4 +1,4 @@
-import { useState, useRef, useMemo } from 'react'
+import { useState, useRef, useMemo, useEffect } from 'react'
 import { Search, Sparkles, Loader2, Settings } from 'lucide-react'
 import type { Stats, Filters, IndexingProgress, ChatNameEntry } from '../types'
 
@@ -81,6 +81,13 @@ export function Sidebar({ stats, filters, onFilterChange, onManageConversations,
   const statusPct = isIndexing && indexingProgress && indexingProgress.total > 0
     ? Math.round((indexingProgress.processed / indexingProgress.total) * 100) : stats.total > 0 ? 100 : 0
 
+  // Contact photo state
+  const [contactPhoto, setContactPhoto] = useState<string | null>(null)
+  useEffect(() => {
+    if (scopedPerson) window.api.getContactPhoto(scopedPerson).then(setContactPhoto)
+    else setContactPhoto(null)
+  }, [scopedPerson])
+
   // Relationship mode sidebar
   if (scopedPerson) {
     const personName = resolveName(scopedPerson, stats.chatNameMap)
@@ -97,7 +104,11 @@ export function Sidebar({ stats, filters, onFilterChange, onManageConversations,
           </span>
         </div>
         <div style={{ padding: '16px 14px 12px', borderBottom: '1px solid #1A1A1A' }}>
-          <div style={{ width: 44, height: 44, borderRadius: '50%', background: '#2EC4A0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, fontWeight: 600, color: '#0A0A0A', marginBottom: 10 }}>{initials}</div>
+          {contactPhoto ? (
+            <img src={`data:image/jpeg;base64,${contactPhoto}`} style={{ width: 44, height: 44, borderRadius: '50%', objectFit: 'cover', marginBottom: 10 }} />
+          ) : (
+            <div style={{ width: 44, height: 44, borderRadius: '50%', background: '#2EC4A0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, fontWeight: 600, color: '#0A0A0A', marginBottom: 10 }}>{initials}</div>
+          )}
           <div style={{ fontSize: 15, color: '#fff', fontWeight: 500, marginBottom: 3 }}>{personName}</div>
           <div style={{ fontSize: 11, color: '#7c7c7c' }}>
             {personData ? `${compactNum(personData.messageCount)} messages` : ''} <span style={{ color: '#2EC4A0' }}>·</span> {personData ? `${compactNum(personData.attachmentCount)} attachments` : ''}

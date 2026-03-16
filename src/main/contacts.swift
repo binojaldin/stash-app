@@ -1,7 +1,6 @@
 import Foundation
 import Contacts
 
-// Accept multiple handles as arguments, output one result per line
 let args = Array(CommandLine.arguments.dropFirst())
 guard !args.isEmpty else {
     fputs("Usage: contacts_helper <phone_or_email> [phone_or_email ...]\n", stderr)
@@ -18,26 +17,35 @@ store.requestAccess(for: .contacts) { granted, _ in
         return
     }
 
-    let keysToFetch = [CNContactGivenNameKey, CNContactFamilyNameKey, CNContactPhoneNumbersKey, CNContactEmailAddressesKey] as [CNKeyDescriptor]
+    let keysToFetch = [
+        CNContactGivenNameKey, CNContactFamilyNameKey,
+        CNContactPhoneNumbersKey, CNContactEmailAddressesKey,
+        CNContactImageDataAvailableKey, CNContactThumbnailImageDataKey
+    ] as [CNKeyDescriptor]
 
     for (i, identifier) in args.enumerated() {
+        var contact: CNContact? = nil
+
         if identifier.contains("@") {
             let predicate = CNContact.predicateForContacts(matchingEmailAddress: identifier)
-            if let contacts = try? store.unifiedContacts(matching: predicate, keysToFetch: keysToFetch),
-               let contact = contacts.first {
-                let name = "\(contact.givenName) \(contact.familyName)".trimmingCharacters(in: .whitespaces)
-                if !name.isEmpty { results[i] = name }
-            }
+            contact = (try? store.unifiedContacts(matching: predicate, keysToFetch: keysToFetch))?.first
         } else {
             let digits = identifier.filter { $0.isNumber || $0 == "+" }
             if !digits.isEmpty {
                 let phoneNumber = CNPhoneNumber(stringValue: digits)
                 let predicate = CNContact.predicateForContacts(matching: phoneNumber)
-                if let contacts = try? store.unifiedContacts(matching: predicate, keysToFetch: keysToFetch),
-                   let contact = contacts.first {
-                    let name = "\(contact.givenName) \(contact.familyName)".trimmingCharacters(in: .whitespaces)
-                    if !name.isEmpty { results[i] = name }
-                }
+                contact = (try? store.unifiedContacts(matching: predicate, keysToFetch: keysToFetch))?.first
+            }
+        }
+
+        if let contact = contact {
+            let name = "\(contact.givenName) \(contact.familyName)".trimmingCharacters(in: .whitespaces)
+            var photoB64 = ""
+            if contact.imageDataAvailable, let thumb = contact.thumbnailImageData {
+                photoB64 = thumb.base64EncodedString()
+            }
+            if !name.isEmpty {
+                results[i] = "\(name)\t\(photoB64)"
             }
         }
     }
