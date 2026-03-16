@@ -80,7 +80,7 @@ export function Sidebar({ stats, filters, onFilterChange, onManageConversations,
   return (
     <div style={{ width: 240, minWidth: 240, flexShrink: 0, height: '100%', background: '#0F0F0F', borderRight: '1px solid #1A1A1A', display: 'flex', flexDirection: 'column', fontFamily: "'DM Sans', sans-serif" }} onClick={() => setContextMenu(null)}>
       {/* Wordmark — padded to clear traffic lights */}
-      <div style={{ padding: '16px 18px 16px 32px', cursor: 'pointer', WebkitAppRegion: 'drag' } as React.CSSProperties} onClick={onGoHome}>
+      <div style={{ padding: '16px 18px 16px 44px', cursor: 'pointer', WebkitAppRegion: 'drag' } as React.CSSProperties} onClick={onGoHome}>
         <span style={{ fontFamily: "'Unbounded', sans-serif", fontSize: 18, letterSpacing: '0.22em' }}>
           <span style={{ fontWeight: 200, color: '#FFFFFF' }}>ST</span>
           <span style={{ fontWeight: 400, color: '#E8604A' }}>ASH</span>
@@ -104,10 +104,10 @@ export function Sidebar({ stats, filters, onFilterChange, onManageConversations,
         <div style={{ marginBottom: 20 }}>
           <div style={{ fontSize: 11, letterSpacing: '0.2em', textTransform: 'uppercase', color: '#E8604A', margin: '18px 0 10px' }}>Date range</div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)}
+            <input type="date" value={dateFrom} onChange={(e) => { const val = e.target.value; setDateFrom(val); if (val && dateTo) onFilterChange({ ...filters, dateFrom: val, dateTo, dateRange: undefined }); else if (!val) onFilterChange({ ...filters, dateFrom: undefined, dateTo: undefined, dateRange: undefined }) }}
               style={{ flex: 1, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 10, padding: '8px 10px', fontSize: 12, color: '#888', outline: 'none', fontFamily: "'DM Sans'" }} />
             <span style={{ color: '#555', fontSize: 12 }}>→</span>
-            <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)}
+            <input type="date" value={dateTo} onChange={(e) => { const val = e.target.value; setDateTo(val); if (dateFrom && val) onFilterChange({ ...filters, dateFrom, dateTo: val, dateRange: undefined }); else if (!val) onFilterChange({ ...filters, dateFrom: undefined, dateTo: undefined, dateRange: undefined }) }}
               style={{ flex: 1, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 10, padding: '8px 10px', fontSize: 12, color: '#888', outline: 'none', fontFamily: "'DM Sans'" }} />
           </div>
           {/* TODO: Wire date inputs to IPC filter with { from, to } */}

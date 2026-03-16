@@ -178,6 +178,8 @@ export default function App(): JSX.Element {
     if (filters.type && filters.type !== 'all') filterParams.type = filters.type
     if (filters.chatName) filterParams.chatName = filters.chatName
     if (filters.dateRange) filterParams.dateRange = filters.dateRange
+    if (filters.dateFrom) filterParams.dateFrom = filters.dateFrom
+    if (filters.dateTo) filterParams.dateTo = filters.dateTo
 
     const results = query
       ? await window.api.searchAttachments(query, filterParams, 0, 50, sortOrder)
@@ -193,6 +195,8 @@ export default function App(): JSX.Element {
     if (filters.type && filters.type !== 'all') filterParams.type = filters.type
     if (filters.chatName) filterParams.chatName = filters.chatName
     if (filters.dateRange) filterParams.dateRange = filters.dateRange
+    if (filters.dateFrom) filterParams.dateFrom = filters.dateFrom
+    if (filters.dateTo) filterParams.dateTo = filters.dateTo
 
     const results = query
       ? await window.api.searchAttachments(query, filterParams, nextPage, 50, sortOrder)

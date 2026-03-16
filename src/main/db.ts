@@ -225,7 +225,7 @@ export function getIdByPath(originalPath: string): number | null {
 
 export function searchAttachments(
   query: string,
-  filters: { type?: string; chatName?: string; dateRange?: string },
+  filters: { type?: string; chatName?: string; dateRange?: string; dateFrom?: string; dateTo?: string },
   page = 0,
   limit = 50,
   sortOrder?: string
@@ -276,6 +276,15 @@ export function searchAttachments(
       const d = new Date(now); d.setFullYear(d.getFullYear() - 1)
       conditions.push(`${col}created_at < ?`); params.push(d.toISOString())
     }
+  }
+
+  if (filters.dateFrom) {
+    conditions.push(`${col}created_at >= ?`)
+    params.push(new Date(filters.dateFrom).toISOString())
+  }
+  if (filters.dateTo) {
+    conditions.push(`${col}created_at <= ?`)
+    params.push(new Date(filters.dateTo + 'T23:59:59').toISOString())
   }
 
   if (conditions.length > 0) sql += ' AND ' + conditions.join(' AND ')
