@@ -26,7 +26,8 @@ export function compileContactsHelper(): boolean {
   if (existsSync(binaryPath)) {
     try {
       if (existsSync(sourcePath) && statSync(sourcePath).mtimeMs > statSync(binaryPath).mtimeMs) {
-        // Recompile needed
+        // Source is newer — delete old binary and recompile
+        try { require('fs').unlinkSync(binaryPath) } catch { /* ignore */ }
       } else {
         contactsBinaryPath = binaryPath
         return true

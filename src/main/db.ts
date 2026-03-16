@@ -338,7 +338,7 @@ export function getStats(chatNameFilter?: string, dateFrom?: string, dateTo?: st
   const chatParams: string[] = []
   if (dateFrom) { chatSql += ' AND created_at >= ?'; chatParams.push(dateFrom) }
   if (dateTo) { chatSql += ' AND created_at <= ?'; chatParams.push(dateTo) }
-  chatSql += ' GROUP BY chat_name ORDER BY chat_name'
+  chatSql += ' GROUP BY chat_name ORDER BY last_message_date DESC'
   const chatDetails = (d.prepare(chatSql).all(...chatParams) as { chat_name: string; attachment_count: number; last_message_date: string }[])
     .filter((r) => !hidden.has(r.chat_name))
 
