@@ -346,7 +346,7 @@ export function getStats(chatNameFilter?: string): {
         JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
         JOIN chat c ON cmj.chat_id = c.ROWID
         WHERE m.text IS NOT NULL OR m.cache_has_attachments = 1
-        GROUP BY c.ROWID
+        GROUP BY c.chat_identifier
       `).all() as { chat_name: string; message_count: number; sent_count: number; received_count: number }[]
 
       // Initiation count: days where user sent first message
@@ -358,7 +358,7 @@ export function getStats(chatNameFilter?: string): {
         JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
         JOIN chat c ON cmj.chat_id = c.ROWID
         WHERE m.is_from_me = 1
-        GROUP BY c.ROWID
+        GROUP BY c.chat_identifier
       `).all() as { chat_name: string; init_days: number }[]
 
       const initMap = new Map(initRows.map((r) => [r.chat_name, r.init_days]))
@@ -374,8 +374,8 @@ export function getStats(chatNameFilter?: string): {
       // Participant counts to identify group chats
       try {
         const partRows = chatDb.prepare(`
-          SELECT c.chat_identifier as chat_name, COUNT(chj.handle_id) as participant_count
-          FROM chat c LEFT JOIN chat_handle_join chj ON c.ROWID = chj.chat_id GROUP BY c.ROWID
+          SELECT c.chat_identifier as chat_name, COUNT(DISTINCT chj.handle_id) as participant_count
+          FROM chat c LEFT JOIN chat_handle_join chj ON c.ROWID = chj.chat_id GROUP BY c.chat_identifier
         `).all() as { chat_name: string; participant_count: number }[]
         for (const r of partRows) participantMap.set(r.chat_name, r.participant_count)
       } catch { /* fallback to heuristic */ }
@@ -428,15 +428,6 @@ export function getStats(chatNameFilter?: string): {
       chatDb.close()
     }
   } catch { /* fallback: all zeros */ }
-
-  // DIAGNOSTIC — remove after fixing
-  console.log('[DIAG] msgStats sample:', Array.from(msgStats.entries()).slice(0, 3).map(([k, v]) => ({ key: k, msgs: v.messageCount })))
-  console.log('[DIAG] chatDetails sample:', chatDetails.slice(0, 3).map((r) => ({ chat_name: r.chat_name, att: r.attachment_count })))
-  const ashMsgKey = Array.from(msgStats.keys()).find((k) => k.includes('18133520555'))
-  const ashDetailKey = chatDetails.find((r) => r.chat_name?.includes('18133520555'))
-  console.log('[DIAG] Ash in msgStats key:', ashMsgKey, 'value:', ashMsgKey ? msgStats.get(ashMsgKey)?.messageCount : 'NOT FOUND')
-  console.log('[DIAG] Ash in chatDetails key:', ashDetailKey?.chat_name, 'att:', ashDetailKey?.attachment_count)
-  console.log('[DIAG] displayToIdentifier size:', displayToIdentifier.size, 'sample:', Array.from(displayToIdentifier.entries()).slice(0, 3))
 
   const chatNames = chatDetails.map((r) => {
     let ms = msgStats.get(r.chat_name)
