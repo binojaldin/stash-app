@@ -188,6 +188,18 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
               <div style={{ fontSize: 15, color: 'rgba(255,255,255,0.68)', lineHeight: 1.7 }}>
                 {pd ? `${pd.messageCount.toLocaleString()} messages exchanged. ${pd.attachmentCount.toLocaleString()} attachments shared.` : ''}
               </div>
+              {pd?.lastMessageDate && (
+                <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.45)', marginTop: 4 }}>
+                  {(() => {
+                    const days = Math.floor((new Date().getTime() - new Date(pd.lastMessageDate).getTime()) / 86400000)
+                    if (days === 0) return 'Last message today'
+                    if (days === 1) return 'Last message yesterday'
+                    if (days < 30) return `Last message ${days} days ago`
+                    if (days < 365) return `Last message ${Math.floor(days / 30)} months ago`
+                    return `Last message ${Math.floor(days / 365)} year${Math.floor(days / 365) > 1 ? 's' : ''} ago`
+                  })()}
+                </div>
+              )}
             </div>
           </div>
 
@@ -346,7 +358,7 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
         {/* Tile 2 — Initiation balance */}
         <div style={{ ...tileBase, gridColumn: 'span 4' }}>
           <TileLabel text="Initiation balance" />
-          <Metric value={`${initiationPct}%`} sub="You started most conversations this month." />
+          <Metric value={`${initiationPct}%`} sub={initiationPct > 60 ? 'You start most conversations. You keep things alive.' : initiationPct < 40 ? 'Others reach out to you more. You respond.' : 'Roughly balanced — you and your contacts share the load.'} />
           <BarTrack pct={initiationPct} />
         </div>
 
@@ -371,6 +383,32 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
           <CtaPill text="See exact messages → Pro" />
         </div>
 
+        {/* Tile — You're funniest to */}
+        <div style={{ ...tileBase, gridColumn: 'span 8' }}>
+          <TileLabel text="You're funniest to" />
+          {byLaughsGenerated.filter((c) => c.laughsGenerated > 0).slice(0, 3).map((c, i) => (
+            <LeaderRow key={c.rawName} rank={i + 1} name={resolveName(c.rawName, chatNameMap)}
+              sub={i === 0 ? 'Your best audience' : i === 1 ? 'Close second' : 'Third place'}
+              value={`${c.laughsGenerated.toLocaleString()} laughs`} />
+          ))}
+          {byLaughsGenerated.every((c) => c.laughsGenerated === 0) && <div style={{ color: '#9a948f', fontSize: 13, padding: '12px 0' }}>No laugh data for this period</div>}
+        </div>
+
+        {/* Tile — Most one-sided */}
+        <div style={{ ...tileBase, gridColumn: 'span 4' }}>
+          <TileLabel text="Most one-sided chat" />
+          {(() => {
+            const byImbalance = [...individuals].filter((c) => c.sentCount + c.receivedCount > 20)
+              .map((c) => ({ ...c, ratio: c.sentCount / Math.max(c.receivedCount, 1) }))
+              .sort((a, b) => Math.abs(Math.log(b.ratio)) - Math.abs(Math.log(a.ratio)))
+            const m = byImbalance[0]
+            return m ? (
+              <Metric value={resolveName(m.rawName, chatNameMap)}
+                sub={m.ratio > 1 ? `You send ${m.ratio.toFixed(1)}× more than they reply` : `They send ${(1 / m.ratio).toFixed(1)}× more than you reply`} />
+            ) : <div style={{ color: '#6f6a65' }}>Not enough data</div>
+          })()}
+        </div>
+
         {/* Tile 5 — Most attachments */}
         <div style={{ ...tileBase, gridColumn: 'span 4' }}>
           <TileLabel text="Most attachments" />
@@ -388,6 +426,22 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
           {topGroup ? (
             <Metric value={resolveName(topGroup.rawName, chatNameMap)} sub={`${topGroup.messageCount.toLocaleString()} messages exchanged`} />
           ) : <div style={{ color: '#6f6a65' }}>No group chats indexed</div>}
+        </div>
+
+        {/* Tile — Gone quiet */}
+        <div style={{ ...tileBase, gridColumn: 'span 4' }}>
+          <TileLabel text="Gone quiet" />
+          {(() => {
+            const now = new Date()
+            const gq = [...individuals].filter((c) => c.messageCount > 50)
+              .map((c) => ({ ...c, daysSince: Math.floor((now.getTime() - new Date(c.lastMessageDate).getTime()) / 86400000) }))
+              .filter((c) => c.daysSince > 30)
+              .sort((a, b) => b.daysSince - a.daysSince)[0]
+            return gq ? (
+              <Metric value={resolveName(gq.rawName, chatNameMap)}
+                sub={`${gq.daysSince} days since your last message. You used to talk a lot.`} />
+            ) : <div style={{ color: '#6f6a65' }}>Everyone's been in touch recently</div>
+          })()}
         </div>
 
         {/* Tile 8 — Who you reach out to most (full width leaderboard) */}
