@@ -80,7 +80,7 @@ export function Sidebar({ stats, filters, onFilterChange, onManageConversations,
   return (
     <div style={{ width: 240, minWidth: 240, flexShrink: 0, height: '100%', background: '#0F0F0F', borderRight: '1px solid #1A1A1A', display: 'flex', flexDirection: 'column', fontFamily: "'DM Sans', sans-serif" }} onClick={() => setContextMenu(null)}>
       {/* Wordmark — padded to clear traffic lights */}
-      <div style={{ padding: '20px 18px 16px', cursor: 'pointer' }} onClick={onGoHome}>
+      <div style={{ padding: '16px 18px 16px 32px', cursor: 'pointer', WebkitAppRegion: 'drag' } as React.CSSProperties} onClick={onGoHome}>
         <span style={{ fontFamily: "'Unbounded', sans-serif", fontSize: 18, letterSpacing: '0.22em' }}>
           <span style={{ fontWeight: 200, color: '#FFFFFF' }}>ST</span>
           <span style={{ fontWeight: 400, color: '#E8604A' }}>ASH</span>
