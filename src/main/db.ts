@@ -429,7 +429,15 @@ export function getStats(chatNameFilter?: string): {
     }
   } catch { /* fallback: all zeros */ }
 
-  // Log unmatched keys for debugging
+  // DIAGNOSTIC — remove after fixing
+  console.log('[DIAG] msgStats sample:', Array.from(msgStats.entries()).slice(0, 3).map(([k, v]) => ({ key: k, msgs: v.messageCount })))
+  console.log('[DIAG] chatDetails sample:', chatDetails.slice(0, 3).map((r) => ({ chat_name: r.chat_name, att: r.attachment_count })))
+  const ashMsgKey = Array.from(msgStats.keys()).find((k) => k.includes('18133520555'))
+  const ashDetailKey = chatDetails.find((r) => r.chat_name?.includes('18133520555'))
+  console.log('[DIAG] Ash in msgStats key:', ashMsgKey, 'value:', ashMsgKey ? msgStats.get(ashMsgKey)?.messageCount : 'NOT FOUND')
+  console.log('[DIAG] Ash in chatDetails key:', ashDetailKey?.chat_name, 'att:', ashDetailKey?.attachment_count)
+  console.log('[DIAG] displayToIdentifier size:', displayToIdentifier.size, 'sample:', Array.from(displayToIdentifier.entries()).slice(0, 3))
+
   const chatNames = chatDetails.map((r) => {
     let ms = msgStats.get(r.chat_name)
     // Fallback: try display_name → chat_identifier bridge (named groups)
