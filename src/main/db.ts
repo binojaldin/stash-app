@@ -328,6 +328,7 @@ export function getStats(chatNameFilter?: string): {
   // Enrich with message counts from chat.db
   let msgStats = new Map<string, { messageCount: number; sentCount: number; receivedCount: number; initiationCount: number; laughsGenerated: number; laughsReceived: number }>()
   let participantMap = new Map<string, number>()
+  let displayToIdentifier = new Map<string, string>()
   try {
     const { homedir } = require('os')
     const { join } = require('path')
@@ -363,7 +364,6 @@ export function getStats(chatNameFilter?: string): {
       const initMap = new Map(initRows.map((r) => [r.chat_name, r.init_days]))
 
       // Build display_name → chat_identifier map for bridging named groups
-      const displayToIdentifier = new Map<string, string>()
       try {
         const dnRows = chatDb.prepare(`
           SELECT NULLIF(display_name, '') as dn, chat_identifier as ci FROM chat WHERE display_name IS NOT NULL AND display_name != ''
