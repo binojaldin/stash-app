@@ -19,7 +19,12 @@ function getContactsSourcePath(): string {
   return devPath
 }
 
+let compiled = false
+
 export function compileContactsHelper(): boolean {
+  // Only compile once per session
+  if (compiled && contactsBinaryPath) return true
+
   const binaryPath = getContactsBinaryPath()
   const sourcePath = getContactsSourcePath()
 
@@ -28,19 +33,22 @@ export function compileContactsHelper(): boolean {
     return false
   }
 
-  // Always delete existing binary to force fresh compile
+  // Delete old binary on first compile of session to ensure freshness
+  if (!compiled && existsSync(binaryPath)) {
+    try { unlinkSync(binaryPath); console.log('[Contacts] Deleted old binary, recompiling...') }
+    catch { /* ignore */ }
+  }
+
   if (existsSync(binaryPath)) {
-    try {
-      unlinkSync(binaryPath)
-      console.log('[Contacts] Deleted old binary, recompiling...')
-    } catch (err) {
-      console.error('[Contacts] Could not delete old binary:', err)
-    }
+    contactsBinaryPath = binaryPath
+    compiled = true
+    return true
   }
 
   try {
     execSync(`swiftc -O "${sourcePath}" -o "${binaryPath}" -framework Contacts`, { timeout: 120000 })
     contactsBinaryPath = binaryPath
+    compiled = true
     console.log('[Contacts] Compiled successfully')
     return true
   } catch (err) {
