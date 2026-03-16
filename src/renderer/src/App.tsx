@@ -1,33 +1,17 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Grid, List, ChevronDown, Sparkles, Image, Video, FileText, Music } from 'lucide-react'
+import { Sparkles, Image, Video, FileText, Music } from 'lucide-react'
 import { PermissionScreen } from './components/PermissionScreen'
 import { ChatPriorityScreen } from './components/ChatPriorityScreen'
 import { IndexingOverlay } from './components/IndexingOverlay'
-import { SearchBar, SearchBarRef } from './components/SearchBar'
 import { IconRail } from './components/IconRail'
 import { Sidebar } from './components/Sidebar'
 import { Dashboard } from './components/Dashboard'
-import { AttachmentGrid } from './components/AttachmentGrid'
-import { DetailPanel } from './components/DetailPanel'
+import { AttachmentsView } from './components/AttachmentsView'
 import { WrappedView } from './components/WrappedView'
-import type { Attachment, ChatSummary, Filters, IndexingProgress, Stats } from './types'
+import type { ChatSummary, Filters, IndexingProgress, Stats } from './types'
 
-const SORT_OPTIONS = [
-  { value: 'newest', label: 'Newest first' },
-  { value: 'oldest', label: 'Oldest first' },
-  { value: 'largest', label: 'Largest first' },
-  { value: 'sender', label: 'By sender' },
-  { value: 'most-reacted', label: 'Most reacted' },
-  { value: 'burst', label: 'Conversation burst' }
-] as const
-
-type SortOrder = typeof SORT_OPTIONS[number]['value']
 type AppState = 'checking' | 'loading' | 'no-access' | 'priority' | 'main'
 
-// ── Navigation model ──
-// Scope = who (global or person) — navigation state
-// Surface = what (insights or attachments) — navigation state
-// Filters = how (type, date, query, sort) — query state within a surface
 type MainView =
   | { kind: 'global-insights' }
   | { kind: 'global-attachments' }
@@ -46,39 +30,27 @@ function dateRangeToBounds(range: string): { from: string | null; to: string | n
 }
 
 export default function App(): JSX.Element {
+  // ── Navigation + global state ──
   const [appState, setAppState] = useState<AppState>('checking')
   const [isIndexing, setIsIndexing] = useState(false)
   const [showIndexing, setShowIndexing] = useState(true)
   const [chatSummaries, setChatSummaries] = useState<ChatSummary[]>([])
   const [indexingProgress, setIndexingProgress] = useState<IndexingProgress>({ total: 0, processed: 0, currentFile: '' })
   const [mainView, setMainView] = useState<MainView>({ kind: 'global-insights' })
-  const [query, setQuery] = useState('')
-  const [filters, setFilters] = useState<Filters>({ type: 'all' })
-  const [attachments, setAttachments] = useState<Attachment[]>([])
-  const [selectedAttachment, setSelectedAttachment] = useState<Attachment | null>(null)
   const [stats, setStats] = useState<Stats>({ total: 0, images: 0, videos: 0, documents: 0, audio: 0, unavailable: 0, chatNames: [], chatNameMap: {} })
-  const [page, setPage] = useState(0)
-  const [hasMore, setHasMore] = useState(true)
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
-  const [sortOrder, setSortOrder] = useState<SortOrder>('newest')
-  const [showSortMenu, setShowSortMenu] = useState(false)
   const [showSidebar, setShowSidebar] = useState(true)
   const [showWrapped, setShowWrapped] = useState(false)
   const [wordmarkReady, setWordmarkReady] = useState(false)
   const [dateRange, setDateRange] = useState<string>('all')
-  const debounceRef = useRef<NodeJS.Timeout>()
-  const searchBarRef = useRef<SearchBarRef>(null)
+  const [filters, setFilters] = useState<Filters>({ type: 'all' })
 
-  // ── Derived state from mainView ──
+  // ── Derived ──
   const scopedPerson = (mainView.kind === 'person-insights' || mainView.kind === 'person-attachments') ? mainView.person : null
   const showInsights = mainView.kind === 'global-insights' || mainView.kind === 'person-insights'
   const showAttachments = mainView.kind === 'global-attachments' || mainView.kind === 'person-attachments'
   const isPersonScope = scopedPerson !== null
-  const effectiveChatName = scopedPerson ?? filters.chatName
-  const isImageView = viewMode === 'grid'
 
   // ── Effects ──
-  useEffect(() => { localStorage.setItem('stash-view-mode', viewMode) }, [viewMode])
   useEffect(() => { const t = setTimeout(() => setWordmarkReady(true), 300); return () => clearTimeout(t) }, [])
 
   // Startup
@@ -121,17 +93,17 @@ export default function App(): JSX.Element {
     const confirmed = await window.api.confirmReset()
     if (!confirmed) return
     await window.api.resetIndexing()
-    setAttachments([]); setStats({ total: 0, images: 0, videos: 0, documents: 0, audio: 0, unavailable: 0, chatNames: [], chatNameMap: {} })
+    setStats({ total: 0, images: 0, videos: 0, documents: 0, audio: 0, unavailable: 0, chatNames: [], chatNameMap: {} })
     const summaries = await window.api.getChatSummaries()
     setChatSummaries(summaries); setAppState('priority'); window.api.resolveChatNames()
   }, [])
 
   useEffect(() => {
     const unsubs = [
-      window.api.onFocusSearch(() => searchBarRef.current?.focus()),
       window.api.onToggleSidebar(() => setShowSidebar((p) => !p)),
-      window.api.onSetViewGrid(() => setViewMode('grid')),
-      window.api.onSetViewList(() => setViewMode('list')),
+      window.api.onSetViewGrid(() => {}),
+      window.api.onSetViewList(() => {}),
+      window.api.onFocusSearch(() => {}),
       window.api.onManageConversations(() => handleManageConversations())
     ]
     return () => unsubs.forEach((u) => u())
@@ -149,64 +121,24 @@ export default function App(): JSX.Element {
     return unsub
   }, [])
 
-  useEffect(() => { const unsub = window.api.onNewAttachment(() => { loadAttachments(); loadStats() }); return unsub }, [])
+  useEffect(() => { const unsub = window.api.onNewAttachment(() => loadStats()); return unsub }, [])
 
-  // ── Data loading ──
+  // ── Stats loading ──
   const loadStats = useCallback(async (chatFilter?: string) => {
     const bounds = dateRangeToBounds(dateRange)
     const s = await window.api.getStats(chatFilter, bounds.from || undefined, bounds.to || undefined)
     setStats(s)
   }, [dateRange])
 
-  const loadAttachments = useCallback(async () => {
-    const filterParams: Record<string, string> = {}
-    if (filters.type && filters.type !== 'all') filterParams.type = filters.type
-    if (effectiveChatName) filterParams.chatName = effectiveChatName
-    const bounds = dateRangeToBounds(dateRange)
-    if (bounds.from) filterParams.dateFrom = bounds.from
-    if (bounds.to) filterParams.dateTo = bounds.to
-    const results = query
-      ? await window.api.searchAttachments(query, filterParams, 0, 50, sortOrder)
-      : await window.api.getAttachments(filterParams, 0, 50, sortOrder)
-    setAttachments(results as Attachment[]); setPage(0); setHasMore((results as Attachment[]).length === 50)
-  }, [query, filters, sortOrder, dateRange, effectiveChatName])
-
-  const loadMore = useCallback(async () => {
-    const nextPage = page + 1
-    const filterParams: Record<string, string> = {}
-    if (filters.type && filters.type !== 'all') filterParams.type = filters.type
-    if (effectiveChatName) filterParams.chatName = effectiveChatName
-    const bounds = dateRangeToBounds(dateRange)
-    if (bounds.from) filterParams.dateFrom = bounds.from
-    if (bounds.to) filterParams.dateTo = bounds.to
-    const results = query
-      ? await window.api.searchAttachments(query, filterParams, nextPage, 50, sortOrder)
-      : await window.api.getAttachments(filterParams, nextPage, 50, sortOrder)
-    const newResults = results as Attachment[]
-    setAttachments((prev) => [...prev, ...newResults]); setPage(nextPage); setHasMore(newResults.length === 50)
-  }, [query, filters, page, sortOrder, dateRange, effectiveChatName])
-
-  // Reload on view/filter/date changes
-  useEffect(() => {
-    if (appState !== 'main') return
-    if (debounceRef.current) clearTimeout(debounceRef.current)
-    debounceRef.current = setTimeout(() => { if (showAttachments) loadAttachments() }, 200)
-    return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
-  }, [query, filters, sortOrder, dateRange, mainView])
-
-  useEffect(() => { if (appState === 'main') loadStats(scopedPerson ?? filters.chatName ?? undefined) }, [dateRange, scopedPerson, filters.chatName, appState])
-  useEffect(() => { if (!isIndexing && appState === 'main') { loadStats(scopedPerson || undefined); if (showAttachments) loadAttachments() } }, [isIndexing])
-  useEffect(() => { if (appState === 'main') { loadStats(); loadAttachments() } }, [appState])
-
-  useEffect(() => { if (!showSortMenu) return; const h = (): void => setShowSortMenu(false); window.addEventListener('click', h); return () => window.removeEventListener('click', h) }, [showSortMenu])
-
-  const selectedIndex = selectedAttachment ? attachments.findIndex((a) => a.id === selectedAttachment.id) : -1
+  useEffect(() => { if (appState === 'main') loadStats(scopedPerson ?? undefined) }, [dateRange, scopedPerson, appState])
+  useEffect(() => { if (!isIndexing && appState === 'main') loadStats(scopedPerson || undefined) }, [isIndexing])
+  useEffect(() => { if (appState === 'main') loadStats() }, [appState])
 
   // ── Navigation helpers ──
-  const goHome = (): void => { setMainView({ kind: 'global-insights' }); setQuery(''); setFilters({ type: 'all' }) }
-  const scopePerson = (rawName: string): void => { setMainView({ kind: 'person-insights', person: rawName }); setQuery('') }
+  const goHome = (): void => { setMainView({ kind: 'global-insights' }); setFilters({ type: 'all' }) }
+  const scopePerson = (rawName: string): void => { setMainView({ kind: 'person-insights', person: rawName }) }
 
-  // ── Early returns for non-main states ──
+  // ── Early returns ──
   if (appState === 'checking' || appState === 'loading') {
     return (<div className="flex flex-col items-center justify-center h-screen bg-[#0a0a0a] gap-3"><div className="w-6 h-6 border-2 border-teal-500 border-t-transparent rounded-full animate-spin" /><p className="text-xs text-[#636363]">Loading your library...</p></div>)
   }
@@ -227,18 +159,13 @@ export default function App(): JSX.Element {
       {showWrapped && <WrappedView onClose={() => setShowWrapped(false)} />}
       {isIndexing && showIndexing && indexingProgress.total > 0 && <IndexingOverlay progress={indexingProgress} onBrowse={() => setShowIndexing(false)} />}
 
-      <IconRail
-        mainView={mainView}
-        onNavigate={(kind) => setMainView({ kind })}
+      <IconRail mainView={mainView} onNavigate={(kind) => setMainView({ kind })}
         indexProgress={isIndexing ? Math.round((indexingProgress.processed / Math.max(indexingProgress.total, 1)) * 100) : stats.total > 0 ? 100 : 0}
-        attachmentCount={stats.total}
-        hasNewInsights={stats.total > 0}
-      />
+        attachmentCount={stats.total} hasNewInsights={stats.total > 0} />
 
       <div className="flex flex-col" style={{ background: '#0F0F0F' }}>
         {showSidebar && (
-          <Sidebar
-            stats={stats} filters={filters}
+          <Sidebar stats={stats} filters={filters}
             onFilterChange={(f) => { setFilters(f); if (!showAttachments) setMainView(isPersonScope ? { kind: 'person-attachments', person: scopedPerson! } : { kind: 'global-attachments' }) }}
             onManageConversations={!isIndexing ? handleManageConversations : undefined}
             onHideChat={async (rawName) => { await window.api.hideChat(rawName); loadStats() }}
@@ -246,8 +173,7 @@ export default function App(): JSX.Element {
             onGoHome={goHome}
             scopedPerson={scopedPerson}
             onScopePerson={(rawName) => rawName ? scopePerson(rawName) : goHome()}
-            selectedRange={dateRange} onDateRangeChange={setDateRange}
-          />
+            selectedRange={dateRange} onDateRangeChange={setDateRange} />
         )}
       </div>
 
@@ -273,8 +199,8 @@ export default function App(): JSX.Element {
           )}
         </div>
 
-        {/* Media summary cards — only in global views */}
-        {!isPersonScope && stats.total > 0 && (
+        {/* Media summary cards — global views only */}
+        {!isPersonScope && stats.total > 0 && showInsights && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, padding: '12px 14px', background: '#F6F3EF', flexShrink: 0 }}>
             {mediaCards.map(({ icon: Icon, label, count, bg, color, type }) => (
               <button key={type} onClick={() => { setFilters({ ...filters, type }); setMainView({ kind: 'global-attachments' }) }}
@@ -286,50 +212,6 @@ export default function App(): JSX.Element {
           </div>
         )}
 
-        {/* Control bar — type pills + count + sort + view toggle */}
-        {showAttachments && (
-          <div style={{ height: 48, background: '#F6F3EF', borderBottom: '1px solid #EAE5DF', display: 'flex', alignItems: 'center', gap: 6, padding: '0 14px', flexShrink: 0 }}>
-            {[
-              { label: 'All', type: 'all', color: '#888' },
-              { label: 'Images', type: 'images', color: '#E8604A' },
-              { label: 'Videos', type: 'videos', color: '#2EC4A0' },
-              { label: 'Docs', type: 'documents', color: '#7F77DD' },
-              { label: 'Audio', type: 'audio', color: '#BA7517' }
-            ].map(({ label, type: t, color }) => (
-              <button key={t} onClick={() => setFilters({ ...filters, type: t })}
-                style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 10px', borderRadius: 999, fontSize: 12, cursor: 'pointer', border: `1px solid ${(filters.type || 'all') === t ? 'rgba(0,0,0,0.1)' : 'transparent'}`, background: (filters.type || 'all') === t ? '#fff' : 'transparent', color: (filters.type || 'all') === t ? '#1A1A1A' : '#8a8480', fontWeight: (filters.type || 'all') === t ? 500 : 400, fontFamily: "'DM Sans'" }}>
-                <div style={{ width: 6, height: 6, borderRadius: '50%', background: color, flexShrink: 0 }} />{label}
-              </button>
-            ))}
-            <div style={{ width: 1, height: 20, background: '#EAE5DF', flexShrink: 0, margin: '0 4px' }} />
-            <span style={{ fontSize: 11, color: '#9a948f', whiteSpace: 'nowrap' }}>{attachments.length} files</span>
-            <div style={{ flex: 1 }} />
-            <div style={{ position: 'relative' }}>
-              <button onClick={(e) => { e.stopPropagation(); setShowSortMenu(!showSortMenu) }}
-                style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 8, fontSize: 12, color: '#6f6a65', cursor: 'pointer', border: '1px solid #EAE5DF', background: '#fff', fontFamily: "'DM Sans'", whiteSpace: 'nowrap' }}>
-                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M1 3h10M3 6h6M5 9h2"/></svg>
-                {SORT_OPTIONS.find((o) => o.value === sortOrder)?.label}
-                <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M2 4l3 3 3-3"/></svg>
-              </button>
-              {showSortMenu && (
-                <div style={{ position: 'absolute', top: 'calc(100% + 4px)', right: 0, background: '#fff', border: '1px solid #EAE5DF', borderRadius: 10, overflow: 'hidden', width: 148, zIndex: 100, boxShadow: '0 4px 20px rgba(0,0,0,0.1)' }}>
-                  {SORT_OPTIONS.map((opt) => (
-                    <button key={opt.value} onClick={() => { setSortOrder(opt.value); setShowSortMenu(false) }}
-                      style={{ width: '100%', textAlign: 'left', padding: '9px 14px', fontSize: 12, color: sortOrder === opt.value ? '#E8604A' : '#6f6a65', fontWeight: sortOrder === opt.value ? 500 : 400, background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: "'DM Sans'" }}>{opt.label}</button>
-                  ))}
-                </div>
-              )}
-            </div>
-            <div style={{ width: 1, height: 20, background: '#EAE5DF', flexShrink: 0, margin: '0 4px' }} />
-            <div style={{ display: 'flex', background: '#EAE5DF', borderRadius: 8, padding: 2, gap: 1 }}>
-              <button onClick={() => setViewMode('grid')} style={{ width: 28, height: 28, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', background: viewMode === 'grid' ? '#fff' : 'transparent', border: 'none', cursor: 'pointer' }}>
-                <Grid style={{ width: 14, height: 14, stroke: viewMode === 'grid' ? '#1A1A1A' : '#8a8480' }} /></button>
-              <button onClick={() => setViewMode('list')} style={{ width: 28, height: 28, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', background: viewMode === 'list' ? '#fff' : 'transparent', border: 'none', cursor: 'pointer' }}>
-                <List style={{ width: 14, height: 14, stroke: viewMode === 'list' ? '#1A1A1A' : '#8a8480' }} /></button>
-            </div>
-          </div>
-        )}
-
         {/* Insights label */}
         {showInsights && !isPersonScope && stats.total > 0 && (
           <div style={{ padding: '12px 28px 6px', fontSize: 11, letterSpacing: '0.2em', textTransform: 'uppercase', color: '#b8b2ad' }}>Insights · surfaced automatically</div>
@@ -338,16 +220,10 @@ export default function App(): JSX.Element {
         {/* Main surface */}
         {showInsights ? (
           <Dashboard stats={stats} chatNameMap={stats.chatNameMap}
-            onSelectConversation={(rawName) => { setMainView({ kind: 'person-attachments', person: rawName }) }}
+            onSelectConversation={(rawName) => setMainView({ kind: 'person-attachments', person: rawName })}
             dateRange={dateRange} scopedPerson={scopedPerson} onClearScope={goHome} />
         ) : (
-          <div className="flex-1 overflow-y-auto" style={{ padding: '0 14px 14px' }}>
-            <AttachmentGrid attachments={attachments} selectedId={selectedAttachment?.id ?? null} onSelect={setSelectedAttachment} onLoadMore={loadMore} hasMore={hasMore} isImageView={isImageView} chatNameMap={stats.chatNameMap} sortOrder={sortOrder} />
-          </div>
-        )}
-
-        {selectedAttachment && (
-          <DetailPanel attachment={selectedAttachment} attachments={attachments} currentIndex={selectedIndex} onClose={() => setSelectedAttachment(null)} onNavigate={setSelectedAttachment} />
+          <AttachmentsView mainView={mainView} dateRange={dateRange} stats={stats} chatNameMap={stats.chatNameMap} onNavigate={setMainView} />
         )}
       </div>
     </div>
