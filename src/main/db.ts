@@ -319,14 +319,20 @@ export function getStats(chatNameFilter?: string, dateFrom?: string, dateTo?: st
   total: number; images: number; videos: number; documents: number; audio: number; unavailable: number; chatNames: ChatNameEntry[]
 } {
   const d = initDb()
-  const where = chatNameFilter ? ' WHERE chat_name = ?' : ''
+  // Build date condition for stash.db queries
+  const dateParts: string[] = []
+  if (dateFrom) dateParts.push(`created_at >= '${dateFrom}'`)
+  if (dateTo) dateParts.push(`created_at <= '${dateTo} 23:59:59'`)
+  const dateWhere = dateParts.length ? ' AND ' + dateParts.join(' AND ') : ''
+
+  const chatCond = chatNameFilter ? ' AND chat_name = ?' : ''
   const params = chatNameFilter ? [chatNameFilter] : []
-  const total = (d.prepare(`SELECT COUNT(*) as c FROM attachments${where}`).get(...params) as { c: number }).c
-  const images = (d.prepare(`SELECT COUNT(*) as c FROM attachments WHERE is_image = 1${chatNameFilter ? ' AND chat_name = ?' : ''}`).get(...params) as { c: number }).c
-  const videos = (d.prepare(`SELECT COUNT(*) as c FROM attachments WHERE is_video = 1${chatNameFilter ? ' AND chat_name = ?' : ''}`).get(...params) as { c: number }).c
-  const documents = (d.prepare(`SELECT COUNT(*) as c FROM attachments WHERE is_document = 1${chatNameFilter ? ' AND chat_name = ?' : ''}`).get(...params) as { c: number }).c
-  const audio = (d.prepare(`SELECT COUNT(*) as c FROM attachments WHERE mime_type LIKE 'audio/%'${chatNameFilter ? ' AND chat_name = ?' : ''}`).get(...params) as { c: number }).c
-  const unavailable = (d.prepare(`SELECT COUNT(*) as c FROM attachments WHERE is_available = 0${chatNameFilter ? ' AND chat_name = ?' : ''}`).get(...params) as { c: number }).c
+  const total = (d.prepare(`SELECT COUNT(*) as c FROM attachments WHERE 1=1${chatCond}${dateWhere}`).get(...params) as { c: number }).c
+  const images = (d.prepare(`SELECT COUNT(*) as c FROM attachments WHERE is_image = 1${chatCond}${dateWhere}`).get(...params) as { c: number }).c
+  const videos = (d.prepare(`SELECT COUNT(*) as c FROM attachments WHERE is_video = 1${chatCond}${dateWhere}`).get(...params) as { c: number }).c
+  const documents = (d.prepare(`SELECT COUNT(*) as c FROM attachments WHERE is_document = 1${chatCond}${dateWhere}`).get(...params) as { c: number }).c
+  const audio = (d.prepare(`SELECT COUNT(*) as c FROM attachments WHERE mime_type LIKE 'audio/%'${chatCond}${dateWhere}`).get(...params) as { c: number }).c
+  const unavailable = (d.prepare(`SELECT COUNT(*) as c FROM attachments WHERE is_available = 0${chatCond}${dateWhere}`).get(...params) as { c: number }).c
   const hidden = new Set(getHiddenChats())
   let chatSql = 'SELECT chat_name, COUNT(*) as attachment_count, MAX(created_at) as last_message_date FROM attachments WHERE chat_name IS NOT NULL'
   const chatParams: string[] = []

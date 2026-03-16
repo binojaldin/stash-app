@@ -96,7 +96,7 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
   const heroText = heroTitle(dateRange)
   const chats = stats.chatNames as ChatNameEntry[]
 
-  const individuals = chats.filter((c) => !c.isGroup)
+  const individuals = chats.filter((c) => !c.isGroup && (c.sentCount + c.receivedCount) > 0)
   const groups = chats.filter((c) => c.isGroup)
 
   // Sorted lists — individuals only for person-level tiles
@@ -233,12 +233,12 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
         {/* Tile 1 — Funniest person */}
         <div style={{ ...tileBase, gridColumn: 'span 4' }}>
           <TileLabel text="Funniest person" />
-          {topFunny ? (
+          {topFunny && topFunny.laughsReceived > 0 ? (
             <>
               <Metric value={resolveName(topFunny.rawName, chatNameMap)} sub={`${topFunny.laughsReceived.toLocaleString()} times they made you laugh`} />
               <CtaPill text="See why → Pro" />
             </>
-          ) : <div style={{ color: '#6f6a65' }}>No data yet</div>}
+          ) : <div style={{ color: '#9a948f', fontSize: 13 }}>No laugh data for this period</div>}
         </div>
 
         {/* Tile 2 — Initiation balance */}
@@ -262,9 +262,10 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
         {/* Tile 4 — Who makes you laugh most (leaderboard) */}
         <div style={{ ...tileBase, gridColumn: 'span 8' }}>
           <TileLabel text="Who makes you laugh most" />
-          {byLaughsReceived.slice(0, 3).map((c, i) => (
+          {byLaughsReceived.filter((c) => c.laughsReceived > 0).slice(0, 3).map((c, i) => (
             <LeaderRow key={c.rawName} rank={i + 1} name={resolveName(c.rawName, chatNameMap)} sub={laughLabels[i] || ''} value={`${c.laughsReceived.toLocaleString()} laughs`} />
           ))}
+          {byLaughsReceived.every((c) => c.laughsReceived === 0) && <div style={{ color: '#9a948f', fontSize: 13, padding: '12px 0' }}>No laugh data for this period</div>}
           <CtaPill text="See exact messages → Pro" />
         </div>
 
