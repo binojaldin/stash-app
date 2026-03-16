@@ -80,6 +80,7 @@ export function resolveContactsBatch(handles: string[]): void {
     try {
       const result = execFileSync(contactsBinaryPath, chunk, { timeout: 15000 }).toString()
       const lines = result.split('\n')
+      if (i === 0 && lines[0]) console.log('[Contacts] First line format:', lines[0].substring(0, 80), lines[0].includes('\t') ? '(has tab)' : '(no tab)')
       for (let j = 0; j < chunk.length; j++) {
         const line = lines[j] || ''
         const tabIdx = line.indexOf('\t')
