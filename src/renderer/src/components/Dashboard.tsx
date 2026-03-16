@@ -117,11 +117,12 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
   const totalInitiation = chats.reduce((s, c) => s + c.initiationCount, 0)
   const initiationPct = totalSent > 0 ? Math.min(Math.round((totalInitiation / totalSent) * 100), 100) : 0
 
-  // ── Relationship view — "The [Name] Files" ──
+  // ── Relationship view ──
   if (scopedPerson) {
     const pn = resolveName(scopedPerson, chatNameMap)
-    const firstName = pn.split(' ')[0]
     const pd = chats.find((c) => c.rawName === scopedPerson)
+    const isGroupChat = pd?.isGroup ?? false
+    const firstName = isGroupChat ? pn : pn.split(' ')[0]
     const dateLabel = dateRange === 'all' ? 'All time' : dateRange === 'month' ? 'This month' : dateRange === 'year' ? 'This year' : dateRange === '30days' ? 'Last 30 days' : 'Last 7 days'
     const initPct = pd ? Math.min(99, Math.round((pd.initiationCount / Math.max(pd.messageCount * 0.1, 1)) * 100)) : 0
     const sentPct = pd ? Math.round((pd.sentCount / Math.max(pd.messageCount, 1)) * 100) : 50
@@ -135,7 +136,7 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
       </div>
     )
 
-    const ComingSoonCard = ({ emoji, title, span }: { emoji: string; title: string; span: number }): JSX.Element => (
+    const SoonCard = ({ emoji, title, span }: { emoji: string; title: string; span: number }): JSX.Element => (
       <div style={{ ...tileBase, gridColumn: `span ${span}`, opacity: 0.5, borderStyle: 'dashed', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', minHeight: 140 }}>
         <div style={{ fontSize: 24, marginBottom: 6 }}>{emoji}</div>
         <div style={{ fontSize: 10, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#2EC4A0', fontWeight: 600, marginBottom: 6 }}>{title}</div>
@@ -146,52 +147,74 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
     return (
       <div style={{ flex: 1, overflowY: 'auto', padding: '0 28px 40px', fontFamily: "'DM Sans', sans-serif" }}>
         <div style={{ maxWidth: 1180, margin: '0 auto', width: '100%' }}>
-          {/* Topbar */}
           <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', height: 44, marginBottom: 8 }}>
             <div><span style={{ fontSize: 18, color: '#1A1A1A', fontWeight: 500 }}>{pn}</span><span style={{ fontSize: 12, color: '#9a948f', marginLeft: 10 }}>{dateLabel}</span></div>
             <span style={{ color: '#9a948f', letterSpacing: '0.2em', fontSize: 20 }}>•••</span>
           </div>
 
-          {/* Hero — "The [Name] Files" */}
           <div style={{ background: '#1E2826', borderRadius: 22, padding: 28, marginBottom: 20, position: 'relative', overflow: 'hidden' }}>
             <div style={{ position: 'absolute', right: -80, bottom: -120, width: 320, height: 320, background: 'radial-gradient(circle, rgba(46,196,160,0.18) 0%, transparent 62%)', pointerEvents: 'none' }} />
             <div style={{ position: 'relative', zIndex: 1 }}>
               <div style={{ fontSize: 11, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'rgba(46,196,160,0.7)', marginBottom: 12 }}>THE DYNAMIC</div>
-              <div style={{ fontFamily: "'Unbounded', sans-serif", fontWeight: 200, fontSize: 28, color: 'white', letterSpacing: '0.02em', marginBottom: 10 }}>The {firstName} Files.</div>
+              <div style={{ fontFamily: "'Unbounded', sans-serif", fontWeight: 200, fontSize: 28, color: 'white', letterSpacing: '0.02em', marginBottom: 10 }}>{isGroupChat ? `${pn}.` : `The ${firstName} Files.`}</div>
               <div style={{ fontSize: 15, color: 'rgba(255,255,255,0.68)', lineHeight: 1.7 }}>
                 {pd ? `${pd.messageCount.toLocaleString()} messages exchanged. ${pd.attachmentCount.toLocaleString()} attachments shared.` : ''}
               </div>
             </div>
           </div>
 
-          {/* Insight cards */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 24 }}>
-            {pd && <>
-              <RelCard emoji="🎭" title="Comedy Advantage" span={4}
-                metric={pd.laughsReceived > pd.laughsGenerated ? 'You win' : `${firstName} wins`}
-                sentence={`You got ${pd.laughsGenerated.toLocaleString()} laughs out of them.`}
-                flavor="They're your best audience." />
-              <RelCard emoji="😂" title="Your Comedian" span={4}
-                metric={pd.laughsReceived.toLocaleString()}
-                sentence={`${firstName} made you laugh ${pd.laughsReceived.toLocaleString()} times.`}
-                flavor="Certified funny." />
-              <RelCard emoji="⚡" title="Conversation Instigator" span={4}
+          {isGroupChat ? (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 24 }}>
+              <RelCard emoji="📎" title="The archive" span={4}
+                metric={pd ? pd.attachmentCount.toLocaleString() : '—'}
+                sentence="Things shared in this chat."
+                flavor="Photos, screenshots, and files." />
+              <RelCard emoji="💬" title="Messages" span={4}
+                metric={pd ? pd.messageCount.toLocaleString() : '—'}
+                sentence="Total messages in this group."
+                flavor="Every conversation counts." />
+              <RelCard emoji="⚡" title="You initiate" span={4}
                 metric={`${initPct}%`}
-                sentence={`You started ${initPct}% of threads.`}
-                flavor={initPct > 50 ? 'You keep this thing alive.' : 'They reach out more.'} />
-              <RelCard emoji="💬" title="Message Balance" span={6}
-                metric={`${sentPct}/${100 - sentPct}`}
-                sentence={`You sent ${sentPct}% of the words.`}
-                flavor={sentPct > 55 ? 'You talk more. No shame.' : sentPct < 45 ? 'They do most of the talking.' : 'Perfectly balanced, as all things should be.'} />
-              <RelCard emoji="📸" title="The Archive" span={6}
-                metric={pd.attachmentCount.toLocaleString()}
-                sentence={`${pd.attachmentCount.toLocaleString()} things shared between you.`}
-                flavor="Photos, memes, evidence." />
-            </>}
-            <ComingSoonCard emoji="🌙" title="Night Owls" span={4} />
-            <ComingSoonCard emoji="🔥" title="Peak Chaos Hour" span={4} />
-            <ComingSoonCard emoji="🧵" title="Marathon Thread" span={4} />
-          </div>
+                sentence={`You started ${initPct}% of conversations.`}
+                flavor={initPct > 50 ? 'You keep this group alive.' : 'Others start most threads.'} />
+              <RelCard emoji="📊" title="Message balance" span={6}
+                metric={`${sentPct}%`}
+                sentence={pd && pd.sentCount > pd.receivedCount ? 'You send more than you receive.' : 'You receive more than you send.'}
+                flavor="Your share of the conversation." />
+              <SoonCard emoji="🏆" title="Most active member" span={6} />
+              <SoonCard emoji="🔥" title="Peak chaos hour" span={4} />
+              <SoonCard emoji="😂" title="Meme density" span={4} />
+              <SoonCard emoji="🌙" title="Late night activity" span={4} />
+            </div>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 24 }}>
+              {pd && <>
+                <RelCard emoji="🎭" title="Comedy Advantage" span={4}
+                  metric={pd.laughsReceived > pd.laughsGenerated ? 'You win' : `${firstName} wins`}
+                  sentence={`You got ${pd.laughsGenerated.toLocaleString()} laughs out of them.`}
+                  flavor="They're your best audience." />
+                <RelCard emoji="😂" title="Your Comedian" span={4}
+                  metric={pd.laughsReceived.toLocaleString()}
+                  sentence={`${firstName} made you laugh ${pd.laughsReceived.toLocaleString()} times.`}
+                  flavor="Certified funny." />
+                <RelCard emoji="⚡" title="Conversation Instigator" span={4}
+                  metric={`${initPct}%`}
+                  sentence={`You started ${initPct}% of threads.`}
+                  flavor={initPct > 50 ? 'You keep this thing alive.' : 'They reach out more.'} />
+                <RelCard emoji="💬" title="Message Balance" span={6}
+                  metric={`${sentPct}/${100 - sentPct}`}
+                  sentence={`You sent ${sentPct}% of the words.`}
+                  flavor={sentPct > 55 ? 'You talk more. No shame.' : sentPct < 45 ? 'They do most of the talking.' : 'Perfectly balanced, as all things should be.'} />
+                <RelCard emoji="📸" title="The Archive" span={6}
+                  metric={pd.attachmentCount.toLocaleString()}
+                  sentence={`${pd.attachmentCount.toLocaleString()} things shared between you.`}
+                  flavor="Photos, memes, evidence." />
+              </>}
+              <SoonCard emoji="🌙" title="Night Owls" span={4} />
+              <SoonCard emoji="🔥" title="Peak Chaos Hour" span={4} />
+              <SoonCard emoji="🧵" title="Marathon Thread" span={4} />
+            </div>
+          )}
         </div>
       </div>
     )

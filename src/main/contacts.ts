@@ -26,15 +26,25 @@ export function compileContactsHelper(): boolean {
   const sourcePath = getContactsSourcePath()
   if (!existsSync(sourcePath)) return false
 
-  // Delete old binary on first compile of session
-  if (!compiled && existsSync(binaryPath)) {
-    try { unlinkSync(binaryPath) } catch { /* ignore */ }
-  }
-
+  // Only recompile if binary is missing or source is newer
   if (existsSync(binaryPath)) {
-    contactsBinaryPath = binaryPath
-    compiled = true
-    return true
+    try {
+      const { statSync } = require('fs')
+      const srcMtime = statSync(sourcePath).mtimeMs
+      const binMtime = statSync(binaryPath).mtimeMs
+      if (srcMtime <= binMtime) {
+        contactsBinaryPath = binaryPath
+        compiled = true
+        return true
+      }
+      // Source is newer — delete and recompile
+      unlinkSync(binaryPath)
+      console.log('[Contacts] Source updated, recompiling...')
+    } catch {
+      contactsBinaryPath = binaryPath
+      compiled = true
+      return true
+    }
   }
 
   try {
