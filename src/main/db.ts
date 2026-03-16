@@ -430,22 +430,13 @@ export function getStats(chatNameFilter?: string): {
   } catch { /* fallback: all zeros */ }
 
   // Log unmatched keys for debugging
-  let matched = 0, unmatched = 0
   const chatNames = chatDetails.map((r) => {
     let ms = msgStats.get(r.chat_name)
-    // Fallback 1: try display_name → chat_identifier bridge (named groups)
+    // Fallback: try display_name → chat_identifier bridge (named groups)
     if (!ms) {
       const bridged = displayToIdentifier.get(r.chat_name)
       if (bridged) ms = msgStats.get(bridged)
     }
-    // Fallback 2: case-insensitive match
-    if (!ms) {
-      const key = r.chat_name?.toLowerCase()
-      for (const [k, v] of msgStats) {
-        if (k.toLowerCase() === key) { ms = v; break }
-      }
-    }
-    if (ms) matched++; else unmatched++
     return {
       rawName: r.chat_name,
       attachmentCount: r.attachment_count,
@@ -459,7 +450,6 @@ export function getStats(chatNameFilter?: string): {
       isGroup: (participantMap.get(r.chat_name) ?? participantMap.get(displayToIdentifier.get(r.chat_name) || '') ?? 0) > 1 || /^chat\d+/i.test(r.chat_name || '')
     }
   })
-  if (unmatched > 0) console.log(`[getStats] ${matched} chats matched, ${unmatched} unmatched`)
 
   return { total, images, videos, documents, audio, unavailable, chatNames }
 }
