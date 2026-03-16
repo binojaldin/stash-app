@@ -57,7 +57,7 @@ export default function App(): JSX.Element {
   const [stats, setStats] = useState<Stats>({ total: 0, images: 0, videos: 0, documents: 0, audio: 0, unavailable: 0, chatNames: [], chatNameMap: {} })
   const [page, setPage] = useState(0)
   const [hasMore, setHasMore] = useState(true)
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>(() => (localStorage.getItem('stash-view-mode') as 'grid' | 'list') || 'grid')
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
   const [sortOrder, setSortOrder] = useState<SortOrder>('newest')
   const [showSortMenu, setShowSortMenu] = useState(false)
   const [showSidebar, setShowSidebar] = useState(true)
@@ -73,7 +73,7 @@ export default function App(): JSX.Element {
   const showAttachments = mainView.kind === 'global-attachments' || mainView.kind === 'person-attachments'
   const isPersonScope = scopedPerson !== null
   const effectiveChatName = scopedPerson ?? filters.chatName
-  const isImageView = viewMode === 'grid' && (!filters.type || filters.type === 'all' || filters.type === 'images')
+  const isImageView = viewMode === 'grid'
 
   // ── Effects ──
   useEffect(() => { localStorage.setItem('stash-view-mode', viewMode) }, [viewMode])

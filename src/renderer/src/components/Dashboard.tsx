@@ -107,7 +107,7 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
   const byInitiation = [...individuals].sort((a, b) => b.initiationCount - a.initiationCount)
   const topGroup = [...groups].sort((a, b) => b.messageCount - a.messageCount)[0]
 
-  const topFunny = byLaughsGenerated[0]
+  const topFunny = byLaughsReceived[0]
   const topChat = byMessages[0]
   const topAttach = byAttachments[0]
   const topChatName = topChat ? resolveName(topChat.rawName, chatNameMap) : '—'
@@ -213,7 +213,7 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
           <TileLabel text="Funniest person" />
           {topFunny ? (
             <>
-              <Metric value={resolveName(topFunny.rawName, chatNameMap)} sub={`${topFunny.laughsGenerated.toLocaleString()} laugh responses`} />
+              <Metric value={resolveName(topFunny.rawName, chatNameMap)} sub={`${topFunny.laughsReceived.toLocaleString()} times they made you laugh`} />
               <CtaPill text="See why → Pro" />
             </>
           ) : <div style={{ color: '#6f6a65' }}>No data yet</div>}
