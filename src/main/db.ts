@@ -471,9 +471,7 @@ export function getStats(chatNameFilter?: string, dateFrom?: string, dateTo?: st
           }
           if (lateNightRows.length > 0) {
             lateNightCacheValid = true
-            console.log(`[LateNight] Cached ${lateNightCache.size} chats, sample:`, [...lateNightCache.entries()].slice(0, 3))
-          } else {
-            console.log('[LateNight] No rows returned')
+            console.log(`[LateNight] Cached ${lateNightCache.size} chats`)
           }
         } catch (err) { console.error('[LateNight] Error:', err) }
       }
@@ -508,9 +506,7 @@ export function getStats(chatNameFilter?: string, dateFrom?: string, dateTo?: st
           }
           if (replyLatencyCache.size > 0) {
             replyLatencyCacheValid = true
-            console.log(`[ReplyLatency] Cached ${replyLatencyCache.size} chats, sample:`, [...replyLatencyCache.entries()].slice(0, 3))
-          } else {
-            console.log('[ReplyLatency] No data cached — will retry next call')
+            console.log(`[ReplyLatency] Cached ${replyLatencyCache.size} chats`)
           }
         } catch (err) { console.error('[ReplyLatency] Error:', err) }
       }
