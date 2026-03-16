@@ -17,6 +17,7 @@ export interface Attachment {
   metadata_only: number
   is_available: number
   source: string
+  reaction_count?: number
 }
 
 export interface Filters {

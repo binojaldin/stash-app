@@ -16,7 +16,9 @@ const SORT_OPTIONS = [
   { value: 'newest', label: 'Newest first' },
   { value: 'oldest', label: 'Oldest first' },
   { value: 'largest', label: 'Largest first' },
-  { value: 'sender', label: 'By sender' }
+  { value: 'sender', label: 'By sender' },
+  { value: 'most-reacted', label: 'Most reacted' },
+  { value: 'burst', label: 'Conversation burst' }
 ] as const
 
 type SortOrder = typeof SORT_OPTIONS[number]['value']
@@ -340,7 +342,7 @@ export default function App(): JSX.Element {
             dateRange={dateRange} scopedPerson={scopedPerson} onClearScope={goHome} />
         ) : (
           <div className="flex-1 overflow-y-auto" style={{ padding: '0 14px 14px' }}>
-            <AttachmentGrid attachments={attachments} selectedId={selectedAttachment?.id ?? null} onSelect={setSelectedAttachment} onLoadMore={loadMore} hasMore={hasMore} isImageView={isImageView} chatNameMap={stats.chatNameMap} />
+            <AttachmentGrid attachments={attachments} selectedId={selectedAttachment?.id ?? null} onSelect={setSelectedAttachment} onLoadMore={loadMore} hasMore={hasMore} isImageView={isImageView} chatNameMap={stats.chatNameMap} sortOrder={sortOrder} />
           </div>
         )}
 
