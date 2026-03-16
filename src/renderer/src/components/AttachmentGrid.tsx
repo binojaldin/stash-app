@@ -208,7 +208,7 @@ export function AttachmentGrid({ attachments, selectedId, onSelect, onLoadMore, 
   }, [attachments, isImageView, sortOrder])
 
   // Fallback: if clustering produces <2 clusters or all tiny, render flat
-  const useClusters = clusters.length >= 2 && clusters.some((c) => c.attachments.length >= 3)
+  const useClusters = clusters.length >= 2 || (clusters.length === 1 && clusters[0].attachments.length >= 4)
 
   if (attachments.length === 0) {
     return (<div className="flex flex-col items-center justify-center h-full text-[#636363]"><File className="w-10 h-10 mb-3" /><p className="text-sm">No attachments found</p></div>)
