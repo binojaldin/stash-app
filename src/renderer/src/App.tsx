@@ -43,7 +43,7 @@ export default function App(): JSX.Element {
   const [wordmarkReady, setWordmarkReady] = useState(false)
   const [dateRange, setDateRange] = useState<string>('all')
   const [filters, setFilters] = useState<Filters>({ type: 'all' })
-  const [contactPhotos, setContactPhotos] = useState<Record<string, string>>({})
+  // Contact photos removed — will be re-added with proper architecture
 
   // ── Derived ──
   const scopedPerson = (mainView.kind === 'person-insights' || mainView.kind === 'person-attachments') ? mainView.person : null
@@ -69,7 +69,7 @@ export default function App(): JSX.Element {
       try {
         const s = await window.api.getStats()
         if (cancelled) return
-        if (s.total > 0) { setStats(s); setAppState('main'); window.api.getContactPhotos().then(setContactPhotos) }
+        if (s.total > 0) { setStats(s); setAppState('main') }
         else {
           const summaries = await window.api.getChatSummaries()
           if (cancelled) return
@@ -85,7 +85,6 @@ export default function App(): JSX.Element {
   useEffect(() => {
     const unsub = window.api.onChatNamesResolved((data) => {
       setChatSummaries(data as ChatSummary[])
-      window.api.getContactPhotos().then(setContactPhotos)
     })
     return unsub
   }, [])
@@ -181,7 +180,7 @@ export default function App(): JSX.Element {
             scopedPerson={scopedPerson}
             onScopePerson={(rawName) => rawName ? scopePerson(rawName) : goHome()}
             selectedRange={dateRange} onDateRangeChange={setDateRange}
-            contactPhotos={contactPhotos} />
+          />
         )}
       </div>
 

@@ -12,20 +12,15 @@ let semaphore = DispatchSemaphore(value: 0)
 var results = [String](repeating: "", count: args.count)
 
 store.requestAccess(for: .contacts) { granted, _ in
-    guard granted else {
-        semaphore.signal()
-        return
-    }
+    guard granted else { semaphore.signal(); return }
 
     let keysToFetch = [
         CNContactGivenNameKey, CNContactFamilyNameKey,
-        CNContactPhoneNumbersKey, CNContactEmailAddressesKey,
-        CNContactImageDataAvailableKey, CNContactThumbnailImageDataKey
+        CNContactPhoneNumbersKey, CNContactEmailAddressesKey
     ] as [CNKeyDescriptor]
 
     for (i, identifier) in args.enumerated() {
         var contact: CNContact? = nil
-
         if identifier.contains("@") {
             let predicate = CNContact.predicateForContacts(matchingEmailAddress: identifier)
             contact = (try? store.unifiedContacts(matching: predicate, keysToFetch: keysToFetch))?.first
@@ -37,23 +32,13 @@ store.requestAccess(for: .contacts) { granted, _ in
                 contact = (try? store.unifiedContacts(matching: predicate, keysToFetch: keysToFetch))?.first
             }
         }
-
         if let contact = contact {
             let name = "\(contact.givenName) \(contact.familyName)".trimmingCharacters(in: .whitespaces)
-            var photoB64 = ""
-            if contact.imageDataAvailable, let thumb = contact.thumbnailImageData {
-                photoB64 = thumb.base64EncodedString()
-            }
-            if !name.isEmpty {
-                results[i] = "\(name)\t\(photoB64)"
-            }
+            if !name.isEmpty { results[i] = name }
         }
     }
-
     semaphore.signal()
 }
 
 semaphore.wait()
-for result in results {
-    print(result)
-}
+for result in results { print(result) }

@@ -15,7 +15,6 @@ interface Props {
   onDateRangeChange?: (range: string) => void
   scopedPerson?: string | null
   onScopePerson?: (rawName: string | null) => void
-  contactPhotos?: Record<string, string>
 }
 
 function resolveName(raw: string, map: Record<string, string>): string {
@@ -29,7 +28,7 @@ function compactNum(n: number): string {
   return String(n)
 }
 
-export function Sidebar({ stats, filters, onFilterChange, onManageConversations, onHideChat, isIndexing, indexingProgress, onGoHome, selectedRange, onDateRangeChange, scopedPerson, onScopePerson, contactPhotos }: Props): JSX.Element {
+export function Sidebar({ stats, filters, onFilterChange, onManageConversations, onHideChat, isIndexing, indexingProgress, onGoHome, selectedRange, onDateRangeChange, scopedPerson, onScopePerson }: Props): JSX.Element {
   const [chatFilter, setChatFilter] = useState('')
   const [chatSort, setChatSort] = useState<string>('most-messages')
   const [showAllChats, setShowAllChats] = useState(false)
@@ -84,7 +83,6 @@ export function Sidebar({ stats, filters, onFilterChange, onManageConversations,
 
   // Relationship mode sidebar
   if (scopedPerson) {
-    const photo = contactPhotos?.[scopedPerson] || null
     const personName = resolveName(scopedPerson, stats.chatNameMap)
     const personData = (stats.chatNames as ChatNameEntry[]).find((c) => c.rawName === scopedPerson)
     const initials = personName.split(' ').filter(Boolean).map((w) => w[0]).join('').slice(0, 2).toUpperCase() || '?'
@@ -99,11 +97,7 @@ export function Sidebar({ stats, filters, onFilterChange, onManageConversations,
           </span>
         </div>
         <div style={{ padding: '16px 14px 12px', borderBottom: '1px solid #1A1A1A' }}>
-          {photo ? (
-            <img src={`data:image/jpeg;base64,${photo}`} style={{ width: 44, height: 44, borderRadius: '50%', objectFit: 'cover', marginBottom: 10 }} />
-          ) : (
-            <div style={{ width: 44, height: 44, borderRadius: '50%', background: '#2EC4A0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, fontWeight: 600, color: '#0A0A0A', marginBottom: 10 }}>{initials}</div>
-          )}
+          <div style={{ width: 44, height: 44, borderRadius: '50%', background: '#2EC4A0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, fontWeight: 600, color: '#0A0A0A', marginBottom: 10 }}>{initials}</div>
           <div style={{ fontSize: 15, color: '#fff', fontWeight: 500, marginBottom: 3 }}>{personName}</div>
           <div style={{ fontSize: 11, color: '#7c7c7c' }}>
             {personData ? `${compactNum(personData.messageCount)} messages` : ''} <span style={{ color: '#2EC4A0' }}>·</span> {personData ? `${compactNum(personData.attachmentCount)} attachments` : ''}

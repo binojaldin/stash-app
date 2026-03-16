@@ -4,8 +4,8 @@ import { join } from 'path'
 import { app } from 'electron'
 
 let contactsBinaryPath: string | null = null
+let compiled = false
 const contactCache = new Map<string, string>()
-const photoCache = new Map<string, string>()
 
 function getContactsBinaryPath(): string {
   return join(app.getPath('appData'), 'Stash', 'contacts_helper')
@@ -19,24 +19,16 @@ function getContactsSourcePath(): string {
   return devPath
 }
 
-let compiled = false
-
 export function compileContactsHelper(): boolean {
-  // Only compile once per session
   if (compiled && contactsBinaryPath) return true
 
   const binaryPath = getContactsBinaryPath()
   const sourcePath = getContactsSourcePath()
+  if (!existsSync(sourcePath)) return false
 
-  if (!existsSync(sourcePath)) {
-    console.error('[Contacts] Swift source not found at:', sourcePath)
-    return false
-  }
-
-  // Delete old binary on first compile of session to ensure freshness
+  // Delete old binary on first compile of session
   if (!compiled && existsSync(binaryPath)) {
-    try { unlinkSync(binaryPath); console.log('[Contacts] Deleted old binary, recompiling...') }
-    catch { /* ignore */ }
+    try { unlinkSync(binaryPath) } catch { /* ignore */ }
   }
 
   if (existsSync(binaryPath)) {
@@ -65,19 +57,8 @@ export function resolveContact(handle: string): string {
   return contactCache.get(handle) ?? handle
 }
 
-export function getContactPhoto(handle: string): string | null {
-  return photoCache.get(handle) || null
-}
-
-export function getAllContactPhotos(): Record<string, string> {
-  const result: Record<string, string> = {}
-  for (const [k, v] of photoCache) if (v) result[k] = v
-  return result
-}
-
 export function resolveContactsBatch(handles: string[]): void {
   if (!contactsBinaryPath || !existsSync(contactsBinaryPath)) return
-
   const uncached = handles.filter((h) => h && !contactCache.has(h))
   if (uncached.length === 0) return
 
@@ -87,18 +68,12 @@ export function resolveContactsBatch(handles: string[]): void {
     try {
       const result = execFileSync(contactsBinaryPath, chunk, { timeout: 15000 }).toString()
       const lines = result.split('\n')
-      if (i === 0 && lines[0]) console.log('[Contacts] First line format:', lines[0].substring(0, 80), lines[0].includes('\t') ? '(has tab)' : '(no tab)')
       for (let j = 0; j < chunk.length; j++) {
-        const line = lines[j] || ''
+        const line = lines[j]?.trim() || ''
+        // Handle name\tphoto format from old binary — take only name
         const tabIdx = line.indexOf('\t')
-        if (tabIdx >= 0) {
-          const name = line.substring(0, tabIdx).trim()
-          const photo = line.substring(tabIdx + 1).trim()
-          contactCache.set(chunk[j], name || chunk[j])
-          if (photo) photoCache.set(chunk[j], photo)
-        } else {
-          contactCache.set(chunk[j], line.trim() || chunk[j])
-        }
+        const name = tabIdx >= 0 ? line.slice(0, tabIdx).trim() : line
+        contactCache.set(chunk[j], name || chunk[j])
       }
     } catch {
       for (const h of chunk) {

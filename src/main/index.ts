@@ -4,7 +4,7 @@ import { is } from '@electron-toolkit/utils'
 import { checkFullDiskAccess } from './messagesReader'
 import { initDb, searchAttachments, getStats, getAttachmentById, closeDb, hideChat, getHiddenChats } from './db'
 import { startIndexing, getIndexingProgress, fetchChatSummaries, saveChatPriorities, getSavedPriorityChats, resetIndexing, recoverAttachment, resolveNamesInBackground } from './indexer'
-import { compileContactsHelper, resolveContact, resolveContactsBatch, getContactPhoto, getAllContactPhotos } from './contacts'
+import { compileContactsHelper, resolveContact, resolveContactsBatch } from './contacts'
 import { generateWrapped, getAvailableYears } from './wrapped'
 import { copyFileSync, existsSync, readFileSync } from 'fs'
 import { extname } from 'path'
@@ -151,14 +151,22 @@ function setupIpc(): void {
     const chatNameMap: Record<string, string> = {}
     try {
       compileContactsHelper()
-      const rawNames = stats.chatNames.map((c) => c.rawName)
-      const handles = rawNames.filter((n) => n && (n.startsWith('+') || n.includes('@')))
+      const handles = stats.chatNames.map((c) => c.rawName).filter((n) => n && (n.startsWith('+') || n.includes('@')))
       if (handles.length > 0) resolveContactsBatch(handles)
-      for (const name of rawNames) {
-        if (name && (name.startsWith('+') || name.includes('@'))) {
-          chatNameMap[name] = resolveContact(name) || name
+
+      for (const chat of stats.chatNames) {
+        const name = chat.rawName
+        if (!name) continue
+        if (name.startsWith('+') || name.includes('@')) {
+          // Phone/email — try contact resolution
+          const resolved = resolveContact(name)
+          chatNameMap[name] = (resolved && resolved !== name) ? resolved : name
+        } else if (/^chat\d+/i.test(name) || name.includes(';')) {
+          // Group chat identifier
+          chatNameMap[name] = chat.isGroup ? `Group · ${name.length > 20 ? 'chat' : name}` : 'Group chat'
         } else {
-          chatNameMap[name] = name
+          // Named group chat or other — use as-is
+          chatNameMap[name] = name.startsWith('#') ? 'Group chat' : name
         }
       }
     } catch {
@@ -192,19 +200,7 @@ function setupIpc(): void {
   ipcMain.handle('get-saved-priority-chats', () => getSavedPriorityChats())
   ipcMain.handle('reset-indexing', () => { resetIndexing() })
   ipcMain.handle('recover-from-icloud', async (_event, id: number) => recoverAttachment(id))
-  ipcMain.handle('get-contact-photos', () => getAllContactPhotos())
-
-  ipcMain.handle('request-contacts-permission', async () => {
-    const binaryPath = join(app.getPath('appData'), 'Stash', 'contacts_helper')
-    if (existsSync(binaryPath)) {
-      try {
-        const { execFileSync } = require('child_process')
-        execFileSync(binaryPath, ['test@test.com'], { timeout: 5000 })
-        return true
-      } catch { return false }
-    }
-    return false
-  })
+  // Contact photos removed — will be re-added with proper architecture
 
   ipcMain.handle('set-anthropic-key', (_event, key: string) => {
     const keyPath = join(app.getPath('userData'), 'anthropic-key.txt')
@@ -365,23 +361,11 @@ app.whenReady().then(() => {
   createTray()
   setupLoginItem()
 
-  // Compile contacts binary early, before window
+  // Compile contacts binary early
   compileContactsHelper()
 
   setupIpc()
   createWindow()
-
-  // Trigger contacts permission AFTER window exists — macOS requires
-  // a visible window to show the permission dialog
-  setTimeout(() => {
-    try {
-      const binaryPath = join(app.getPath('appData'), 'Stash', 'contacts_helper')
-      if (existsSync(binaryPath)) {
-        const { execSync: exec } = require('child_process')
-        exec(`"${binaryPath}" test@test.com`, { timeout: 5000 })
-      }
-    } catch { /* permission dialog fires asynchronously */ }
-  }, 2000)
 
   // Hide to tray instead of quitting on window close
   mainWindow!.on('close', (e) => {
