@@ -12,12 +12,17 @@ files:
 extraResources:
   - from: src/main/ocr.swift
     to: ocr.swift
+  - from: src/main/contacts.swift
+    to: contacts.swift
+  - from: src/main/icloud.swift
+    to: icloud.swift
 asarUnpack:
   - resources/**
 mac:
   entitlementsInherit: build/entitlements.mac.plist
   extendInfo:
     - NSDocumentsFolderUsageDescription: Application requests access to the user's Documents folder.
+    - NSContactsUsageDescription: Stash uses your Contacts to show names and photos for your iMessage conversations.
   notarize: false
   category: public.app-category.utilities
 dmg:

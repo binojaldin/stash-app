@@ -194,6 +194,18 @@ function setupIpc(): void {
   ipcMain.handle('recover-from-icloud', async (_event, id: number) => recoverAttachment(id))
   ipcMain.handle('get-contact-photos', () => getAllContactPhotos())
 
+  ipcMain.handle('request-contacts-permission', async () => {
+    const binaryPath = join(app.getPath('appData'), 'Stash', 'contacts_helper')
+    if (existsSync(binaryPath)) {
+      try {
+        const { execFileSync } = require('child_process')
+        execFileSync(binaryPath, ['test@test.com'], { timeout: 5000 })
+        return true
+      } catch { return false }
+    }
+    return false
+  })
+
   ipcMain.handle('set-anthropic-key', (_event, key: string) => {
     const keyPath = join(app.getPath('userData'), 'anthropic-key.txt')
     const { writeFileSync } = require('fs')
@@ -347,10 +359,22 @@ function setupLoginItem(): void {
 }
 
 app.whenReady().then(() => {
+  app.setName('Stash')
   initDb()
   createMenu()
   createTray()
   setupLoginItem()
+
+  // Compile contacts binary early and trigger permission dialog
+  compileContactsHelper()
+  try {
+    const binaryPath = join(app.getPath('appData'), 'Stash', 'contacts_helper')
+    if (existsSync(binaryPath)) {
+      const { execFileSync } = require('child_process')
+      execFileSync(binaryPath, ['test@test.com'], { timeout: 5000 })
+    }
+  } catch { /* permission dialog may appear */ }
+
   setupIpc()
   createWindow()
 
