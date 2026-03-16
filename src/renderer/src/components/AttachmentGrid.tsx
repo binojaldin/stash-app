@@ -141,35 +141,36 @@ function ListRow({ attachment, selected, onClick, chatNameMap }: { attachment: A
   return (
     <button
       onClick={onClick}
-      className={`w-full flex items-center gap-3 p-3 rounded-lg border transition-all cursor-pointer text-left ${
-        selected
-          ? 'border-blue-500 bg-blue-500/5'
-          : 'border-transparent hover:bg-[#141414]'
-      } ${unavailable ? 'opacity-60' : ''}`}
+      className="w-full flex items-center gap-3 p-3 rounded-lg transition-all cursor-pointer text-left"
+      style={{
+        border: selected ? '1px solid #E8604A' : '1px solid transparent',
+        background: selected ? 'rgba(232,96,74,0.04)' : 'transparent',
+        opacity: unavailable ? 0.6 : 1
+      }}
     >
-      <div className="w-10 h-10 rounded-lg overflow-hidden flex-shrink-0 bg-[#1c1c1c] flex items-center justify-center relative">
+      <div className="w-10 h-10 rounded-lg overflow-hidden flex-shrink-0 flex items-center justify-center" style={{ background: '#E8E3DC' }}>
         {attachment.thumbnail_path || attachment.is_image ? (
           <ThumbnailImage attachment={attachment} />
         ) : unavailable ? (
-          <CloudOff className="w-4 h-4 text-[#333]" />
+          <CloudOff style={{ width: 16, height: 16, color: '#b8b2ad' }} />
         ) : (
           <FileTypeIcon attachment={attachment} />
         )}
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5">
-          {unavailable && <Cloud className="w-3 h-3 text-[#4a4a4a] flex-shrink-0" />}
-          <p className={`text-sm truncate ${unavailable ? 'text-[#636363]' : 'text-white'}`}>{attachment.filename}</p>
-          {attachment.source === 'backup' && <span className="text-[10px] text-amber-400 flex-shrink-0">backup</span>}
+          {unavailable && <Cloud style={{ width: 12, height: 12, color: '#b8b2ad', flexShrink: 0 }} />}
+          <p className="text-sm truncate" style={{ color: unavailable ? '#9a948f' : '#1A1A1A' }}>{attachment.filename}</p>
+          {attachment.source === 'backup' && <span style={{ fontSize: 10, color: '#E8A04A', flexShrink: 0 }}>backup</span>}
         </div>
-        <p className="text-xs text-[#636363]">
+        <p style={{ fontSize: 12, color: '#6f6a65' }} className="truncate">
           {displayContact}
           {unavailable && ' · in iCloud'}
           {attachment.created_at && ` · ${format(new Date(attachment.created_at), 'MMM d, yyyy')}`}
         </p>
       </div>
       <div className="text-right flex-shrink-0">
-        <p className="text-xs text-[#636363]">{formatFileSize(attachment.file_size)}</p>
+        <p style={{ fontSize: 12, color: '#9a948f' }}>{formatFileSize(attachment.file_size)}</p>
       </div>
     </button>
   )

@@ -11,8 +11,8 @@ const icons = [
 export function IconRail(): JSX.Element {
   return (
     <div className="flex flex-col items-center" style={{ width: 48, minWidth: 48, flexShrink: 0, height: '100%', background: '#0A0A0A', borderRight: '1px solid #1A1A1A' }}>
-      {/* Top dot */}
-      <div className="flex items-center justify-center flex-shrink-0" style={{ height: 44, borderBottom: '1px solid #1A1A1A', width: '100%' }}>
+      {/* Top dot — drag region for window movement */}
+      <div className="flex items-center justify-center flex-shrink-0" style={{ height: 44, borderBottom: '1px solid #1A1A1A', width: '100%', WebkitAppRegion: 'drag' } as React.CSSProperties}>
         <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#E8604A' }} />
       </div>
 
