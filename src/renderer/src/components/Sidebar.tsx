@@ -1,4 +1,4 @@
-import { useState, useRef, useMemo, useEffect } from 'react'
+import { useState, useRef, useMemo } from 'react'
 import { Search, Sparkles, Loader2, Settings } from 'lucide-react'
 import type { Stats, Filters, IndexingProgress, ChatNameEntry } from '../types'
 
@@ -15,6 +15,7 @@ interface Props {
   onDateRangeChange?: (range: string) => void
   scopedPerson?: string | null
   onScopePerson?: (rawName: string | null) => void
+  contactPhotos?: Record<string, string>
 }
 
 function resolveName(raw: string, map: Record<string, string>): string {
@@ -28,7 +29,7 @@ function compactNum(n: number): string {
   return String(n)
 }
 
-export function Sidebar({ stats, filters, onFilterChange, onManageConversations, onHideChat, isIndexing, indexingProgress, onGoHome, selectedRange, onDateRangeChange, scopedPerson, onScopePerson }: Props): JSX.Element {
+export function Sidebar({ stats, filters, onFilterChange, onManageConversations, onHideChat, isIndexing, indexingProgress, onGoHome, selectedRange, onDateRangeChange, scopedPerson, onScopePerson, contactPhotos }: Props): JSX.Element {
   const [chatFilter, setChatFilter] = useState('')
   const [chatSort, setChatSort] = useState<string>('most-messages')
   const [showAllChats, setShowAllChats] = useState(false)
@@ -81,15 +82,9 @@ export function Sidebar({ stats, filters, onFilterChange, onManageConversations,
   const statusPct = isIndexing && indexingProgress && indexingProgress.total > 0
     ? Math.round((indexingProgress.processed / indexingProgress.total) * 100) : stats.total > 0 ? 100 : 0
 
-  // Contact photo state
-  const [contactPhoto, setContactPhoto] = useState<string | null>(null)
-  useEffect(() => {
-    if (scopedPerson) window.api.getContactPhoto(scopedPerson).then(setContactPhoto)
-    else setContactPhoto(null)
-  }, [scopedPerson])
-
   // Relationship mode sidebar
   if (scopedPerson) {
+    const photo = contactPhotos?.[scopedPerson] || null
     const personName = resolveName(scopedPerson, stats.chatNameMap)
     const personData = (stats.chatNames as ChatNameEntry[]).find((c) => c.rawName === scopedPerson)
     const initials = personName.split(' ').filter(Boolean).map((w) => w[0]).join('').slice(0, 2).toUpperCase() || '?'
@@ -104,8 +99,8 @@ export function Sidebar({ stats, filters, onFilterChange, onManageConversations,
           </span>
         </div>
         <div style={{ padding: '16px 14px 12px', borderBottom: '1px solid #1A1A1A' }}>
-          {contactPhoto ? (
-            <img src={`data:image/jpeg;base64,${contactPhoto}`} style={{ width: 44, height: 44, borderRadius: '50%', objectFit: 'cover', marginBottom: 10 }} />
+          {photo ? (
+            <img src={`data:image/jpeg;base64,${photo}`} style={{ width: 44, height: 44, borderRadius: '50%', objectFit: 'cover', marginBottom: 10 }} />
           ) : (
             <div style={{ width: 44, height: 44, borderRadius: '50%', background: '#2EC4A0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, fontWeight: 600, color: '#0A0A0A', marginBottom: 10 }}>{initials}</div>
           )}

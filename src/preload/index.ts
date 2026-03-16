@@ -72,8 +72,7 @@ const api = {
   searchConversationsAi: (description: string, conversations: { display: string; identifier: string }[]): Promise<{ error: string | null; results: string[] | null }> =>
     ipcRenderer.invoke('search-conversations-ai', description, conversations),
   setAnthropicKey: (key: string): Promise<void> => ipcRenderer.invoke('set-anthropic-key', key),
-  getContactPhoto: (handle: string): Promise<string | null> => ipcRenderer.invoke('get-contact-photo', handle),
-  getAllContactPhotos: (): Promise<Record<string, string>> => ipcRenderer.invoke('get-all-contact-photos'),
+  getContactPhotos: (): Promise<Record<string, string>> => ipcRenderer.invoke('get-contact-photos'),
   getHiddenChats: (): Promise<string[]> => ipcRenderer.invoke('get-hidden-chats'),
   generateWrapped: (year: number): Promise<unknown> => ipcRenderer.invoke('generate-wrapped', year),
   getWrappedYears: (): Promise<number[]> => ipcRenderer.invoke('get-wrapped-years'),
