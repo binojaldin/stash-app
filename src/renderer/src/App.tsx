@@ -194,7 +194,7 @@ export default function App(): JSX.Element {
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
   }, [query, filters, sortOrder, dateRange, mainView])
 
-  useEffect(() => { if (appState === 'main') loadStats(scopedPerson || undefined) }, [dateRange, scopedPerson, appState])
+  useEffect(() => { if (appState === 'main') loadStats(scopedPerson ?? filters.chatName ?? undefined) }, [dateRange, scopedPerson, filters.chatName, appState])
   useEffect(() => { if (!isIndexing && appState === 'main') { loadStats(scopedPerson || undefined); if (showAttachments) loadAttachments() } }, [isIndexing])
   useEffect(() => { if (appState === 'main') { loadStats(); loadAttachments() } }, [appState])
 
