@@ -5,6 +5,19 @@ interface Props {
   stats: Stats
   chatNameMap: Record<string, string>
   onSelectConversation: (rawName: string) => void
+  dateRange?: string
+}
+
+function heroTitle(range: string): string {
+  const month = MONTH_NAMES[new Date().getMonth()]
+  const year = new Date().getFullYear()
+  switch (range) {
+    case 'month': return `${month}. Your messages, surfaced.`
+    case 'year': return `${year}. Your messages, surfaced.`
+    case '7days': return `Last 7 days. Your messages, surfaced.`
+    case '30days': return `Last 30 days. Your messages, surfaced.`
+    default: return `Your messages, surfaced.`
+  }
 }
 
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
@@ -76,8 +89,9 @@ const tileBase: React.CSSProperties = {
   boxShadow: '0 10px 30px rgba(0,0,0,0.05)'
 }
 
-export function Dashboard({ stats, chatNameMap, onSelectConversation }: Props): JSX.Element {
+export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange = 'all' }: Props): JSX.Element {
   const currentMonth = MONTH_NAMES[new Date().getMonth()]
+  const heroText = heroTitle(dateRange)
   const chats = stats.chatNames as ChatNameEntry[]
 
   const individuals = chats.filter((c) => !c.isGroup)
@@ -121,7 +135,7 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation }: Props): 
         <div style={{ position: 'relative', zIndex: 1 }}>
           <div style={{ fontSize: 11, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.62)', marginBottom: 12 }}>Stash Wrap</div>
           <div style={{ fontFamily: "'Unbounded', sans-serif", fontWeight: 200, fontSize: 28, color: 'white', letterSpacing: '0.02em', marginBottom: 10 }}>
-            {currentMonth}. Your messages, surfaced.
+            {heroText}
           </div>
           <div style={{ fontSize: 15, color: 'rgba(255,255,255,0.68)', lineHeight: 1.7, marginBottom: 16 }}>
             {stats.total.toLocaleString()} attachments indexed across {chats.length} conversations.

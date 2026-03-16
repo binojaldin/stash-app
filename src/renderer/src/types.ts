@@ -22,7 +22,6 @@ export interface Attachment {
 export interface Filters {
   type?: string
   chatName?: string
-  dateRange?: string
   dateFrom?: string
   dateTo?: string
 }

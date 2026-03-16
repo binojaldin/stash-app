@@ -22,6 +22,17 @@ const SORT_OPTIONS = [
 type SortOrder = typeof SORT_OPTIONS[number]['value']
 type AppState = 'checking' | 'loading' | 'no-access' | 'priority' | 'main'
 
+function dateRangeToBounds(range: string): { from: string | null; to: string | null } {
+  const now = new Date()
+  switch (range) {
+    case '7days': { const d = new Date(now); d.setDate(d.getDate() - 7); return { from: d.toISOString(), to: null } }
+    case '30days': { const d = new Date(now); d.setDate(d.getDate() - 30); return { from: d.toISOString(), to: null } }
+    case 'month': { return { from: new Date(now.getFullYear(), now.getMonth(), 1).toISOString(), to: null } }
+    case 'year': { return { from: new Date(now.getFullYear(), 0, 1).toISOString(), to: null } }
+    default: return { from: null, to: null }
+  }
+}
+
 export default function App(): JSX.Element {
   const [appState, setAppState] = useState<AppState>('checking')
   const [isIndexing, setIsIndexing] = useState(false)
@@ -49,6 +60,7 @@ export default function App(): JSX.Element {
   const [userActivated, setUserActivated] = useState(false)
   const [wordmarkReady, setWordmarkReady] = useState(false)
   const [dashboardView, setDashboardView] = useState(true)
+  const [dateRange, setDateRange] = useState<string>('all')
   const debounceRef = useRef<NodeJS.Timeout>()
   const searchBarRef = useRef<SearchBarRef>(null)
 
@@ -169,17 +181,21 @@ export default function App(): JSX.Element {
   }, [])
 
   const loadStats = useCallback(async (chatNameFilter?: string) => {
-    const s = await window.api.getStats(chatNameFilter)
+    const bounds = dateRangeToBounds(dateRange)
+    const s = await window.api.getStats(chatNameFilter, bounds.from || undefined, bounds.to || undefined)
     setStats(s)
-  }, [])
+  }, [dateRange])
 
   const loadAttachments = useCallback(async () => {
     const filterParams: Record<string, string> = {}
     if (filters.type && filters.type !== 'all') filterParams.type = filters.type
     if (filters.chatName) filterParams.chatName = filters.chatName
-    if (filters.dateRange) filterParams.dateRange = filters.dateRange
     if (filters.dateFrom) filterParams.dateFrom = filters.dateFrom
     if (filters.dateTo) filterParams.dateTo = filters.dateTo
+    // Apply app-level dateRange bounds
+    const bounds = dateRangeToBounds(dateRange)
+    if (bounds.from && !filterParams.dateFrom) filterParams.dateFrom = bounds.from
+    if (bounds.to && !filterParams.dateTo) filterParams.dateTo = bounds.to
 
     const results = query
       ? await window.api.searchAttachments(query, filterParams, 0, 50, sortOrder)
@@ -187,16 +203,18 @@ export default function App(): JSX.Element {
     setAttachments(results as Attachment[])
     setPage(0)
     setHasMore((results as Attachment[]).length === 50)
-  }, [query, filters, sortOrder])
+  }, [query, filters, sortOrder, dateRange])
 
   const loadMore = useCallback(async () => {
     const nextPage = page + 1
     const filterParams: Record<string, string> = {}
     if (filters.type && filters.type !== 'all') filterParams.type = filters.type
     if (filters.chatName) filterParams.chatName = filters.chatName
-    if (filters.dateRange) filterParams.dateRange = filters.dateRange
     if (filters.dateFrom) filterParams.dateFrom = filters.dateFrom
     if (filters.dateTo) filterParams.dateTo = filters.dateTo
+    const bounds = dateRangeToBounds(dateRange)
+    if (bounds.from && !filterParams.dateFrom) filterParams.dateFrom = bounds.from
+    if (bounds.to && !filterParams.dateTo) filterParams.dateTo = bounds.to
 
     const results = query
       ? await window.api.searchAttachments(query, filterParams, nextPage, 50, sortOrder)
@@ -214,10 +232,10 @@ export default function App(): JSX.Element {
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
   }, [query, filters, sortOrder, loadAttachments])
 
-  // Reload stats when conversation filter changes
+  // Reload stats when conversation filter or date range changes
   useEffect(() => {
-    if (appState === 'main') loadStats(filters.chatName)
-  }, [filters.chatName])
+    if (appState === 'main') { loadStats(filters.chatName); loadAttachments() }
+  }, [filters.chatName, dateRange])
 
   // Reload after indexing completes
   useEffect(() => {
@@ -295,6 +313,8 @@ export default function App(): JSX.Element {
             isIndexing={isIndexing}
             indexingProgress={indexingProgress}
             onGoHome={() => { setDashboardView(true); setUserActivated(false); setFilters({ type: 'all' }); setQuery('') }}
+            selectedRange={dateRange}
+            onDateRangeChange={setDateRange}
           />
         )}
       </div>
@@ -380,6 +400,7 @@ export default function App(): JSX.Element {
             stats={stats}
             chatNameMap={stats.chatNameMap}
             onSelectConversation={(rawName) => { setFilters({ ...filters, chatName: rawName }); setUserActivated(true); setDashboardView(false) }}
+            dateRange={dateRange}
           />
         ) : showGrid ? (
           <div className="flex-1 overflow-y-auto" style={{ padding: '0 14px 14px' }}>
