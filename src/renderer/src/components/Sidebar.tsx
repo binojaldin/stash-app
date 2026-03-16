@@ -31,6 +31,8 @@ export function Sidebar({ stats, filters, onFilterChange, onManageConversations,
   const [chatSort, setChatSort] = useState<string>('most-messages')
   const [showAllChats, setShowAllChats] = useState(false)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; rawName: string } | null>(null)
+  const [showDateMenu, setShowDateMenu] = useState(false)
+  const dateLabels: Record<string, string> = { all: 'All time', month: 'This month', year: 'This year', '30days': 'Last 30 days', '7days': 'Last 7 days' }
 
   const sortedChats = useMemo(() => {
     let list = stats.chatNames as ChatNameEntry[]
@@ -80,7 +82,7 @@ export function Sidebar({ stats, filters, onFilterChange, onManageConversations,
   return (
     <div style={{ width: 240, minWidth: 240, flexShrink: 0, height: '100%', background: '#0F0F0F', borderRight: '1px solid #1A1A1A', display: 'flex', flexDirection: 'column', fontFamily: "'DM Sans', sans-serif" }} onClick={() => setContextMenu(null)}>
       {/* Wordmark — padded to clear traffic lights */}
-      <div style={{ height: 44, display: 'flex', alignItems: 'center', paddingLeft: 20, flexShrink: 0, borderBottom: '1px solid #1A1A1A', cursor: 'pointer', WebkitAppRegion: 'drag' } as React.CSSProperties} onClick={onGoHome}>
+      <div style={{ height: 44, display: 'flex', alignItems: 'center', paddingLeft: 36, flexShrink: 0, borderBottom: '1px solid #1A1A1A', cursor: 'pointer', WebkitAppRegion: 'drag' } as React.CSSProperties} onClick={onGoHome}>
         <span style={{ fontFamily: "'Unbounded', sans-serif", fontSize: 18, letterSpacing: '0.22em' }}>
           <span style={{ fontWeight: 200, color: '#FFFFFF' }}>ST</span>
           <span style={{ fontWeight: 400, color: '#E8604A' }}>ASH</span>
@@ -101,16 +103,23 @@ export function Sidebar({ stats, filters, onFilterChange, onManageConversations,
         </button>
 
         {/* Date range */}
-        <div style={{ marginBottom: 20 }}>
-          <div style={{ fontSize: 11, letterSpacing: '0.2em', textTransform: 'uppercase', color: '#E8604A', margin: '18px 0 10px' }}>Date range</div>
-          <select value={selectedRange || 'all'} onChange={(e) => onDateRangeChange?.(e.target.value)}
-            style={{ width: '100%', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 10, padding: '10px 12px', fontSize: 13, color: '#d8d8d8', outline: 'none', cursor: 'pointer', fontFamily: "'DM Sans'" }}>
-            <option value="all">All time</option>
-            <option value="month">This month</option>
-            <option value="year">This year</option>
-            <option value="30days">Last 30 days</option>
-            <option value="7days">Last 7 days</option>
-          </select>
+        <div style={{ fontSize: 11, letterSpacing: '0.2em', textTransform: 'uppercase', color: '#E8604A', margin: '18px 0 10px' }}>Date range</div>
+        <div style={{ position: 'relative', marginBottom: 20 }}>
+          <button onClick={() => setShowDateMenu(!showDateMenu)}
+            style={{ width: '100%', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 10, padding: '10px 12px', fontSize: 13, color: '#d8d8d8', outline: 'none', cursor: 'pointer', fontFamily: "'DM Sans'", display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>{dateLabels[selectedRange || 'all']}</span>
+            <span style={{ color: '#555', fontSize: 10 }}>▾</span>
+          </button>
+          {showDateMenu && (
+            <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4, background: '#1A1A1A', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 10, overflow: 'hidden', zIndex: 100 }}>
+              {Object.entries(dateLabels).map(([val, label]) => (
+                <button key={val} onClick={() => { onDateRangeChange?.(val); setShowDateMenu(false) }}
+                  style={{ width: '100%', textAlign: 'left', padding: '10px 14px', fontSize: 13, color: (selectedRange || 'all') === val ? '#E8604A' : '#d8d8d8', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: "'DM Sans'" }}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Top chats */}

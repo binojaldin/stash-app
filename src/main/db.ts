@@ -347,6 +347,13 @@ export function getStats(chatNameFilter?: string, dateFrom?: string, dateTo?: st
     const chatDbPath = join(homedir(), 'Library/Messages/chat.db')
     if (existsSync(chatDbPath)) {
       const chatDb = new Database(chatDbPath, { readonly: true })
+      // Convert dateFrom/dateTo to Apple nanosecond timestamps
+      const APPLE_EPOCH = 978307200
+      const NS = 1000000000
+      const appleFrom = dateFrom ? (new Date(dateFrom).getTime() / 1000 - APPLE_EPOCH) * NS : null
+      const appleTo = dateTo ? (new Date(dateTo).getTime() / 1000 - APPLE_EPOCH) * NS : null
+      const dateCond = (appleFrom ? ' AND m.date >= ' + appleFrom : '') + (appleTo ? ' AND m.date <= ' + appleTo : '')
+
       const rows = chatDb.prepare(`
         SELECT
           c.chat_identifier as chat_name,
@@ -356,11 +363,10 @@ export function getStats(chatNameFilter?: string, dateFrom?: string, dateTo?: st
         FROM message m
         JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
         JOIN chat c ON cmj.chat_id = c.ROWID
-        WHERE m.text IS NOT NULL OR m.cache_has_attachments = 1
+        WHERE (m.text IS NOT NULL OR m.cache_has_attachments = 1)${dateCond}
         GROUP BY c.chat_identifier
       `).all() as { chat_name: string; message_count: number; sent_count: number; received_count: number }[]
 
-      // Initiation count: days where user sent first message
       const initRows = chatDb.prepare(`
         SELECT
           c.chat_identifier as chat_name,
@@ -368,7 +374,7 @@ export function getStats(chatNameFilter?: string, dateFrom?: string, dateTo?: st
         FROM message m
         JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
         JOIN chat c ON cmj.chat_id = c.ROWID
-        WHERE m.is_from_me = 1
+        WHERE m.is_from_me = 1${dateCond}
         GROUP BY c.chat_identifier
       `).all() as { chat_name: string; init_days: number }[]
 
@@ -409,7 +415,7 @@ export function getStats(chatNameFilter?: string, dateFrom?: string, dateTo?: st
           FROM message m
           JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
           JOIN chat c ON cmj.chat_id = c.ROWID
-          WHERE m.text IS NOT NULL
+          WHERE m.text IS NOT NULL${dateCond}
         `).all() as { chat_name: string; is_from_me: number; text: string; date: number; prev_date: number | null; prev_is_from_me: number | null }[]
 
         for (const row of laughRows) {
