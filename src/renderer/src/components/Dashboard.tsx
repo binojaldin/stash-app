@@ -1,5 +1,24 @@
+import { useState, useEffect } from 'react'
 import { Lock } from 'lucide-react'
 import type { Stats, ChatNameEntry } from '../types'
+
+interface ConversationStats {
+  firstMessageDate: string | null; longestStreakDays: number; mostActiveMonth: string | null
+  mostActiveDayOfWeek: string | null; avgMessagesPerDay: number; peakHour: number | null
+  avgResponseTimeMinutes: number | null; sharedGroupCount: number
+  relationshipArc: 'new' | 'growing' | 'fading' | 'rekindled' | 'steady' | null
+  primaryContributor: { displayName: string; messageCount: number; percent: number } | null
+  quietestMember: { displayName: string; messageCount: number } | null
+  yourContributionPercent: number | null; memberCount: number
+}
+
+const arcEmoji: Record<string, string> = { new: '✨', growing: '📈', fading: '📉', rekindled: '🔄', steady: '⚖️' }
+const arcLabel: Record<string, string> = { new: 'New connection', growing: 'Growing stronger', fading: 'Fading', rekindled: 'Rekindled', steady: 'Rock solid' }
+function arcSentence(arc: string, name: string): string {
+  const m: Record<string, string> = { new: `${name} is a new presence in your messages.`, growing: `You and ${name} have been talking more than ever.`, fading: `You and ${name} have been less connected lately.`, rekindled: `You and ${name} found your way back.`, steady: 'Consistent, reliable, always there.' }
+  return m[arc] || ''
+}
+function formatHour(h: number): string { return `${h % 12 || 12}:00 ${h >= 12 ? 'PM' : 'AM'}` }
 
 interface Props {
   stats: Stats
@@ -117,6 +136,15 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
   const totalInitiation = chats.reduce((s, c) => s + c.initiationCount, 0)
   const initiationPct = totalSent > 0 ? Math.min(Math.round((totalInitiation / totalSent) * 100), 100) : 0
 
+  // Load per-conversation rich stats
+  const [convStats, setConvStats] = useState<ConversationStats | null>(null)
+  useEffect(() => {
+    if (scopedPerson) {
+      const pd2 = chats.find((c) => c.rawName === scopedPerson)
+      window.api.getConversationStats(scopedPerson, pd2?.isGroup ?? false).then((s) => setConvStats(s as ConversationStats))
+    } else setConvStats(null)
+  }, [scopedPerson])
+
   // ── Relationship view ──
   if (scopedPerson) {
     const pn = resolveName(scopedPerson, chatNameMap)
@@ -181,10 +209,32 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
                 metric={`${sentPct}%`}
                 sentence={pd && pd.sentCount > pd.receivedCount ? 'You send more than you receive.' : 'You receive more than you send.'}
                 flavor="Your share of the conversation." />
-              <SoonCard emoji="🏆" title="Most active member" span={6} />
-              <SoonCard emoji="🔥" title="Peak chaos hour" span={4} />
-              <SoonCard emoji="😂" title="Meme density" span={4} />
-              <SoonCard emoji="🌙" title="Late night activity" span={4} />
+              {/* Enriched group stats */}
+              {convStats?.primaryContributor && (
+                <RelCard emoji="🏆" title="Most Active Member" span={4}
+                  metric={convStats.primaryContributor.displayName}
+                  sentence={`${convStats.primaryContributor.percent}% of messages in this chat.`}
+                  flavor="" />
+              )}
+              {convStats?.yourContributionPercent !== null && convStats?.yourContributionPercent !== undefined && (
+                <RelCard emoji="💬" title="Your Share" span={4}
+                  metric={`${convStats.yourContributionPercent}%`}
+                  sentence="of messages in this group are from you."
+                  flavor={convStats.yourContributionPercent > 40 ? 'You carry this chat.' : convStats.yourContributionPercent < 10 ? 'Mostly a lurker.' : ''} />
+              )}
+              {convStats?.mostActiveDayOfWeek && (
+                <RelCard emoji="📅" title="Peak Day" span={4}
+                  metric={convStats.mostActiveDayOfWeek}
+                  sentence="When this group is most active."
+                  flavor="" />
+              )}
+              {convStats && convStats.longestStreakDays > 0 && (
+                <RelCard emoji="🔥" title="Longest Streak" span={6}
+                  metric={`${convStats.longestStreakDays} days`}
+                  sentence="Longest run of consecutive daily activity."
+                  flavor="" />
+              )}
+              <SoonCard emoji="😂" title="Meme density" span={6} />
             </div>
           ) : (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 24 }}>
@@ -210,9 +260,38 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
                   sentence={`${pd.attachmentCount.toLocaleString()} things shared between you.`}
                   flavor="Photos, memes, evidence." />
               </>}
+              {/* Enriched stats from getConversationStats */}
+              {convStats?.relationshipArc && (
+                <RelCard emoji={arcEmoji[convStats.relationshipArc] || '⚖️'} title="Relationship Arc" span={4}
+                  metric={arcLabel[convStats.relationshipArc] || 'Steady'}
+                  sentence={arcSentence(convStats.relationshipArc, firstName)}
+                  flavor="" />
+              )}
+              {convStats && convStats.longestStreakDays > 0 && (
+                <RelCard emoji="🔥" title="Longest Streak" span={4}
+                  metric={`${convStats.longestStreakDays} days`}
+                  sentence="Your longest run of consecutive daily messages."
+                  flavor={convStats.longestStreakDays > 30 ? "That's serious dedication." : ''} />
+              )}
+              {convStats?.peakHour !== null && convStats?.peakHour !== undefined && (
+                <RelCard emoji="🕐" title="Your Peak Hour" span={4}
+                  metric={formatHour(convStats.peakHour)}
+                  sentence="When most of your messages happen."
+                  flavor="" />
+              )}
+              {convStats?.firstMessageDate && (
+                <RelCard emoji="📅" title="Since" span={4}
+                  metric={new Date(convStats.firstMessageDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                  sentence={`Your first message with ${firstName}.`}
+                  flavor={((Date.now() - new Date(convStats.firstMessageDate).getTime()) / 86400000) > 365 ? 'A long-standing relationship.' : ''} />
+              )}
+              {convStats?.avgResponseTimeMinutes !== null && convStats?.avgResponseTimeMinutes !== undefined && (
+                <RelCard emoji="⏱" title="Reply Speed" span={4}
+                  metric={`${convStats.avgResponseTimeMinutes}m`}
+                  sentence="Your average reply time."
+                  flavor={convStats.avgResponseTimeMinutes < 5 ? 'Lightning fast.' : convStats.avgResponseTimeMinutes > 60 ? 'You take your time.' : ''} />
+              )}
               <SoonCard emoji="🌙" title="Night Owls" span={4} />
-              <SoonCard emoji="🔥" title="Peak Chaos Hour" span={4} />
-              <SoonCard emoji="🧵" title="Marathon Thread" span={4} />
             </div>
           )}
         </div>

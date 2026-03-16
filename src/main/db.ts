@@ -509,6 +509,140 @@ export function getHiddenChats(): string[] {
   return (d.prepare('SELECT chat_identifier FROM hidden_chats').all() as { chat_identifier: string }[]).map((r) => r.chat_identifier)
 }
 
+// ── Per-conversation rich stats ──
+export interface ConversationStats {
+  firstMessageDate: string | null
+  longestStreakDays: number
+  mostActiveMonth: string | null
+  mostActiveDayOfWeek: string | null
+  avgMessagesPerDay: number
+  peakHour: number | null
+  avgResponseTimeMinutes: number | null
+  sharedGroupCount: number
+  relationshipArc: 'new' | 'growing' | 'fading' | 'rekindled' | 'steady' | null
+  primaryContributor: { displayName: string; messageCount: number; percent: number } | null
+  quietestMember: { displayName: string; messageCount: number } | null
+  yourContributionPercent: number | null
+  memberCount: number
+}
+
+const MONTH_NAMES_DB = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+const DAY_NAMES_DB = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+
+export function getConversationStats(chatIdentifier: string, isGroup: boolean): ConversationStats {
+  const result: ConversationStats = {
+    firstMessageDate: null, longestStreakDays: 0, mostActiveMonth: null, mostActiveDayOfWeek: null,
+    avgMessagesPerDay: 0, peakHour: null, avgResponseTimeMinutes: null, sharedGroupCount: 0,
+    relationshipArc: null, primaryContributor: null, quietestMember: null, yourContributionPercent: null, memberCount: 0
+  }
+
+  try {
+    const { homedir } = require('os')
+    const { join, existsSync: ex } = require('path')
+    const fs = require('fs')
+    const chatDbPath = join(homedir(), 'Library/Messages/chat.db')
+    if (!fs.existsSync(chatDbPath)) return result
+
+    const chatDb = new Database(chatDbPath, { readonly: true })
+    const APPLE_EPOCH = 978307200
+    const NS = 1000000000
+
+    // Find chat_ids for this identifier
+    const chatIds = chatDb.prepare('SELECT ROWID FROM chat WHERE chat_identifier = ?').all(chatIdentifier) as { ROWID: number }[]
+    if (chatIds.length === 0) { chatDb.close(); return result }
+    const idList = chatIds.map((r) => r.ROWID).join(',')
+
+    // First message date
+    const firstMsg = chatDb.prepare(`SELECT MIN(datetime(m.date/${NS} + ${APPLE_EPOCH}, 'unixepoch', 'localtime')) as d FROM message m JOIN chat_message_join cmj ON m.ROWID = cmj.message_id WHERE cmj.chat_id IN (${idList})`).get() as { d: string } | undefined
+    result.firstMessageDate = firstMsg?.d || null
+
+    // Active days + total messages
+    const activity = chatDb.prepare(`SELECT COUNT(*) as total, COUNT(DISTINCT date(datetime(m.date/${NS} + ${APPLE_EPOCH}, 'unixepoch', 'localtime'))) as days FROM message m JOIN chat_message_join cmj ON m.ROWID = cmj.message_id WHERE cmj.chat_id IN (${idList})`).get() as { total: number; days: number }
+    result.avgMessagesPerDay = activity.days > 0 ? Math.round(activity.total / activity.days) : 0
+
+    // Streak
+    const dates = chatDb.prepare(`SELECT DISTINCT date(datetime(m.date/${NS} + ${APPLE_EPOCH}, 'unixepoch', 'localtime')) as d FROM message m JOIN chat_message_join cmj ON m.ROWID = cmj.message_id WHERE cmj.chat_id IN (${idList}) ORDER BY d`).all() as { d: string }[]
+    if (dates.length > 0) {
+      let maxStreak = 1, cur = 1
+      for (let i = 1; i < dates.length; i++) {
+        const diff = (new Date(dates[i].d).getTime() - new Date(dates[i - 1].d).getTime()) / 86400000
+        if (diff === 1) { cur++; if (cur > maxStreak) maxStreak = cur } else cur = 1
+      }
+      result.longestStreakDays = maxStreak
+    }
+
+    // Most active month
+    const topMonth = chatDb.prepare(`SELECT CAST(strftime('%m', datetime(m.date/${NS} + ${APPLE_EPOCH}, 'unixepoch', 'localtime')) AS INTEGER) as mo, COUNT(*) as c FROM message m JOIN chat_message_join cmj ON m.ROWID = cmj.message_id WHERE cmj.chat_id IN (${idList}) GROUP BY mo ORDER BY c DESC LIMIT 1`).get() as { mo: number; c: number } | undefined
+    result.mostActiveMonth = topMonth ? MONTH_NAMES_DB[topMonth.mo - 1] : null
+
+    // Most active day of week
+    const topDay = chatDb.prepare(`SELECT CAST(strftime('%w', datetime(m.date/${NS} + ${APPLE_EPOCH}, 'unixepoch', 'localtime')) AS INTEGER) as dow, COUNT(*) as c FROM message m JOIN chat_message_join cmj ON m.ROWID = cmj.message_id WHERE cmj.chat_id IN (${idList}) GROUP BY dow ORDER BY c DESC LIMIT 1`).get() as { dow: number; c: number } | undefined
+    result.mostActiveDayOfWeek = topDay ? DAY_NAMES_DB[topDay.dow] : null
+
+    // Peak hour
+    const topHour = chatDb.prepare(`SELECT CAST(strftime('%H', datetime(m.date/${NS} + ${APPLE_EPOCH}, 'unixepoch', 'localtime')) AS INTEGER) as hr, COUNT(*) as c FROM message m JOIN chat_message_join cmj ON m.ROWID = cmj.message_id WHERE cmj.chat_id IN (${idList}) GROUP BY hr ORDER BY c DESC LIMIT 1`).get() as { hr: number; c: number } | undefined
+    result.peakHour = topHour?.hr ?? null
+
+    if (!isGroup) {
+      // Avg response time (sample last 500 messages)
+      const msgs = chatDb.prepare(`SELECT date, is_from_me FROM message m JOIN chat_message_join cmj ON m.ROWID = cmj.message_id WHERE cmj.chat_id IN (${idList}) ORDER BY date DESC LIMIT 500`).all() as { date: number; is_from_me: number }[]
+      const times: number[] = []
+      for (let i = msgs.length - 2; i >= 0; i--) {
+        if (msgs[i + 1].is_from_me === 0 && msgs[i].is_from_me === 1) {
+          const diffMin = (msgs[i].date - msgs[i + 1].date) / NS / 60
+          if (diffMin > 0 && diffMin < 1440) times.push(diffMin)
+        }
+      }
+      result.avgResponseTimeMinutes = times.length > 0 ? Math.round(times.reduce((a, b) => a + b, 0) / times.length) : null
+
+      // Shared group count
+      try {
+        const shared = chatDb.prepare(`SELECT COUNT(DISTINCT chj.chat_id) as c FROM chat_handle_join chj JOIN handle h ON chj.handle_id = h.ROWID WHERE h.id = ? AND chj.chat_id IN (SELECT chat_id FROM chat_handle_join GROUP BY chat_id HAVING COUNT(*) > 1)`).get(chatIdentifier) as { c: number }
+        result.sharedGroupCount = shared?.c || 0
+      } catch { /* ignore */ }
+
+      // Relationship arc (this year vs last year)
+      const now = new Date()
+      const thisYearStart = (new Date(now.getFullYear(), 0, 1).getTime() / 1000 - APPLE_EPOCH) * NS
+      const lastYearStart = (new Date(now.getFullYear() - 1, 0, 1).getTime() / 1000 - APPLE_EPOCH) * NS
+      const thisYear = (chatDb.prepare(`SELECT COUNT(*) as c FROM message m JOIN chat_message_join cmj ON m.ROWID = cmj.message_id WHERE cmj.chat_id IN (${idList}) AND m.date >= ${thisYearStart}`).get() as { c: number }).c
+      const lastYear = (chatDb.prepare(`SELECT COUNT(*) as c FROM message m JOIN chat_message_join cmj ON m.ROWID = cmj.message_id WHERE cmj.chat_id IN (${idList}) AND m.date >= ${lastYearStart} AND m.date < ${thisYearStart}`).get() as { c: number }).c
+      if (lastYear === 0 && thisYear > 0) result.relationshipArc = 'new'
+      else if (lastYear > 0 && thisYear > lastYear * 1.5) result.relationshipArc = 'growing'
+      else if (lastYear > 0 && thisYear < lastYear * 0.3) result.relationshipArc = 'fading'
+      else if (lastYear < 10 && thisYear > 50) result.relationshipArc = 'rekindled'
+      else result.relationshipArc = 'steady'
+    } else {
+      // Group: member stats
+      try {
+        const { compileContactsHelper, resolveContact } = require('./contacts')
+        compileContactsHelper()
+        const members = chatDb.prepare(`SELECT COALESCE(h.id, '__me__') as handle, m.is_from_me, COUNT(*) as c FROM message m JOIN chat_message_join cmj ON m.ROWID = cmj.message_id LEFT JOIN handle h ON m.handle_id = h.ROWID WHERE cmj.chat_id IN (${idList}) GROUP BY CASE WHEN m.is_from_me = 1 THEN '__me__' ELSE h.id END`).all() as { handle: string; is_from_me: number; c: number }[]
+        let myCount = 0, total = 0
+        const memberCounts: { name: string; count: number }[] = []
+        for (const m of members) {
+          total += m.c
+          if (m.is_from_me === 1) myCount += m.c
+          else memberCounts.push({ name: resolveContact(m.handle), count: m.c })
+        }
+        memberCounts.sort((a, b) => b.count - a.count)
+        if (myCount > (memberCounts[0]?.count || 0)) {
+          result.primaryContributor = { displayName: 'You', messageCount: myCount, percent: Math.round((myCount / Math.max(total, 1)) * 100) }
+        } else if (memberCounts[0]) {
+          result.primaryContributor = { displayName: memberCounts[0].name, messageCount: memberCounts[0].count, percent: Math.round((memberCounts[0].count / Math.max(total, 1)) * 100) }
+        }
+        if (memberCounts.length > 0) result.quietestMember = { displayName: memberCounts[memberCounts.length - 1].name, messageCount: memberCounts[memberCounts.length - 1].count }
+        result.yourContributionPercent = Math.round((myCount / Math.max(total, 1)) * 100)
+        result.memberCount = (chatDb.prepare(`SELECT COUNT(DISTINCT handle_id) as c FROM chat_handle_join WHERE chat_id IN (${idList})`).get() as { c: number }).c + 1
+      } catch { /* ignore */ }
+    }
+
+    chatDb.close()
+  } catch { /* fallback to defaults */ }
+
+  return result
+}
+
 export function invalidateLaughCache(): void {
   laughCacheValid = false
   laughCache.clear()

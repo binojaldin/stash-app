@@ -2,7 +2,7 @@ import { app, shell, BrowserWindow, ipcMain, dialog, Menu, Tray, nativeImage } f
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import { checkFullDiskAccess } from './messagesReader'
-import { initDb, searchAttachments, getStats, getAttachmentById, closeDb, hideChat, getHiddenChats } from './db'
+import { initDb, searchAttachments, getStats, getAttachmentById, closeDb, hideChat, getHiddenChats, getConversationStats } from './db'
 import { startIndexing, getIndexingProgress, fetchChatSummaries, saveChatPriorities, getSavedPriorityChats, resetIndexing, recoverAttachment, resolveNamesInBackground } from './indexer'
 import { compileContactsHelper, resolveContact, resolveContactsBatch } from './contacts'
 import { generateWrapped, getAvailableYears } from './wrapped'
@@ -200,7 +200,7 @@ function setupIpc(): void {
   ipcMain.handle('get-saved-priority-chats', () => getSavedPriorityChats())
   ipcMain.handle('reset-indexing', () => { resetIndexing() })
   ipcMain.handle('recover-from-icloud', async (_event, id: number) => recoverAttachment(id))
-  // Contact photos removed — will be re-added with proper architecture
+  ipcMain.handle('get-conversation-stats', (_event, chatIdentifier: string, isGroup: boolean) => getConversationStats(chatIdentifier, isGroup))
 
   ipcMain.handle('set-anthropic-key', (_event, key: string) => {
     const keyPath = join(app.getPath('userData'), 'anthropic-key.txt')
