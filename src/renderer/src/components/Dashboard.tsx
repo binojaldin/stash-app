@@ -6,6 +6,8 @@ interface Props {
   chatNameMap: Record<string, string>
   onSelectConversation: (rawName: string) => void
   dateRange?: string
+  scopedPerson?: string | null
+  onClearScope?: () => void
 }
 
 function heroTitle(range: string): string {
@@ -89,7 +91,7 @@ const tileBase: React.CSSProperties = {
   boxShadow: '0 10px 30px rgba(0,0,0,0.05)'
 }
 
-export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange = 'all' }: Props): JSX.Element {
+export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange = 'all', scopedPerson, onClearScope }: Props): JSX.Element {
   const currentMonth = MONTH_NAMES[new Date().getMonth()]
   const heroText = heroTitle(dateRange)
   const chats = stats.chatNames as ChatNameEntry[]
@@ -114,6 +116,64 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
   const totalSent = chats.reduce((s, c) => s + c.sentCount, 0)
   const totalInitiation = chats.reduce((s, c) => s + c.initiationCount, 0)
   const initiationPct = totalSent > 0 ? Math.min(Math.round((totalInitiation / totalSent) * 100), 100) : 0
+
+  // ── Relationship view ──
+  if (scopedPerson) {
+    const pn = resolveName(scopedPerson, chatNameMap)
+    const pd = chats.find((c) => c.rawName === scopedPerson)
+    const dateLabel = dateRange === 'all' ? 'All time' : dateRange === 'month' ? 'This month' : dateRange === 'year' ? 'This year' : dateRange === '30days' ? 'Last 30 days' : 'Last 7 days'
+    const initPct = pd ? Math.min(99, Math.round((pd.initiationCount / Math.max(pd.messageCount * 0.1, 1)) * 100)) : 0
+    const sentPct = pd ? Math.round((pd.sentCount / Math.max(pd.messageCount, 1)) * 100) : 50
+
+    return (
+      <div style={{ flex: 1, overflowY: 'auto', padding: '0 28px 40px', fontFamily: "'DM Sans', sans-serif" }}>
+        <div style={{ maxWidth: 1180, margin: '0 auto', width: '100%' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 44, marginBottom: 8 }}>
+            <span style={{ fontSize: 12, letterSpacing: '0.22em', textTransform: 'uppercase', color: '#8a8480' }}>
+              With {pn} <span style={{ color: '#2EC4A0' }}>·</span> {dateLabel}
+            </span>
+            <span style={{ color: '#9a948f', letterSpacing: '0.2em', fontSize: 20 }}>•••</span>
+          </div>
+          <div style={{ background: '#1E2826', borderRadius: 22, padding: 28, marginBottom: 20, position: 'relative', overflow: 'hidden' }}>
+            <div style={{ position: 'absolute', right: -80, bottom: -120, width: 320, height: 320, background: 'radial-gradient(circle, rgba(46,196,160,0.18) 0%, transparent 62%)', pointerEvents: 'none' }} />
+            <div style={{ position: 'relative', zIndex: 1 }}>
+              <div style={{ fontSize: 11, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'rgba(46,196,160,0.7)', marginBottom: 12 }}>With {pn}</div>
+              <div style={{ fontFamily: "'Unbounded', sans-serif", fontWeight: 200, fontSize: 28, color: 'white', letterSpacing: '0.02em', marginBottom: 10 }}>{pn}. Your relationship, surfaced.</div>
+              <div style={{ fontSize: 15, color: 'rgba(255,255,255,0.68)', lineHeight: 1.7 }}>
+                {pd ? `${pd.messageCount.toLocaleString()} messages exchanged. ${pd.attachmentCount.toLocaleString()} attachments shared.` : ''}
+              </div>
+            </div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 24 }}>
+            <div style={{ ...tileBase, gridColumn: 'span 4' }}>
+              <TileLabel text="Who initiates more" />
+              {pd ? (<><Metric value={`${initPct}%`} sub="of conversations started by you" /><BarTrack pct={initPct} /></>) : <div style={{ color: '#6f6a65' }}>No data</div>}
+            </div>
+            <div style={{ ...tileBase, gridColumn: 'span 4' }}>
+              <TileLabel text="Who makes who laugh" />
+              {pd ? (<>
+                <div style={{ fontFamily: "'Unbounded', sans-serif", fontWeight: 200, fontSize: 32, color: '#2EC4A0', marginBottom: 6 }}>{pd.laughsReceived > pd.laughsGenerated ? pn.split(' ')[0] : 'You'}</div>
+                <div style={{ color: '#6f6a65', fontSize: 14, lineHeight: 1.6 }}>{pd.laughsReceived} laughs from them · {pd.laughsGenerated} laughs from you</div>
+              </>) : <div style={{ color: '#6f6a65' }}>No data</div>}
+            </div>
+            <div style={{ ...tileBase, gridColumn: 'span 4' }}>
+              <TileLabel text="Message balance" />
+              {pd ? <Metric value={`${sentPct}/${100 - sentPct}`} sub={pd.sentCount > pd.receivedCount ? 'You send more' : 'They send more'} /> : <div style={{ color: '#6f6a65' }}>No data</div>}
+            </div>
+            <div style={{ ...tileBase, gridColumn: 'span 8' }}>
+              <TileLabel text="Attachment breakdown" />
+              {pd ? (
+                <div style={{ display: 'flex', gap: 24, alignItems: 'center' }}>
+                  <div><div style={{ fontFamily: "'Unbounded', sans-serif", fontWeight: 200, fontSize: 28, color: '#E8604A' }}>{pd.attachmentCount.toLocaleString()}</div><div style={{ fontSize: 13, color: '#6f6a65' }}>total attachments</div></div>
+                </div>
+              ) : <div style={{ color: '#6f6a65' }}>No data</div>}
+            </div>
+            <ComingSoonTile label="Late-night connection" span={4} />
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   const laughLabels = ['Funniest friend', 'Closest behind', 'Group chat chaos']
 

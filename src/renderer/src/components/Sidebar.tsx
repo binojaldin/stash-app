@@ -13,6 +13,8 @@ interface Props {
   onGoHome?: () => void
   selectedRange?: string
   onDateRangeChange?: (range: string) => void
+  scopedPerson?: string | null
+  onScopePerson?: (rawName: string | null) => void
 }
 
 function resolveName(raw: string, map: Record<string, string>): string {
@@ -26,7 +28,7 @@ function compactNum(n: number): string {
   return String(n)
 }
 
-export function Sidebar({ stats, filters, onFilterChange, onManageConversations, onHideChat, isIndexing, indexingProgress, onGoHome, selectedRange, onDateRangeChange }: Props): JSX.Element {
+export function Sidebar({ stats, filters, onFilterChange, onManageConversations, onHideChat, isIndexing, indexingProgress, onGoHome, selectedRange, onDateRangeChange, scopedPerson, onScopePerson }: Props): JSX.Element {
   const [chatFilter, setChatFilter] = useState('')
   const [chatSort, setChatSort] = useState<string>('most-messages')
   const [showAllChats, setShowAllChats] = useState(false)
@@ -78,6 +80,59 @@ export function Sidebar({ stats, filters, onFilterChange, onManageConversations,
     : stats.total > 0 ? `${stats.total.toLocaleString()} indexed` : 'Not indexed'
   const statusPct = isIndexing && indexingProgress && indexingProgress.total > 0
     ? Math.round((indexingProgress.processed / indexingProgress.total) * 100) : stats.total > 0 ? 100 : 0
+
+  // Relationship mode sidebar
+  if (scopedPerson) {
+    const personName = resolveName(scopedPerson, stats.chatNameMap)
+    const personData = (stats.chatNames as ChatNameEntry[]).find((c) => c.rawName === scopedPerson)
+    const initials = personName.split(' ').filter(Boolean).map((w) => w[0]).join('').slice(0, 2).toUpperCase() || '?'
+
+    return (
+      <div style={{ width: 240, minWidth: 240, flexShrink: 0, height: '100%', background: '#0F0F0F', borderRight: '1px solid #1A1A1A', display: 'flex', flexDirection: 'column', fontFamily: "'DM Sans', sans-serif" }}>
+        <div style={{ height: 44, display: 'flex', alignItems: 'center', paddingLeft: 36, flexShrink: 0, borderBottom: '1px solid #1A1A1A', cursor: 'pointer', WebkitAppRegion: 'drag' } as React.CSSProperties} onClick={() => onScopePerson?.(null)}>
+          <span style={{ color: '#2EC4A0', fontSize: 13, marginRight: 6, WebkitAppRegion: 'no-drag' } as React.CSSProperties}>←</span>
+          <span style={{ fontFamily: "'Unbounded', sans-serif", fontSize: 18, letterSpacing: '0.22em' }}>
+            <span style={{ fontWeight: 200, color: '#FFFFFF' }}>ST</span>
+            <span style={{ fontWeight: 400, color: '#E8604A' }}>ASH</span>
+          </span>
+        </div>
+        <div style={{ padding: '16px 14px 12px', borderBottom: '1px solid #1A1A1A' }}>
+          <div style={{ width: 44, height: 44, borderRadius: '50%', background: '#2EC4A0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, fontWeight: 600, color: '#0A0A0A', marginBottom: 10 }}>{initials}</div>
+          <div style={{ fontSize: 15, color: '#fff', fontWeight: 500, marginBottom: 3 }}>{personName}</div>
+          <div style={{ fontSize: 11, color: '#7c7c7c' }}>
+            {personData ? `${compactNum(personData.messageCount)} messages` : ''} <span style={{ color: '#2EC4A0' }}>·</span> {personData ? `${compactNum(personData.attachmentCount)} attachments` : ''}
+          </div>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, padding: '12px 14px', borderBottom: '1px solid #1A1A1A' }}>
+          {[
+            { val: personData ? `${Math.min(99, Math.round((personData.initiationCount / Math.max(personData.messageCount * 0.1, 1)) * 100))}%` : '—', label: 'You initiate' },
+            { val: personData?.laughsReceived ? `${personData.laughsReceived}` : '—', label: 'Made you laugh' },
+            { val: personData?.laughsGenerated ? `${personData.laughsGenerated}` : '—', label: 'You made laugh' },
+            { val: personData ? compactNum(personData.attachmentCount) : '—', label: 'Attachments' }
+          ].map(({ val, label }) => (
+            <div key={label} style={{ background: 'rgba(255,255,255,0.03)', borderRadius: 8, padding: '8px 10px' }}>
+              <div style={{ fontSize: 16, fontWeight: 500, color: '#2EC4A0', marginBottom: 2 }}>{val}</div>
+              <div style={{ fontSize: 10, color: '#555', textTransform: 'uppercase', letterSpacing: '0.12em' }}>{label}</div>
+            </div>
+          ))}
+        </div>
+        <div style={{ padding: '12px 14px', flex: 1 }}>
+          <div style={{ fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase', color: '#2EC4A0', marginBottom: 10 }}>This relationship</div>
+          {[{ label: 'Insights', count: '5 cards' }, { label: 'Attachments', count: compactNum(personData?.attachmentCount || 0) }].map(({ label, count }) => (
+            <div key={label} style={{ padding: '8px 10px', borderRadius: 8, color: '#7c7c7c', fontSize: 13, cursor: 'pointer', marginBottom: 4, display: 'flex', justifyContent: 'space-between' }}>
+              <span>{label}</span><span style={{ fontSize: 12, color: '#E8604A' }}>{count}</span>
+            </div>
+          ))}
+        </div>
+        <div style={{ borderTop: '1px solid #1A1A1A', padding: '8px 14px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#2EC4A0' }} />
+            <span style={{ fontSize: 10, color: '#7c7c7c' }}>{stats.total.toLocaleString()} indexed</span>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div style={{ width: 240, minWidth: 240, flexShrink: 0, height: '100%', background: '#0F0F0F', borderRight: '1px solid #1A1A1A', display: 'flex', flexDirection: 'column', fontFamily: "'DM Sans', sans-serif" }} onClick={() => setContextMenu(null)}>
@@ -132,7 +187,7 @@ export function Sidebar({ stats, filters, onFilterChange, onManageConversations,
           const active = filters.chatName === chat.rawName
           return (
             <button key={chat.rawName}
-              onClick={() => onFilterChange({ ...filters, chatName: chat.rawName })}
+              onClick={() => onScopePerson ? onScopePerson(chat.rawName) : onFilterChange({ ...filters, chatName: chat.rawName })}
               onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, rawName: chat.rawName }) }}
               style={{
                 width: '100%', textAlign: 'left', padding: 12, borderRadius: 14, marginBottom: 8, cursor: 'pointer', border: active ? '1px solid rgba(255,255,255,0.08)' : '1px solid transparent',

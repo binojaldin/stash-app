@@ -61,6 +61,7 @@ export default function App(): JSX.Element {
   const [wordmarkReady, setWordmarkReady] = useState(false)
   const [dashboardView, setDashboardView] = useState(true)
   const [dateRange, setDateRange] = useState<string>('all')
+  const [scopedPerson, setScopedPerson] = useState<string | null>(null)
   const debounceRef = useRef<NodeJS.Timeout>()
   const searchBarRef = useRef<SearchBarRef>(null)
 
@@ -312,7 +313,13 @@ export default function App(): JSX.Element {
             onHideChat={async (rawName) => { await window.api.hideChat(rawName); loadStats() }}
             isIndexing={isIndexing}
             indexingProgress={indexingProgress}
-            onGoHome={() => { setDashboardView(true); setUserActivated(false); setFilters({ type: 'all' }); setQuery('') }}
+            onGoHome={() => { setDashboardView(true); setUserActivated(false); setFilters({ type: 'all' }); setQuery(''); setScopedPerson(null) }}
+            scopedPerson={scopedPerson}
+            onScopePerson={(rawName) => {
+              setScopedPerson(rawName)
+              if (rawName) { setFilters({ ...filters, chatName: rawName }); setDashboardView(true); setUserActivated(false) }
+              else { setFilters({ type: 'all' }); setDashboardView(true); setUserActivated(false) }
+            }}
             selectedRange={dateRange}
             onDateRangeChange={setDateRange}
           />
@@ -322,16 +329,32 @@ export default function App(): JSX.Element {
       {/* Main content */}
       <div className="flex-1 min-w-0 flex flex-col" style={{ background: '#F2EDE8' }}>
         {/* Title bar drag region */}
-        <div className="flex-shrink-0 flex items-center justify-end pr-4" style={{ height: 44, borderBottom: '1px solid #EAE5DF', background: '#F6F3EF', WebkitAppRegion: 'drag' } as React.CSSProperties}>
-          <button
-            onClick={() => setShowWrapped(true)}
-            style={{ background: '#E8604A', color: '#FFFFFF', borderRadius: 6, padding: '5px 14px', fontSize: 11, fontWeight: 500, border: 'none', cursor: 'pointer', WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-            onMouseEnter={(e) => { e.currentTarget.style.background = '#C44A36' }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = '#E8604A' }}
-          >
-            <Sparkles style={{ width: 12, height: 12, display: 'inline', marginRight: 4, verticalAlign: 'middle' }} />
-            Wrapped
-          </button>
+        <div className="flex-shrink-0 flex items-center justify-between px-4" style={{ height: 44, borderBottom: '1px solid #EAE5DF', background: '#F6F3EF', WebkitAppRegion: 'drag' } as React.CSSProperties}>
+          <div style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+            {scopedPerson && (
+              <div style={{ display: 'flex', background: '#EAE5DF', borderRadius: 8, padding: 2, gap: 2 }}>
+                <button onClick={() => { setDashboardView(true); setUserActivated(false) }}
+                  style={{ padding: '5px 14px', borderRadius: 6, fontSize: 12, background: dashboardView ? '#fff' : 'transparent', color: dashboardView ? '#1A1A1A' : '#9a948f', fontWeight: dashboardView ? 500 : 400, border: 'none', cursor: 'pointer' }}>
+                  Insights
+                </button>
+                <button onClick={() => { setDashboardView(false); setUserActivated(true); setFilters({ ...filters, chatName: scopedPerson }) }}
+                  style={{ padding: '5px 14px', borderRadius: 6, fontSize: 12, background: !dashboardView ? '#fff' : 'transparent', color: !dashboardView ? '#1A1A1A' : '#9a948f', fontWeight: !dashboardView ? 500 : 400, border: 'none', cursor: 'pointer' }}>
+                  Attachments
+                </button>
+              </div>
+            )}
+          </div>
+          {!scopedPerson && (
+            <button
+              onClick={() => setShowWrapped(true)}
+              style={{ background: '#E8604A', color: '#FFFFFF', borderRadius: 6, padding: '5px 14px', fontSize: 11, fontWeight: 500, border: 'none', cursor: 'pointer', WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+              onMouseEnter={(e) => { e.currentTarget.style.background = '#C44A36' }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = '#E8604A' }}
+            >
+              <Sparkles style={{ width: 12, height: 12, display: 'inline', marginRight: 4, verticalAlign: 'middle' }} />
+              Wrapped
+            </button>
+          )}
         </div>
 
         {/* Media summary cards — 2x2 grid */}
@@ -401,6 +424,8 @@ export default function App(): JSX.Element {
             chatNameMap={stats.chatNameMap}
             onSelectConversation={(rawName) => { setFilters({ ...filters, chatName: rawName }); setUserActivated(true); setDashboardView(false) }}
             dateRange={dateRange}
+            scopedPerson={scopedPerson}
+            onClearScope={() => setScopedPerson(null)}
           />
         ) : showGrid ? (
           <div className="flex-1 overflow-y-auto" style={{ padding: '0 14px 14px' }}>
