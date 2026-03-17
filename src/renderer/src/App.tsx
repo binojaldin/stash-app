@@ -179,6 +179,7 @@ export default function App(): JSX.Element {
             scopedPerson={scopedPerson}
             onScopePerson={(rawName) => rawName ? scopePerson(rawName) : goHome()}
             selectedRange={dateRange} onDateRangeChange={setDateRange}
+            onNavigate={(view) => setMainView(view as MainView)}
           />
         )}
       </div>

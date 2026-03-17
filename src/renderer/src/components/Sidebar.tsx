@@ -15,6 +15,7 @@ interface Props {
   onDateRangeChange?: (range: string) => void
   scopedPerson?: string | null
   onScopePerson?: (rawName: string | null) => void
+  onNavigate?: (view: { kind: string; person?: string }) => void
 }
 
 function resolveName(raw: string, map: Record<string, string>): string {
@@ -28,7 +29,7 @@ function compactNum(n: number): string {
   return String(n)
 }
 
-export function Sidebar({ stats, filters, onFilterChange, onManageConversations, onHideChat, isIndexing, indexingProgress, onGoHome, selectedRange, onDateRangeChange, scopedPerson, onScopePerson }: Props): JSX.Element {
+export function Sidebar({ stats, filters, onFilterChange, onManageConversations, onHideChat, isIndexing, indexingProgress, onGoHome, selectedRange, onDateRangeChange, scopedPerson, onScopePerson, onNavigate }: Props): JSX.Element {
   const [chatFilter, setChatFilter] = useState('')
   const [chatSort, setChatSort] = useState<string>('most-messages')
   const [showAllChats, setShowAllChats] = useState(false)
@@ -117,11 +118,21 @@ export function Sidebar({ stats, filters, onFilterChange, onManageConversations,
           ))}
         </div>
         <div style={{ padding: '12px 14px', flex: 1 }}>
-          <div style={{ fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase', color: '#2EC4A0', marginBottom: 10 }}>The Dynamic</div>
-          {[{ label: 'Insights', count: '5 cards' }, { label: 'Attachments', count: compactNum(personData?.attachmentCount || 0) }].map(({ label, count }) => (
-            <div key={label} style={{ padding: '8px 10px', borderRadius: 8, color: '#7c7c7c', fontSize: 13, cursor: 'pointer', marginBottom: 4, display: 'flex', justifyContent: 'space-between' }}>
-              <span>{label}</span><span style={{ fontSize: 12, color: '#E8604A' }}>{count}</span>
-            </div>
+          <div style={{ fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase', color: '#2EC4A0', marginBottom: 10 }}>Jump to</div>
+          {[
+            { label: 'Relationship insights', count: `${personData?.isGroup ? 4 : 5} cards`, onClick: () => onNavigate?.({ kind: 'person-insights', person: scopedPerson! }) },
+            { label: 'Shared attachments', count: `${compactNum(personData?.attachmentCount || 0)} items`, onClick: () => onNavigate?.({ kind: 'person-attachments', person: scopedPerson! }) },
+          ].map(({ label, count, onClick }) => (
+            <button key={label} onClick={onClick}
+              style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 0', background: 'none', border: 'none', cursor: 'pointer', borderBottom: '1px solid rgba(255,255,255,0.04)' }}
+              onMouseEnter={e => e.currentTarget.style.opacity = '0.75'}
+              onMouseLeave={e => e.currentTarget.style.opacity = '1'}>
+              <span style={{ fontSize: 12, color: '#d0ccc8', fontFamily: "'DM Sans'" }}>{label}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ fontSize: 11, color: '#5a5550', fontFamily: "'DM Sans'" }}>{count}</span>
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#5a5550" strokeWidth="1.5" strokeLinecap="round"><path d="M4 2l4 4-4 4"/></svg>
+              </div>
+            </button>
           ))}
         </div>
         <div style={{ borderTop: '1px solid #1A1A1A', padding: '8px 14px' }}>
