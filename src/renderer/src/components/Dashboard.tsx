@@ -445,7 +445,7 @@ function ConstellationCard({ network, chatNameMap, onSelectConversation }: {
   const sorted = network.nodes
   const enableDimming = sorted.length <= 120
   const maxMsgCount = Math.max(...sorted.map(n => n.messageCount), 1)
-  const nodeRadius = (mc: number) => Math.min(18, Math.max(3.5, 3.5 + Math.sqrt(mc / maxMsgCount) * 14.5))
+  const nodeRadius = (mc: number) => Math.min(15, Math.max(3, 3 + Math.sqrt(mc / maxMsgCount) * 12))
 
   const rings = [
     { nodes: sorted.slice(0, 5), r: 85 },
@@ -574,9 +574,9 @@ function ConstellationCard({ network, chatNameMap, onSelectConversation }: {
         </div>
         {bridgeName && positions.has(bridgeName) && (
           <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(232,96,74,0.55)', marginBottom: 3, fontFamily: "'DM Sans'" }}>Bridge contact</div>
-            <div style={{ fontSize: 15, color: '#E8604A', fontFamily: "'DM Sans'", fontWeight: 600 }}>{getName(bridgeName)}</div>
-            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', fontFamily: "'DM Sans'" }}>{edgeCounts.get(bridgeName)} shared groups</div>
+            <div style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(232,96,74,0.7)', marginBottom: 3, fontFamily: "'DM Sans'" }}>Bridge contact</div>
+            <div style={{ fontSize: 16, color: '#E8604A', fontFamily: "'DM Sans'", fontWeight: 600 }}>{getName(bridgeName)}</div>
+            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', fontFamily: "'DM Sans'" }}>{edgeCounts.get(bridgeName)} shared groups</div>
           </div>
         )}
       </div>
@@ -619,8 +619,8 @@ function ConstellationCard({ network, chatNameMap, onSelectConversation }: {
             opacity={isDimmed ? 0.1 : 1} style={{ transition: 'opacity 0.15s' }} />
         })}
 
-        <circle cx={CX} cy={CY} r={7} fill="#E8604A" />
-        <circle cx={CX} cy={CY} r={12} fill="none" stroke="rgba(232,96,74,0.15)" strokeWidth={0.8} />
+        <circle cx={CX} cy={CY} r={6} fill="#E8604A" />
+        <circle cx={CX} cy={CY} r={10} fill="none" stroke="rgba(232,96,74,0.15)" strokeWidth={0.8} />
         <text x={CX} y={CY + 20} textAnchor="middle" style={{ fontSize: 6, fill: 'rgba(232,96,74,0.45)', fontFamily: 'DM Sans', letterSpacing: '0.12em' }}>YOU</text>
 
         {rings.flatMap(ring => ring.nodes.map(node => {
@@ -631,7 +631,7 @@ function ConstellationCard({ network, chatNameMap, onSelectConversation }: {
           const isDimmed = enableDimming && activeNode && !isConnected
           const fill = isFoc ? '#2EC4A0' : isBridge ? '#E8604A' : isHov ? '#2EC4A0' : 'rgba(255,255,255,0.35)'
           const r = (isHov || isFoc) ? pos.size + 1 : pos.size
-          const showLabel = pos.size >= 6 || isHov || isFoc
+          const showLabel = pos.size >= 5 || isHov || isFoc
           const sharedCount = edgeCounts.get(node.rawName) || 0
           return (
             <g key={node.rawName} style={{ cursor: 'pointer', transition: 'opacity 0.15s' }} opacity={isDimmed ? 0.15 : 1}
@@ -645,8 +645,8 @@ function ConstellationCard({ network, chatNameMap, onSelectConversation }: {
               </>}
               <circle cx={pos.x} cy={pos.y} r={r} fill={fill}
                 style={isHov && !isFoc ? { animation: 'nodePulse 1.4s ease-in-out infinite', ['--nr' as string]: `${r}px` } : {}} />
-              {showLabel && <text x={pos.x} y={pos.y + r + 10} textAnchor="middle"
-                style={{ fontSize: pos.size >= 10 ? 9 : 8, fill: (isHov || isFoc) ? '#fff' : 'rgba(255,255,255,0.55)', fontFamily: 'DM Sans', pointerEvents: 'none', fontWeight: (isHov || isFoc) ? 500 : 400, filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.5))' }}>
+              {showLabel && <text x={pos.x} y={pos.y + r + 9} textAnchor="middle"
+                style={{ fontSize: pos.size >= 10 ? 8 : 7, fill: (isHov || isFoc) ? '#fff' : 'rgba(255,255,255,0.55)', fontFamily: 'DM Sans', pointerEvents: 'none', fontWeight: (isHov || isFoc) ? 500 : 400, filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.5))' }}>
                 {getName(node.rawName)}
               </text>}
               {isHov && (
