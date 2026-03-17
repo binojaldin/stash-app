@@ -953,6 +953,18 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
                   sentence="Your most active month together."
                   flavor="Something was happening." />
               )}
+              {/* Conversation momentum — avgMessagesPerDay + most active day */}
+              {convStats && convStats.avgMessagesPerDay > 0 && (
+                <EditorialCard kicker="Conversation rhythm"
+                  headline={convStats.avgMessagesPerDay > 20
+                    ? `${convStats.avgMessagesPerDay} messages per active day. This is a high-frequency relationship.`
+                    : convStats.avgMessagesPerDay > 5
+                    ? `${convStats.avgMessagesPerDay} messages on days you talk. A steady cadence.`
+                    : `${convStats.avgMessagesPerDay} messages per active day. Quality over quantity.`}
+                  subtext={convStats.mostActiveDayOfWeek ? `Most active on ${convStats.mostActiveDayOfWeek}s.` : ''}
+                  accent="#2EC4A0" span={4} />
+              )}
+
               {convStats?.peakYear && convStats.peakYearShareOfTotal && convStats.peakYearShareOfTotal > 3 && (
                 <EditorialCard kicker={`${convStats.peakYear.year} · share of attention`}
                   headline={convStats.peakYearShareOfTotal > 15
