@@ -470,7 +470,7 @@ function ConstellationCard({ network, chatNameMap, onSelectConversation }: {
 
   // Community clustering — union-find on primary edges
   const clusterMap = new Map<string, number>()
-  const clusterColors = ['rgba(232,96,74,0.06)', 'rgba(46,196,160,0.06)', 'rgba(127,119,221,0.06)', 'rgba(186,117,23,0.05)', 'rgba(255,255,255,0.03)']
+  const clusterColors = ['rgba(232,96,74,0.09)', 'rgba(46,196,160,0.09)', 'rgba(127,119,221,0.09)', 'rgba(186,117,23,0.07)', 'rgba(255,255,255,0.05)']
   {
     const parent = new Map<string, string>()
     const find = (x: string): string => { if (!parent.has(x)) parent.set(x, x); if (parent.get(x) !== x) parent.set(x, find(parent.get(x)!)); return parent.get(x)! }
@@ -504,7 +504,7 @@ function ConstellationCard({ network, chatNameMap, onSelectConversation }: {
       const avgY = pts.reduce((s, p) => s + p.y, 0) / pts.length
       const maxDx = Math.max(...pts.map(p => Math.abs(p.x - avgX)), 20)
       const maxDy = Math.max(...pts.map(p => Math.abs(p.y - avgY)), 20)
-      clusterHulls.push({ cx: avgX, cy: avgY, rx: maxDx + 25, ry: maxDy + 25, color: clusterColors[idx % clusterColors.length] })
+      clusterHulls.push({ cx: avgX, cy: avgY, rx: maxDx + 35, ry: maxDy + 35, color: clusterColors[idx % clusterColors.length] })
     }
   }
 
@@ -572,7 +572,7 @@ function ConstellationCard({ network, chatNameMap, onSelectConversation }: {
 
   return (
     <div style={{ gridColumn: 'span 12', borderRadius: 18, background: '#0F0F0F', border: '1px solid rgba(255,255,255,0.06)', boxShadow: '0 4px 24px rgba(0,0,0,0.2)', padding: '22px 24px 16px' }}>
-      <style>{`@keyframes nodePulse{0%,100%{r:var(--nr)}50%{r:calc(var(--nr) + 1.5px)}} @keyframes focusRing{0%{stroke-dashoffset:0}100%{stroke-dashoffset:-20}} @keyframes focusGlow{0%,100%{opacity:0.3}50%{opacity:0.6}}`}</style>
+      <style>{`@keyframes nodePulse{0%,100%{r:var(--nr)}50%{r:calc(var(--nr) + 1.5px)}} @keyframes focusRing{0%{stroke-dashoffset:0}100%{stroke-dashoffset:-20}} @keyframes focusGlow{0%,100%{opacity:0.35}50%{opacity:0.7}}`}</style>
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 2 }}>
         <div>
@@ -606,7 +606,7 @@ function ConstellationCard({ network, chatNameMap, onSelectConversation }: {
 
         {/* Cluster nebulae */}
         <defs>
-          <filter id="clusterBlur"><feGaussianBlur stdDeviation="18" /></filter>
+          <filter id="clusterBlur"><feGaussianBlur stdDeviation="28" /></filter>
         </defs>
         {clusterHulls.map((h, i) => (
           <ellipse key={i} cx={h.cx} cy={h.cy} rx={h.rx} ry={h.ry} fill={h.color} filter="url(#clusterBlur)" />
@@ -621,9 +621,9 @@ function ConstellationCard({ network, chatNameMap, onSelectConversation }: {
           const isPrimary = edge.sharedGroups >= primaryThreshold
           const sw = Math.min(4, 0.6 + edge.sharedGroups * 0.5)
           return <line key={i} x1={a.x} y1={a.y} x2={b.x} y2={b.y}
-            stroke={isHot ? 'rgba(232,96,74,0.5)' : isPrimary ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.03)'}
+            stroke={isHot ? 'rgba(255,255,255,0.25)' : isPrimary ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.03)'}
             strokeWidth={isHot ? sw + 0.4 : sw} strokeDasharray={isPrimary ? 'none' : '3 3'}
-            opacity={isDimmed ? 0.1 : 1} style={{ transition: 'opacity 0.15s' }} />
+            opacity={isDimmed ? 0.03 : 1} style={{ transition: 'opacity 0.15s' }} />
         })}
 
         <circle cx={CX} cy={CY} r={6} fill="#E8604A" />
@@ -641,14 +641,14 @@ function ConstellationCard({ network, chatNameMap, onSelectConversation }: {
           const showLabel = pos.size >= 5 || isHov || isFoc
           const sharedCount = edgeCounts.get(node.rawName) || 0
           return (
-            <g key={node.rawName} style={{ cursor: 'pointer', transition: 'opacity 0.15s' }} opacity={isDimmed ? 0.15 : 1}
+            <g key={node.rawName} style={{ cursor: 'pointer', transition: 'opacity 0.2s' }} opacity={isDimmed ? 0.08 : 1}
               onMouseEnter={() => setHovered(node.rawName)} onMouseLeave={() => setHovered(null)}
               onClick={(e) => { e.stopPropagation(); handleNodeClick(node.rawName) }}
               onDoubleClick={() => onSelectConversation(node.rawName)}>
               <circle cx={pos.x} cy={pos.y} r={Math.max(r, 10)} fill="transparent" />
               {isFoc && <>
-                <circle cx={pos.x} cy={pos.y} r={r + 8} fill="none" stroke="rgba(46,196,160,0.15)" strokeWidth={4} style={{ animation: 'focusGlow 2s ease-in-out infinite' }} />
-                <circle cx={pos.x} cy={pos.y} r={r + 5} fill="none" stroke="#2EC4A0" strokeWidth={0.8} strokeDasharray="3 2.5" style={{ animation: 'focusRing 1.5s linear infinite' }} />
+                <circle cx={pos.x} cy={pos.y} r={r + 12} fill="none" stroke="rgba(46,196,160,0.18)" strokeWidth={5} style={{ animation: 'focusGlow 2s ease-in-out infinite' }} />
+                <circle cx={pos.x} cy={pos.y} r={r + 7} fill="none" stroke="rgba(46,196,160,0.7)" strokeWidth={0.8} strokeDasharray="3 2.5" style={{ animation: 'focusRing 1.5s linear infinite' }} />
               </>}
               <circle cx={pos.x} cy={pos.y} r={r} fill={fill}
                 style={isHov && !isFoc ? { animation: 'nodePulse 1.4s ease-in-out infinite', ['--nr' as string]: `${r}px` } : {}} />
@@ -658,10 +658,10 @@ function ConstellationCard({ network, chatNameMap, onSelectConversation }: {
               </text>}
               {isHov && (
                 <g>
-                  <rect x={pos.x - 75} y={pos.y - r - 44} width={150} height={38} rx={6}
+                  <rect x={pos.x - 75} y={pos.y - r - 52} width={150} height={38} rx={6}
                     fill="rgba(0,0,0,0.92)" stroke="rgba(255,255,255,0.08)" strokeWidth={0.5} />
-                  <text x={pos.x} y={pos.y - r - 28} textAnchor="middle" style={{ fontSize: 11, fill: '#fff', fontFamily: 'DM Sans', fontWeight: 600 }}>{getFullName(node.rawName)}</text>
-                  <text x={pos.x} y={pos.y - r - 15} textAnchor="middle" style={{ fontSize: 8, fill: 'rgba(255,255,255,0.55)', fontFamily: 'DM Sans' }}>
+                  <text x={pos.x} y={pos.y - r - 36} textAnchor="middle" style={{ fontSize: 11, fill: '#fff', fontFamily: 'DM Sans', fontWeight: 600 }}>{getFullName(node.rawName)}</text>
+                  <text x={pos.x} y={pos.y - r - 23} textAnchor="middle" style={{ fontSize: 8, fill: 'rgba(255,255,255,0.55)', fontFamily: 'DM Sans' }}>
                     {(msgCountMap.get(node.rawName) || 0).toLocaleString()} msgs · {sharedCount} group{sharedCount !== 1 ? 's' : ''}
                   </text>
                 </g>
