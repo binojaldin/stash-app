@@ -19,8 +19,12 @@ const api = {
   }[]> => ipcRenderer.invoke('search-messages', query, chatName, limit),
   getMessageIndexStatus: (): Promise<{ total: number; indexed: number }> => ipcRenderer.invoke('get-message-index-status'),
   getVocabStats: (chatName?: string): Promise<{
-    uniqueWords: number; totalWords: number; avgWordsPerMessage: number; topWords: { word: string; count: number }[]
+    uniqueWords: number; totalWords: number; avgWordsPerMessage: number; theirAvgWordsPerMessage: number; topWords: { word: string; count: number }[]
   }> => ipcRenderer.invoke('get-vocab-stats', chatName),
+  getWordOrigins: (chatName?: string): Promise<{
+    word: string; firstUsed: string; chatName: string; totalUses: number; firstMessage: string | null
+  }[]> => ipcRenderer.invoke('get-word-origins', chatName),
+  saveShareCard: (dataUrl: string, filename: string): Promise<boolean> => ipcRenderer.invoke('save-share-card', dataUrl, filename),
   getUsageStats: (dateFrom?: string, dateTo?: string): Promise<{
     totalMessages: number; sentMessages: number; receivedMessages: number
     messagesPerYear: { year: number; count: number }[]

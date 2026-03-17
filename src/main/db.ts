@@ -1092,24 +1092,54 @@ export function getMessageIndexStatus(): { total: number; indexed: number } {
 }
 
 export function getVocabStats(chatName?: string): {
-  uniqueWords: number; totalWords: number; avgWordsPerMessage: number; topWords: { word: string; count: number }[]
+  uniqueWords: number; totalWords: number; avgWordsPerMessage: number; theirAvgWordsPerMessage: number; topWords: { word: string; count: number }[]
 } {
   const d = initDb()
   try {
-    const chatFilter = chatName ? 'WHERE chat_name = ? AND is_from_me = 1' : 'WHERE is_from_me = 1'
+    const myFilter = chatName ? 'WHERE chat_name = ? AND is_from_me = 1' : 'WHERE is_from_me = 1'
+    const theirFilter = chatName ? 'WHERE chat_name = ? AND is_from_me = 0' : 'WHERE is_from_me = 0'
     const params: string[] = chatName ? [chatName] : []
-    const rows = d.prepare(`SELECT body FROM messages ${chatFilter} LIMIT 100000`).all(...params) as { body: string }[]
+    const myRows = d.prepare(`SELECT body FROM messages ${myFilter} LIMIT 100000`).all(...params) as { body: string }[]
+    const theirRows = chatName ? d.prepare(`SELECT body FROM messages ${theirFilter} LIMIT 100000`).all(chatName) as { body: string }[] : []
     const STOP = new Set(['the','a','an','and','or','but','in','on','at','to','for','of','with','is','it','i','you','he','she','we','they','this','that','was','are','be','been','have','has','had','do','did','will','would','could','should','may','might','not','no','so','if','as','up','out','about','what','when','where','how','all','my','your','his','her','our','their','me','him','us','them','its','from','by','just','like','get','got','can','go','know','think','say','said','want','see','make','good','one','more','also','then','than','really','yeah','ok','okay','yes','im','dont','thats','youre','were','ive','ill','id','ur','u','r','lol','haha','lmao'])
     const counts = new Map<string, number>()
     let totalWords = 0
-    for (const { body } of rows) {
+    for (const { body } of myRows) {
       const words = body.toLowerCase().match(/\b[a-z]{3,}\b/g) || []
       totalWords += words.length
       for (const w of words) if (!STOP.has(w)) counts.set(w, (counts.get(w) || 0) + 1)
     }
+    let theirTotal = 0
+    for (const { body } of theirRows) { theirTotal += (body.toLowerCase().match(/\b[a-z]{3,}\b/g) || []).length }
     const topWords = Array.from(counts.entries()).sort((a, b) => b[1] - a[1]).slice(0, 15).map(([word, count]) => ({ word, count }))
-    return { uniqueWords: counts.size, totalWords, avgWordsPerMessage: rows.length > 0 ? Math.round(totalWords / rows.length) : 0, topWords }
-  } catch { return { uniqueWords: 0, totalWords: 0, avgWordsPerMessage: 0, topWords: [] } }
+    return { uniqueWords: counts.size, totalWords, avgWordsPerMessage: myRows.length > 0 ? Math.round(totalWords / myRows.length) : 0, theirAvgWordsPerMessage: theirRows.length > 0 ? Math.round(theirTotal / theirRows.length) : 0, topWords }
+  } catch { return { uniqueWords: 0, totalWords: 0, avgWordsPerMessage: 0, theirAvgWordsPerMessage: 0, topWords: [] } }
+}
+
+export function getWordOrigins(chatName?: string, limit = 5): { word: string; firstUsed: string; chatName: string; totalUses: number; firstMessage: string | null }[] {
+  const d = initDb()
+  try {
+    const chatFilter = chatName ? 'AND chat_name = ?' : ''
+    const params: string[] = chatName ? [chatName] : []
+    const rows = d.prepare(`SELECT body, chat_name, sent_at FROM messages WHERE is_from_me = 1 ${chatFilter} ORDER BY apple_date ASC LIMIT 200000`).all(...params) as { body: string; chat_name: string; sent_at: string }[]
+    const STOP = new Set(['the','a','an','and','or','but','in','on','at','to','for','of','with','is','it','i','you','he','she','we','they','this','that','was','are','be','been','have','has','had','do','did','will','would','could','should','may','might','not','no','so','if','as','up','out','about','what','when','where','how','all','my','your','his','her','our','their','me','him','us','them','its','from','by','just','like','get','got','can','go','know','think','say','said','want','see','make','good','one','more','also','then','than','really','yeah','ok','okay','yes','im','dont','thats','youre','were','ive','ill','id','ur','u','r','lol','haha','lmao','gonna','wanna','gotta','kinda','sorta','tbh','ngl','imo','btw','omg','wtf','brb','ttyl'])
+    const firstSeen = new Map<string, { sent_at: string; chat_name: string }>()
+    const counts = new Map<string, number>()
+    for (const { body, chat_name: cn, sent_at } of rows) {
+      const words = body.toLowerCase().match(/\b[a-z]{4,}\b/g) || []
+      for (const w of words) { if (STOP.has(w)) continue; counts.set(w, (counts.get(w) || 0) + 1); if (!firstSeen.has(w)) firstSeen.set(w, { sent_at, chat_name: cn }) }
+    }
+    const cutoff = new Date('2018-01-01').toISOString()
+    const candidates = Array.from(firstSeen.entries())
+      .filter(([w, { sent_at }]) => { const uses = counts.get(w) || 0; return uses >= 5 && sent_at > cutoff && uses < 500 })
+      .sort((a, b) => { const ay = new Date(a[1].sent_at).getFullYear(), by = new Date(b[1].sent_at).getFullYear(); if (ay !== by) return by - ay; return (counts.get(b[0]) || 0) - (counts.get(a[0]) || 0) })
+      .slice(0, limit * 3)
+    return candidates.slice(0, limit).map(([word, { sent_at, chat_name: cn }]) => {
+      let firstMessage: string | null = null
+      try { const row = d.prepare('SELECT body FROM messages WHERE is_from_me = 1 AND chat_name = ? AND sent_at = ? LIMIT 1').get(cn, sent_at) as { body: string } | undefined; if (row) firstMessage = row.body.length > 100 ? row.body.slice(0, 97) + '…' : row.body } catch {}
+      return { word, firstUsed: sent_at, chatName: cn, totalUses: counts.get(word) || 0, firstMessage }
+    })
+  } catch { return [] }
 }
 
 export function closeDb(): void {

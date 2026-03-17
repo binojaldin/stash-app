@@ -379,6 +379,53 @@ function TodayInHistoryCard({ memories, chatNameMap, onSelectConversation }: {
   )
 }
 
+function LoquaciousnessCard({ myAvg, theirAvg, theirName, onShare, span }: {
+  myAvg: number; theirAvg: number; theirName: string; onShare?: () => void; span: number
+}): JSX.Element | null {
+  if (myAvg === 0 || theirAvg === 0) return null
+  const max = Math.max(myAvg, theirAvg)
+  const myPct = Math.round((myAvg / max) * 100), theirPct = Math.round((theirAvg / max) * 100)
+  const diff = myAvg / theirAvg
+  const iVerbose = diff > 1.4, theyVerbose = diff < 0.7
+  const headline = iVerbose ? "Doesn't use 9 words when 47 will do." : theyVerbose ? `${theirName} doesn't use 9 words when 47 will do.` : "Neither of you wastes words. Or saves them."
+  const subtext = iVerbose ? 'But… you need the context.' : theyVerbose ? 'Every word earns its place.' : 'Balanced communicators.'
+  return (
+    <div style={{ gridColumn: `span ${span}`, borderRadius: 16, padding: '20px 22px', background: '#fff', border: '1px solid rgba(0,0,0,0.06)', boxShadow: '0 2px 12px rgba(0,0,0,0.04)', position: 'relative' }}>
+      {onShare && (
+        <button onClick={onShare} style={{ position: 'absolute', top: 12, right: 12, width: 26, height: 26, background: 'rgba(232,96,74,0.08)', border: '0.5px solid rgba(232,96,74,0.25)', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><path d="M7 1l3 3-3 3M10 4H4a3 3 0 000 6h1" stroke="#E8604A" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>
+        </button>
+      )}
+      <div style={{ fontSize: 10, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#9a948f', marginBottom: 14, fontFamily: "'DM Sans'" }}>Word for word</div>
+      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 20, marginBottom: 14 }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+          <div style={{ fontSize: 10, color: '#9a948f', fontFamily: "'DM Sans'" }}>You</div>
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2, height: 52 }}>
+            {[0.7, 0.9, 1].map((h, i) => <div key={i} style={{ width: 16, height: `${Math.round(h * (myPct / 100) * 52)}px`, background: '#E8604A', borderRadius: '3px 3px 0 0', opacity: 0.4 + i * 0.3 }} />)}
+          </div>
+          <div style={{ fontFamily: "'Unbounded', sans-serif", fontWeight: 200, fontSize: 20, color: '#E8604A' }}>{myAvg}</div>
+          <div style={{ fontSize: 10, color: '#9a948f', fontFamily: "'DM Sans'" }}>words / msg</div>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, paddingBottom: 28 }}>
+          <div style={{ width: 1, height: 48, background: '#EAE5DF' }} /><div style={{ fontSize: 9, color: '#c8c0ba', letterSpacing: '0.1em' }}>vs</div><div style={{ width: 1, height: 48, background: '#EAE5DF' }} />
+        </div>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>
+          <div style={{ fontSize: 10, color: '#9a948f', fontFamily: "'DM Sans'" }}>{theirName}</div>
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2, height: 52 }}>
+            {[1, 0.9, 0.7].map((h, i) => <div key={i} style={{ width: 16, height: `${Math.round(h * (theirPct / 100) * 52)}px`, background: '#2EC4A0', borderRadius: '3px 3px 0 0', opacity: 0.4 + (2 - i) * 0.3 }} />)}
+          </div>
+          <div style={{ fontFamily: "'Unbounded', sans-serif", fontWeight: 200, fontSize: 20, color: '#2EC4A0' }}>{theirAvg}</div>
+          <div style={{ fontSize: 10, color: '#9a948f', fontFamily: "'DM Sans'" }}>words / msg</div>
+        </div>
+      </div>
+      <div style={{ borderTop: '0.5px solid #EAE5DF', paddingTop: 12 }}>
+        <div style={{ fontSize: 13, color: '#1A1A1A', fontWeight: 500, fontFamily: "'DM Sans'", marginBottom: 2 }}>{headline}</div>
+        <div style={{ fontSize: 12, color: '#9a948f', fontFamily: "'DM Sans'" }}>{subtext}</div>
+      </div>
+    </div>
+  )
+}
+
 function ConstellationCard({ network, chatNameMap, onSelectConversation }: {
   network: NetworkData; chatNameMap: Record<string, string>; onSelectConversation: (rawName: string) => void
 }): JSX.Element | null {
@@ -746,6 +793,10 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
                     stat={`You got ${pd.laughsGenerated.toLocaleString()} laughs out of them`}
                     flavor={pd.laughsReceived > pd.laughsGenerated ? 'You win. They have no defense against you.' : 'They get you every time. Keep them close.'}
                     emoji="🎭" accentColor="#2EC4A0" span={12} />
+                  <button onClick={(e) => { e.stopPropagation(); generateShareCard('Comedy record', pd.laughsReceived.toLocaleString(), 'laughs received', `${firstName} makes me laugh more than anyone.`, firstName) }}
+                    style={{ position: 'absolute', top: 10, right: 36, width: 26, height: 26, background: 'rgba(232,96,74,0.08)', border: '0.5px solid rgba(232,96,74,0.25)', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1 }}>
+                    <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><path d="M7 1l3 3-3 3M10 4H4a3 3 0 000 6h1" stroke="#E8604A" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                  </button>
                   <div style={{ position: 'absolute', top: 8, right: 8, width: 18, height: 18, background: 'rgba(232,96,74,0.1)', borderRadius: 5, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
                     <svg width="7" height="10" viewBox="0 0 7 10" fill="none"><path d="M1.5 1.5l4 3.5-4 3.5" stroke="#E8604A" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
                   </div>
@@ -798,6 +849,10 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
                   <PosterCard eyebrow="Longest streak" number={`${convStats.longestStreakDays}`} unit="days"
                     descriptor={convStats.longestStreakDays > 60 ? `${convStats.longestStreakDays} days straight. What were you two even talking about?` : 'Your longest run of consecutive daily messages.'}
                     accent="#2EC4A0" bg="#F8F4F0" span={12} />
+                  <button onClick={(e) => { e.stopPropagation(); generateShareCard('Longest streak', convStats.longestStreakDays.toString(), 'days straight', `${convStats.longestStreakDays} consecutive days with ${firstName}.`, firstName) }}
+                    style={{ position: 'absolute', top: 10, right: 36, width: 26, height: 26, background: 'rgba(46,196,160,0.1)', border: '0.5px solid rgba(46,196,160,0.3)', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1 }}>
+                    <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><path d="M7 1l3 3-3 3M10 4H4a3 3 0 000 6h1" stroke="#2EC4A0" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                  </button>
                   <div style={{ position: 'absolute', top: 8, right: 8, width: 18, height: 18, background: 'rgba(46,196,160,0.15)', borderRadius: 5, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
                     <svg width="7" height="10" viewBox="0 0 7 10" fill="none"><path d="M1.5 1.5l4 3.5-4 3.5" stroke="#2EC4A0" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
                   </div>
@@ -839,6 +894,10 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
                   metric={convStats.mostActiveMonth}
                   sentence="Your most active month together."
                   flavor="Something was happening." />
+              )}
+              {vocabStats && vocabStats.theirAvgWordsPerMessage > 0 && (
+                <LoquaciousnessCard myAvg={vocabStats.avgWordsPerMessage} theirAvg={vocabStats.theirAvgWordsPerMessage} theirName={firstName}
+                  onShare={() => generateShareCard('Word for word', String(vocabStats.avgWordsPerMessage), 'words per message', vocabStats.avgWordsPerMessage > vocabStats.theirAvgWordsPerMessage ? "Doesn't use 9 words when 47 will do." : `${firstName} doesn't use 9 words when 47 will do.`, firstName)} span={6} />
               )}
             </div>
           )}
@@ -1202,12 +1261,35 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
   const [msgResults, setMsgResults] = useState<{ id: number; body: string; chat_name: string; sender_handle: string | null; is_from_me: number; sent_at: string; snippet: string }[] | null>(null)
   const [msgSearching, setMsgSearching] = useState(false)
   const [msgIndexStatus, setMsgIndexStatus] = useState<{ total: number; indexed: number } | null>(null)
-  const [vocabStats, setVocabStats] = useState<{ uniqueWords: number; totalWords: number; avgWordsPerMessage: number; topWords: { word: string; count: number }[] } | null>(null)
+  const [vocabStats, setVocabStats] = useState<{ uniqueWords: number; totalWords: number; avgWordsPerMessage: number; theirAvgWordsPerMessage: number; topWords: { word: string; count: number }[] } | null>(null)
+  const [wordOrigins, setWordOrigins] = useState<{ word: string; firstUsed: string; chatName: string; totalUses: number; firstMessage: string | null }[]>([])
 
   useEffect(() => {
     window.api.getMessageIndexStatus().then(setMsgIndexStatus).catch(() => {})
     window.api.getVocabStats(scopedPerson || undefined).then(setVocabStats).catch(() => {})
+    window.api.getWordOrigins(scopedPerson || undefined).then(setWordOrigins).catch(() => {})
   }, [scopedPerson])
+
+  const generateShareCard = async (title: string, bigNumber: string, unit: string, copy: string, personName?: string): Promise<void> => {
+    const canvas = document.createElement('canvas')
+    canvas.width = 1200; canvas.height = 1200
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    ctx.fillStyle = '#0F0F0F'; ctx.fillRect(0, 0, 1200, 1200)
+    ctx.fillStyle = 'rgba(232,96,74,0.5)'; ctx.font = '14px DM Sans'; ctx.letterSpacing = '3px'; ctx.fillText(`STASH · ${title.toUpperCase()}`, 80, 120)
+    ctx.fillStyle = '#E8604A'; ctx.font = '200 120px system-ui'; ctx.fillText(bigNumber, 80, 300)
+    ctx.fillStyle = 'rgba(232,96,74,0.6)'; ctx.font = '200 32px system-ui'; ctx.fillText(unit, 80, 360)
+    ctx.fillStyle = 'rgba(255,255,255,0.75)'; ctx.font = '28px DM Sans'
+    const words = copy.split(' '); let line = '', y = 460
+    for (const w of words) { if (ctx.measureText(line + w).width > 900) { ctx.fillText(line.trim(), 80, y); y += 42; line = '' } line += w + ' ' }
+    if (line.trim()) ctx.fillText(line.trim(), 80, y)
+    if (personName) { ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.font = '22px DM Sans'; ctx.fillText(personName, 80, y + 60) }
+    ctx.fillStyle = 'rgba(255,255,255,0.2)'; ctx.font = '18px DM Sans'; ctx.fillText('stashapp.co', 80, 1140)
+    ctx.fillStyle = 'rgba(255,255,255,0.3)'; ctx.font = '18px DM Sans'; ctx.fillText('STASH', 1040, 1140)
+    const dataUrl = canvas.toDataURL('image/png')
+    const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-')
+    await window.api.saveShareCard(dataUrl, `stash-${slug}.png`)
+  }
 
   const handleMsgSearch = async (): Promise<void> => {
     if (!msgQuery.trim() || msgSearching) return
@@ -1293,6 +1375,38 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
             </div>
           </div>
         </>
+      )}
+
+      {isIndexed && !msgResults && wordOrigins.length > 0 && (
+        <div style={{ gridColumn: 'span 12' }}>
+          <div style={{ fontSize: 10, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#9a948f', marginBottom: 10, fontFamily: "'DM Sans'" }}>
+            {scopedPerson ? 'Words that entered your vocabulary here' : 'A word was born'}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {wordOrigins.map(({ word, firstUsed, chatName: cn, totalUses, firstMessage }) => {
+              const dt = new Date(firstUsed)
+              const dateStr = dt.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+              const contactName = resolveName(cn, chatNameMap)
+              return (
+                <div key={word} onClick={() => onSelectConversation(cn)}
+                  style={{ padding: '14px 16px', borderRadius: 12, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', cursor: 'pointer', boxShadow: '0 2px 12px rgba(0,0,0,0.03)' }}
+                  onMouseEnter={e => (e.currentTarget.style.background = '#F8F4F0')} onMouseLeave={e => (e.currentTarget.style.background = '#fff')}>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 6 }}>
+                    <span style={{ fontFamily: "'Unbounded', sans-serif", fontWeight: 400, fontSize: 16, color: '#E8604A' }}>"{word}"</span>
+                    <span style={{ fontSize: 11, color: '#9a948f', fontFamily: "'DM Sans'" }}>· first used {dateStr}</span>
+                    <span style={{ fontSize: 11, color: '#c8c0ba', fontFamily: "'DM Sans'", marginLeft: 'auto' }}>{totalUses}× total</span>
+                  </div>
+                  <div style={{ fontSize: 12, color: '#6f6a65', fontFamily: "'DM Sans'", marginBottom: firstMessage ? 8 : 0 }}>
+                    In a conversation with <span style={{ color: '#1A1A1A', fontWeight: 500 }}>{contactName}</span>.
+                  </div>
+                  {firstMessage && (
+                    <div style={{ fontSize: 12, color: '#9a948f', fontStyle: 'italic', fontFamily: "'DM Sans'", padding: '8px 10px', background: '#F8F4F0', borderRadius: 8 }}>"{firstMessage}"</div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </div>
       )}
 
       {!isIndexed && (

@@ -2,7 +2,7 @@ import { app, shell, BrowserWindow, ipcMain, dialog, Menu, Tray, nativeImage, po
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import { checkFullDiskAccess } from './messagesReader'
-import { initDb, searchAttachments, getStats, getFastStats, getTodayInHistory, getUsageStats, getMessagingNetwork, getAttachmentById, closeDb, hideChat, getHiddenChats, getConversationStats, updateReactionCounts, invalidateLaughCache, searchMessages, getMessageIndexStatus, getVocabStats } from './db'
+import { initDb, searchAttachments, getStats, getFastStats, getTodayInHistory, getUsageStats, getMessagingNetwork, getAttachmentById, closeDb, hideChat, getHiddenChats, getConversationStats, updateReactionCounts, invalidateLaughCache, searchMessages, getMessageIndexStatus, getVocabStats, getWordOrigins } from './db'
 import { startIndexing, getIndexingProgress, fetchChatSummaries, saveChatPriorities, getSavedPriorityChats, resetIndexing, recoverAttachment, resolveNamesInBackground } from './indexer'
 import { compileContactsHelper, resolveContact, resolveContactsBatch } from './contacts'
 import { generateWrapped, getAvailableYears } from './wrapped'
@@ -179,6 +179,14 @@ function setupIpc(): void {
   ipcMain.handle('search-messages', (_event, query: string, chatName?: string, limit?: number) => searchMessages(query, chatName, limit))
   ipcMain.handle('get-message-index-status', () => getMessageIndexStatus())
   ipcMain.handle('get-vocab-stats', (_event, chatName?: string) => getVocabStats(chatName))
+  ipcMain.handle('get-word-origins', (_event, chatName?: string) => getWordOrigins(chatName, 5))
+  ipcMain.handle('save-share-card', async (_event, dataUrl: string, filename: string) => {
+    const result = await dialog.showSaveDialog(mainWindow!, { defaultPath: filename, filters: [{ name: 'PNG Image', extensions: ['png'] }] })
+    if (result.canceled || !result.filePath) return false
+    const { writeFileSync } = require('fs')
+    writeFileSync(result.filePath, Buffer.from(dataUrl.replace(/^data:image\/png;base64,/, ''), 'base64'))
+    return true
+  })
   ipcMain.handle('get-messaging-network', () => getMessagingNetwork())
   ipcMain.handle('get-fast-stats', (_event, chatNameFilter?: string, dateFrom?: string, dateTo?: string) => {
     return { ...getFastStats(chatNameFilter, dateFrom, dateTo), chatNameMap: {} }
