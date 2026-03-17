@@ -433,15 +433,16 @@ function ConstellationCard({ network, chatNameMap, onSelectConversation }: {
 }): JSX.Element | null {
   const [hovered, setHovered] = useState<string | null>(null)
   const [focused, setFocused] = useState<string | null>(null)
+  const [edgeFilter, setEdgeFilter] = useState<'all' | 'primary' | 'secondary'>('all')
   if (network.nodes.length < 4) return null
 
   const W = 600, H = 380, CX = W / 2, CY = H / 2
   const sorted = network.nodes
   const enableDimming = sorted.length <= 120
 
-  // Node sizing by message volume
+  // Reduced node sizing (was 6-28, now 4-20)
   const maxMsgCount = Math.max(...sorted.map(n => n.messageCount), 1)
-  const nodeRadius = (mc: number) => Math.min(28, Math.max(6, 6 + Math.sqrt(mc / maxMsgCount) * 22))
+  const nodeRadius = (mc: number) => Math.min(20, Math.max(4, 4 + Math.sqrt(mc / maxMsgCount) * 16))
 
   const rings = [
     { nodes: sorted.slice(0, 5), r: 85 },
@@ -457,7 +458,6 @@ function ConstellationCard({ network, chatNameMap, onSelectConversation }: {
     })
   }
 
-  // Edge counts for bridge detection
   const edgeCounts = new Map<string, number>()
   for (const e of network.edges) {
     if (positions.has(e.a)) edgeCounts.set(e.a, (edgeCounts.get(e.a) || 0) + 1)
@@ -467,18 +467,24 @@ function ConstellationCard({ network, chatNameMap, onSelectConversation }: {
   const bridgeName = bridgeEntry?.[0]
   const visibleEdges = network.edges.filter(e => positions.has(e.a) && positions.has(e.b))
 
-  // Connected set for hover/focus dimming
+  // Primary/secondary edge threshold: edges with >1 shared group are primary
+  const primaryThreshold = 2
+  const filteredEdges = visibleEdges.filter(e => {
+    if (edgeFilter === 'primary') return e.sharedGroups >= primaryThreshold
+    if (edgeFilter === 'secondary') return e.sharedGroups < primaryThreshold
+    return true
+  })
+
   const activeNode = focused || hovered
   const connectedSet = new Set<string>()
   if (activeNode) {
     connectedSet.add(activeNode)
-    for (const e of visibleEdges) {
+    for (const e of filteredEdges) {
       if (e.a === activeNode) connectedSet.add(e.b)
       if (e.b === activeNode) connectedSet.add(e.a)
     }
   }
 
-  // Message count for tooltip node lookup
   const msgCountMap = new Map(sorted.map(n => [n.rawName, n.messageCount]))
 
   const getName = (raw: string) => {
@@ -486,55 +492,66 @@ function ConstellationCard({ network, chatNameMap, onSelectConversation }: {
     const clean = full.replace(/^#/, '').replace(/^\+/, '').split(' ')[0]
     return clean.length > 9 ? clean.slice(0, 8) + '\u2026' : clean
   }
-
   const getFullName = (raw: string) => (chatNameMap[raw] || raw).replace(/^#/, '')
-
-  const handleNodeClick = (rawName: string) => {
-    if (focused === rawName) { setFocused(null) }
-    else { setFocused(rawName) }
-  }
-
+  const handleNodeClick = (rawName: string) => { setFocused(focused === rawName ? null : rawName) }
   const handleBgClick = () => { if (focused) setFocused(null) }
 
   return (
     <div style={{ gridColumn: 'span 12', borderRadius: 18, background: '#0F0F0F', border: '1px solid rgba(255,255,255,0.06)', boxShadow: '0 4px 24px rgba(0,0,0,0.2)', padding: '22px 24px 16px' }}>
+      {/* Pulse + focus ring keyframes */}
+      <style>{`@keyframes nodePulse{0%,100%{r:var(--nr)}50%{r:calc(var(--nr) + 2px)}} @keyframes focusRing{0%{stroke-dashoffset:0}100%{stroke-dashoffset:-20}}`}</style>
+
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 2 }}>
         <div>
           <div style={{ fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'rgba(232,96,74,0.65)', marginBottom: 6, fontFamily: "'DM Sans'" }}>Your messaging network</div>
-          <div style={{ fontFamily: "'Unbounded', sans-serif", fontWeight: 200, fontSize: 15, color: '#fff', lineHeight: 1.4 }}>{network.nodes.length} people · {visibleEdges.length} shared connections.</div>
+          <div style={{ fontFamily: "'Unbounded', sans-serif", fontWeight: 200, fontSize: 15, color: '#fff', lineHeight: 1.4 }}>{network.nodes.length} people · {filteredEdges.length} connections.</div>
         </div>
         {bridgeName && positions.has(bridgeName) && (
           <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(232,96,74,0.45)', marginBottom: 3, fontFamily: "'DM Sans'" }}>Bridge contact</div>
-            <div style={{ fontSize: 12, color: '#E8604A', fontFamily: "'DM Sans'", fontWeight: 500 }}>{getName(bridgeName)}</div>
-            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', fontFamily: "'DM Sans'" }}>appears in {edgeCounts.get(bridgeName)} of your groups</div>
+            <div style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(232,96,74,0.55)', marginBottom: 3, fontFamily: "'DM Sans'" }}>Bridge contact</div>
+            <div style={{ fontSize: 14, color: '#E8604A', fontFamily: "'DM Sans'", fontWeight: 600 }}>{getName(bridgeName)}</div>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', fontFamily: "'DM Sans'" }}>{edgeCounts.get(bridgeName)} shared groups</div>
           </div>
         )}
       </div>
 
-      {/* SVG */}
-      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block', margin: '4px 0' }} onClick={handleBgClick}>
-        {rings.map((ring, i) => <circle key={i} cx={CX} cy={CY} r={ring.r} fill="none" stroke="rgba(255,255,255,0.035)" strokeWidth={1} />)}
+      {/* Connection toggle */}
+      <div style={{ display: 'flex', gap: 2, background: 'rgba(255,255,255,0.04)', borderRadius: 7, padding: 2, marginBottom: 6, width: 'fit-content' }}>
+        {(['all', 'primary', 'secondary'] as const).map(mode => (
+          <button key={mode} onClick={() => setEdgeFilter(mode)}
+            style={{ padding: '3px 10px', borderRadius: 5, fontSize: 9, border: 'none', cursor: 'pointer', fontFamily: "'DM Sans'", letterSpacing: '0.06em', textTransform: 'uppercase',
+              background: edgeFilter === mode ? 'rgba(255,255,255,0.1)' : 'transparent',
+              color: edgeFilter === mode ? 'rgba(255,255,255,0.8)' : 'rgba(255,255,255,0.3)',
+              transition: 'all 0.15s' }}>
+            {mode}
+          </button>
+        ))}
+      </div>
 
-        {/* Edges — thickness by shared groups */}
-        {visibleEdges.map((edge, i) => {
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block', margin: '2px 0' }} onClick={handleBgClick}>
+        {rings.map((ring, i) => <circle key={i} cx={CX} cy={CY} r={ring.r} fill="none" stroke="rgba(255,255,255,0.03)" strokeWidth={0.5} />)}
+
+        {/* Edges — primary vs secondary visual treatment */}
+        {filteredEdges.map((edge, i) => {
           const a = positions.get(edge.a)!, b = positions.get(edge.b)!
           const isHot = activeNode === edge.a || activeNode === edge.b
           const isDimmed = enableDimming && activeNode && !isHot
-          const sw = Math.min(6, 1 + edge.sharedGroups * 0.8)
+          const isPrimary = edge.sharedGroups >= primaryThreshold
+          const sw = Math.min(5, 0.8 + edge.sharedGroups * 0.6)
           return <line key={i} x1={a.x} y1={a.y} x2={b.x} y2={b.y}
-            stroke={isHot ? 'rgba(232,96,74,0.55)' : 'rgba(255,255,255,0.07)'}
+            stroke={isHot ? 'rgba(232,96,74,0.5)' : isPrimary ? 'rgba(255,255,255,0.09)' : 'rgba(255,255,255,0.035)'}
             strokeWidth={isHot ? sw + 0.5 : sw}
-            opacity={isDimmed ? 0.15 : 1}
+            strokeDasharray={isPrimary ? 'none' : '3 3'}
+            opacity={isDimmed ? 0.12 : 1}
             style={{ transition: 'opacity 0.15s' }} />
         })}
 
-        {/* Center — you */}
-        <circle cx={CX} cy={CY} r={10} fill="#E8604A" />
-        <circle cx={CX} cy={CY} r={17} fill="none" stroke="rgba(232,96,74,0.2)" strokeWidth={1.5} />
-        <text x={CX} y={CY + 28} textAnchor="middle" style={{ fontSize: 8, fill: 'rgba(232,96,74,0.6)', fontFamily: 'DM Sans', letterSpacing: '0.12em' }}>YOU</text>
+        {/* Center — you (slightly smaller) */}
+        <circle cx={CX} cy={CY} r={8} fill="#E8604A" />
+        <circle cx={CX} cy={CY} r={14} fill="none" stroke="rgba(232,96,74,0.18)" strokeWidth={1} />
+        <text x={CX} y={CY + 24} textAnchor="middle" style={{ fontSize: 7, fill: 'rgba(232,96,74,0.5)', fontFamily: 'DM Sans', letterSpacing: '0.12em' }}>YOU</text>
 
-        {/* Nodes — sized by message volume */}
+        {/* Nodes */}
         {rings.flatMap(ring => ring.nodes.map(node => {
           const pos = positions.get(node.rawName)
           if (!pos) return null
@@ -543,33 +560,37 @@ function ConstellationCard({ network, chatNameMap, onSelectConversation }: {
           const isBridge = node.rawName === bridgeName
           const isConnected = connectedSet.has(node.rawName)
           const isDimmed = enableDimming && activeNode && !isConnected
-          const fill = isFoc ? '#2EC4A0' : isBridge ? '#E8604A' : isHov ? '#2EC4A0' : 'rgba(255,255,255,0.45)'
-          const r = (isHov || isFoc) ? pos.size + 2 : pos.size
-          const showLabel = pos.size >= 8 || isHov || isFoc
+          const fill = isFoc ? '#2EC4A0' : isBridge ? '#E8604A' : isHov ? '#2EC4A0' : 'rgba(255,255,255,0.4)'
+          const r = (isHov || isFoc) ? pos.size + 1.5 : pos.size
+          const showLabel = pos.size >= 7 || isHov || isFoc
           const sharedCount = edgeCounts.get(node.rawName) || 0
           return (
             <g key={node.rawName} style={{ cursor: 'pointer', transition: 'opacity 0.15s' }}
-              opacity={isDimmed ? 0.2 : 1}
+              opacity={isDimmed ? 0.18 : 1}
               onMouseEnter={() => setHovered(node.rawName)} onMouseLeave={() => setHovered(null)}
               onClick={(e) => { e.stopPropagation(); handleNodeClick(node.rawName) }}
               onDoubleClick={() => onSelectConversation(node.rawName)}>
-              <circle cx={pos.x} cy={pos.y} r={Math.max(r, 14)} fill="transparent" />
-              <circle cx={pos.x} cy={pos.y} r={r} fill={fill} />
-              {showLabel && <text x={pos.x} y={pos.y + r + 13} textAnchor="middle"
-                style={{ fontSize: pos.size >= 14 ? 14 : pos.size >= 10 ? 12 : 11, fill: (isHov || isFoc) ? '#fff' : 'rgba(255,255,255,0.85)', fontFamily: 'DM Sans', pointerEvents: 'none', fontWeight: (isHov || isFoc) ? 500 : 400, filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.7))' }}>
+              <circle cx={pos.x} cy={pos.y} r={Math.max(r, 12)} fill="transparent" />
+              {/* Focus ring — animated dashed orbit */}
+              {isFoc && <circle cx={pos.x} cy={pos.y} r={r + 6} fill="none" stroke="#2EC4A0" strokeWidth={1.2}
+                strokeDasharray="4 3" style={{ animation: 'focusRing 1.5s linear infinite' }} />}
+              {/* Hover pulse — CSS animation on the node circle */}
+              <circle cx={pos.x} cy={pos.y} r={r} fill={fill}
+                style={isHov && !isFoc ? { animation: 'nodePulse 1.2s ease-in-out infinite', ['--nr' as string]: `${r}px` } : {}} />
+              {showLabel && <text x={pos.x} y={pos.y + r + 11} textAnchor="middle"
+                style={{ fontSize: pos.size >= 12 ? 11 : pos.size >= 8 ? 10 : 9, fill: (isHov || isFoc) ? '#fff' : 'rgba(255,255,255,0.65)', fontFamily: 'DM Sans', pointerEvents: 'none', fontWeight: (isHov || isFoc) ? 500 : 400, filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.6))' }}>
                 {getName(node.rawName)}
               </text>}
-              {/* Tooltip on hover */}
               {isHov && (
                 <g>
-                  <rect x={pos.x - 85} y={pos.y - r - 50} width={170} height={42} rx={7}
-                    fill="rgba(0,0,0,0.9)" stroke="rgba(255,255,255,0.12)" strokeWidth={0.5} />
-                  <text x={pos.x} y={pos.y - r - 32} textAnchor="middle"
-                    style={{ fontSize: 13, fill: '#fff', fontFamily: 'DM Sans', fontWeight: 600 }}>
+                  <rect x={pos.x - 80} y={pos.y - r - 48} width={160} height={40} rx={7}
+                    fill="rgba(0,0,0,0.92)" stroke="rgba(255,255,255,0.1)" strokeWidth={0.5} />
+                  <text x={pos.x} y={pos.y - r - 31} textAnchor="middle"
+                    style={{ fontSize: 12, fill: '#fff', fontFamily: 'DM Sans', fontWeight: 600 }}>
                     {getFullName(node.rawName)}
                   </text>
                   <text x={pos.x} y={pos.y - r - 17} textAnchor="middle"
-                    style={{ fontSize: 10, fill: 'rgba(255,255,255,0.7)', fontFamily: 'DM Sans', fontWeight: 400 }}>
+                    style={{ fontSize: 9, fill: 'rgba(255,255,255,0.6)', fontFamily: 'DM Sans' }}>
                     {(msgCountMap.get(node.rawName) || 0).toLocaleString()} msgs · {sharedCount} group{sharedCount !== 1 ? 's' : ''}
                   </text>
                 </g>
@@ -580,25 +601,24 @@ function ConstellationCard({ network, chatNameMap, onSelectConversation }: {
       </svg>
 
       {/* Legend */}
-      <div style={{ display: 'flex', gap: 16, paddingTop: 4, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 14, paddingTop: 4, flexWrap: 'wrap' }}>
         {[
-          { visual: <div style={{ display: 'flex', gap: 2, alignItems: 'flex-end' }}><div style={{ width: 5, height: 5, borderRadius: '50%', background: 'rgba(255,255,255,0.35)' }} /><div style={{ width: 9, height: 9, borderRadius: '50%', background: 'rgba(255,255,255,0.35)' }} /></div>, label: 'Node size = messages' },
-          { visual: <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}><div style={{ width: 16, height: 1, background: 'rgba(255,255,255,0.2)' }} /><div style={{ width: 16, height: 3, background: 'rgba(255,255,255,0.2)', borderRadius: 1 }} /></div>, label: 'Edge width = shared groups' },
-          { visual: <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#E8604A' }} />, label: 'Bridge contact' },
-          { visual: <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#2EC4A0' }} />, label: 'Click to focus' },
+          { visual: <div style={{ display: 'flex', gap: 2, alignItems: 'flex-end' }}><div style={{ width: 4, height: 4, borderRadius: '50%', background: 'rgba(255,255,255,0.3)' }} /><div style={{ width: 7, height: 7, borderRadius: '50%', background: 'rgba(255,255,255,0.3)' }} /></div>, label: 'Size = messages' },
+          { visual: <div style={{ width: 16, height: 1.5, background: 'rgba(255,255,255,0.15)', borderRadius: 1 }} />, label: 'Primary connection' },
+          { visual: <div style={{ width: 16, height: 0, borderTop: '1.5px dashed rgba(255,255,255,0.12)' }} />, label: 'Secondary' },
+          { visual: <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#E8604A' }} />, label: 'Bridge' },
         ].map(({ visual, label }) => (
-          <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
             {visual}
-            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.55)', fontFamily: "'DM Sans'" }}>{label}</div>
+            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.45)', fontFamily: "'DM Sans'" }}>{label}</div>
           </div>
         ))}
       </div>
 
-      {/* Focus mode indicator */}
       {focused && (
-        <div style={{ marginTop: 8, padding: '6px 12px', background: 'rgba(46,196,160,0.1)', border: '1px solid rgba(46,196,160,0.2)', borderRadius: 8, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 11, color: '#2EC4A0', fontFamily: "'DM Sans'" }}>Focused: {getFullName(focused)}</span>
-          <button onClick={() => setFocused(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: 'rgba(46,196,160,0.5)', fontFamily: "'DM Sans'" }}>✕</button>
+        <div style={{ marginTop: 8, padding: '5px 12px', background: 'rgba(46,196,160,0.08)', border: '1px solid rgba(46,196,160,0.15)', borderRadius: 8, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 10, color: '#2EC4A0', fontFamily: "'DM Sans'" }}>Focused: {getFullName(focused)}</span>
+          <button onClick={() => setFocused(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 10, color: 'rgba(46,196,160,0.4)', fontFamily: "'DM Sans'" }}>✕</button>
         </div>
       )}
     </div>
