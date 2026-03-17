@@ -405,15 +405,40 @@ export function getStats(chatNameFilter?: string, dateFrom?: string, dateTo?: st
 
       // Participant counts to identify group chats
       try {
-        const partRows = chatDb.prepare(`
-          SELECT c.chat_identifier as chat_name, COUNT(DISTINCT chj.handle_id) as participant_count, c.style as chat_style
-          FROM chat c LEFT JOIN chat_handle_join chj ON c.ROWID = chj.chat_id GROUP BY c.chat_identifier
-        `).all() as { chat_name: string; participant_count: number; chat_style: number }[]
-        for (const r of partRows) {
-          const isGroup = r.chat_style === 45 || (r.chat_style !== 43 && r.participant_count > 1)
-          participantMap.set(r.chat_name, isGroup ? 2 : 1)
+        // Classify each chat row individually, then roll up to identifier
+        const perRowRows = chatDb.prepare(`
+          SELECT
+            c.ROWID as chat_rowid,
+            c.chat_identifier as chat_name,
+            c.style as chat_style,
+            COUNT(DISTINCT chj.handle_id) as participant_count
+          FROM chat c
+          LEFT JOIN chat_handle_join chj ON c.ROWID = chj.chat_id
+          GROUP BY c.ROWID
+        `).all() as { chat_rowid: number; chat_name: string; chat_style: number; participant_count: number }[]
+
+        // Roll up: if ANY row for this identifier is definitively direct (style=43), it's direct
+        // Only mark as group if style=45 explicitly, with no style=43 row for same identifier
+        const directSet = new Set<string>()
+        const groupSet = new Set<string>()
+
+        for (const r of perRowRows) {
+          if (r.chat_style === 43) {
+            directSet.add(r.chat_name)
+          } else if (r.chat_style === 45) {
+            groupSet.add(r.chat_name)
+          } else if (r.participant_count > 1) {
+            groupSet.add(r.chat_name)
+          }
         }
-      } catch { /* fallback to heuristic */ }
+
+        // Direct wins over group if both present (SMS+iMessage duplicate scenario)
+        const allIdentifiers = new Set([...directSet, ...groupSet])
+        for (const id of allIdentifiers) {
+          const isGroup = groupSet.has(id) && !directSet.has(id)
+          participantMap.set(id, isGroup ? 2 : 1)
+        }
+      } catch { /* fallback */ }
 
       // Laugh detection — cached per session (expensive full-table scan)
       if (!laughCacheValid) {
