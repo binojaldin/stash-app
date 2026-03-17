@@ -571,6 +571,21 @@ export function getStats(chatNameFilter?: string, dateFrom?: string, dateTo?: st
       const bridged = displayToIdentifier.get(r.chat_name)
       if (bridged) ms = msgStats.get(bridged)
     }
+    const directCount = participantMap.get(r.chat_name)
+    const bridgedKey = displayToIdentifier.get(r.chat_name) || ''
+    const bridgedCount = participantMap.get(bridgedKey)
+    const finalIsGroup = (directCount ?? bridgedCount ?? 0) > 1
+
+    if (/jesse jardin/i.test(r.chat_name || '')) {
+      console.log('[GroupDetection][Jesse]', {
+        chat_name: r.chat_name,
+        bridgedKey,
+        directCount,
+        bridgedCount,
+        finalIsGroup
+      })
+    }
+
     return {
       rawName: r.chat_name,
       attachmentCount: r.attachment_count,
@@ -581,7 +596,7 @@ export function getStats(chatNameFilter?: string, dateFrom?: string, dateTo?: st
       initiationCount: ms?.initiationCount || 0,
       laughsGenerated: ms?.laughsGenerated || 0,
       laughsReceived: ms?.laughsReceived || 0,
-      isGroup: (participantMap.get(r.chat_name) ?? participantMap.get(displayToIdentifier.get(r.chat_name) || '') ?? 0) > 1,
+      isGroup: finalIsGroup,
       lateNightRatio: ms?.lateNightRatio || 0,
       avgReplyMinutes: ms?.avgReplyMinutes || 0
     }
