@@ -1036,36 +1036,109 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 14 }}>
 
-        {/* TIER 1: IDENTITY */}
+        {/* ── TIER 0: ARCHIVE IDENTITY — the big number ── */}
+        {usageData && usageData.totalMessages > 0 && (
+          <PosterCard eyebrow="Your archive"
+            number={usageData.totalMessages > 1000000 ? `${(usageData.totalMessages / 1000000).toFixed(1)}M` : usageData.totalMessages.toLocaleString()}
+            unit="messages"
+            descriptor={usageData.totalMessages > 500000
+              ? 'Over the people and groups that define your world. That\'s not a messaging app — that\'s a life story.'
+              : usageData.totalMessages > 100000
+              ? 'Across every conversation you\'ve ever had. A substantial record.'
+              : 'Every conversation adds up.'}
+            accent="#E8604A" bg="#26211d" span={12} />
+        )}
+
+        {/* ── TIER 1: MESSAGING NETWORK — the visual centerpiece ── */}
+        {networkData && networkData.nodes.length >= 4 && (
+          <ConstellationCard network={networkData} chatNameMap={chatNameMap} onSelectConversation={onSelectConversation} />
+        )}
+
+        {/* Network interpretation cards */}
+        {networkData && networkData.nodes.length >= 4 && (() => {
+          // Connector: person in most shared groups
+          const edgeCounts = new Map<string, number>()
+          for (const e of networkData.edges) {
+            edgeCounts.set(e.a, (edgeCounts.get(e.a) || 0) + 1)
+            edgeCounts.set(e.b, (edgeCounts.get(e.b) || 0) + 1)
+          }
+          const connector = [...edgeCounts.entries()].sort((a, b) => b[1] - a[1])[0]
+          // Tightest circle: top 3 by message count
+          const top3Names = networkData.nodes.slice(0, 3).map(n => resolveName(n.rawName, chatNameMap).split(' ')[0])
+          // Outer orbit: contacts with fewer messages than median
+          const sortedCounts = networkData.nodes.map(n => n.messageCount).sort((a, b) => a - b)
+          const median = sortedCounts[Math.floor(sortedCounts.length / 2)] || 0
+          const outerCount = networkData.nodes.filter(n => n.messageCount < median).length
+          return (
+            <>
+              {connector && (
+                <WinnerCard award="Connector" name={resolveName(connector[0], chatNameMap)}
+                  stat={`Appears in ${connector[1]} of your group chats`}
+                  flavor="The person who ties your social circles together."
+                  emoji="🔗" accentColor="#E8604A" span={4} />
+              )}
+              <EditorialCard kicker="Tightest circle"
+                headline={top3Names.join(', ')}
+                subtext="Your top 3 contacts by message volume. The inner ring of your network."
+                accent="#E8604A" span={4} />
+              <EditorialCard kicker="Outer orbit"
+                headline={`${outerCount} contact${outerCount !== 1 ? 's' : ''}`}
+                subtext="Below the median message count. Peripheral connections — but they're still in your network."
+                accent="#9a948f" span={4} />
+            </>
+          )
+        })()}
+
+        {/* ── TIER 2: IDENTITY SPECTRUMS ── */}
         {(() => {
           const groupMessages = groups.reduce((s, c) => s + c.messageCount, 0)
           const totalMsgs = chats.reduce((s, c) => s + c.messageCount, 0)
           const groupPct = totalMsgs > 0 ? Math.round((groupMessages / totalMsgs) * 100) : 0
-          const isGroupPerson = groupPct > 50
           return (
-            <PosterCard eyebrow="Your messaging identity"
-              number={isGroupPerson ? `${groupPct}%` : `${100 - groupPct}%`}
-              unit={isGroupPerson ? 'group chats' : 'one-on-one'}
-              descriptor={isGroupPerson
-                ? 'You live in the group chat. The noise is where you\'re comfortable.'
-                : 'You prefer depth over breadth. One-on-one conversations dominate your messaging life.'}
-              accent="#E8604A" bg="#26211d" span={7} />
+            <SpectrumCard eyebrow="Your messaging identity" leftLabel="One-on-one" rightLabel="Group chats"
+              markerPct={groupPct}
+              markerLabel={groupPct > 60 ? 'Group Native' : groupPct > 40 ? 'Balanced' : 'One-on-One Person'}
+              descriptor={groupPct > 60
+                ? `${groupPct}% of your messages happen in group chats. You thrive in the noise.`
+                : groupPct > 40
+                ? `${groupPct}% groups, ${100 - groupPct}% direct. You balance both worlds.`
+                : `${100 - groupPct}% of your messages are one-on-one. You prefer depth over breadth.`}
+              accent="#E8604A" span={6} />
           )
         })()}
+
+        {/* Inner circle distribution */}
         {(() => {
           const top3 = byMessages.slice(0, 3).reduce((s, c) => s + c.messageCount, 0)
           const total = chats.reduce((s, c) => s + c.messageCount, 0)
           const pct = total > 0 ? Math.round((top3 / total) * 100) : 0
+          const top3Names = byMessages.slice(0, 3).map(c => resolveName(c.rawName, chatNameMap).split(' ')[0])
           return (
-            <PosterCard eyebrow="Your inner circle" number={`${pct}%`}
-              descriptor={pct > 60 ? 'of your messages go to just 3 people. You run deep, not wide.'
-                : pct > 40 ? 'to your top 3. A fairly concentrated social life.'
-                : 'spread wide. You keep a lot of threads alive at once.'}
-              accent="#E8604A" bg="#F8F4F0" span={5} />
+            <div style={{ gridColumn: 'span 6', borderRadius: 16, padding: '20px 22px', background: '#fff', border: '1px solid rgba(0,0,0,0.06)', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}>
+              <div style={{ fontSize: 10, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#9a948f', marginBottom: 14, fontFamily: "'DM Sans'" }}>Your inner circle</div>
+              <div style={{ display: 'flex', gap: 1, borderRadius: 4, overflow: 'hidden', height: 8, marginBottom: 12 }}>
+                <div style={{ flex: pct, background: '#E8604A', borderRadius: '4px 0 0 4px' }} />
+                <div style={{ flex: 100 - pct, background: '#EAE5DF', borderRadius: '0 4px 4px 0' }} />
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}>
+                <div>
+                  <div style={{ fontFamily: "'Unbounded', sans-serif", fontWeight: 200, fontSize: 24, color: '#E8604A', lineHeight: 1 }}>{pct}%</div>
+                  <div style={{ fontSize: 11, color: '#6f6a65', marginTop: 3, fontFamily: "'DM Sans'" }}>Top 3 contacts</div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontFamily: "'Unbounded', sans-serif", fontWeight: 200, fontSize: 24, color: '#C8C0BA', lineHeight: 1 }}>{100 - pct}%</div>
+                  <div style={{ fontSize: 11, color: '#9a948f', marginTop: 3, fontFamily: "'DM Sans'" }}>Everyone else</div>
+                </div>
+              </div>
+              <div style={{ fontSize: 12, color: '#6f6a65', fontFamily: "'DM Sans'", lineHeight: 1.5 }}>
+                {top3Names.join(', ')} account for {pct}% of your messages.
+                {pct > 60 ? ' You run deep, not wide.' : pct > 40 ? ' A fairly concentrated social life.' : ' You spread it around.'}
+              </div>
+            </div>
           )
         })()}
 
-        {/* TIER 2: DYNAMICS — spectrums */}
+        {/* ── TIER 3: DYNAMICS — behavior spectrums ── */}
         <SpectrumCard eyebrow="Your conversational role" leftLabel="Pure responder" rightLabel="Always initiates"
           markerPct={initiationPct}
           markerLabel={initiationPct > 65 ? 'The Initiator' : initiationPct > 45 ? 'The Collaborator' : initiationPct > 25 ? 'The Responder' : 'The Receiver'}
@@ -1107,7 +1180,7 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
           )
         })()}
 
-        {/* TIER 2.5: TIMING */}
+        {/* ── TIER 3.5: TIMING ── */}
         {stats.globalPeakHour !== null && stats.globalPeakHour !== undefined && (() => {
           const hr = stats.globalPeakHour as number
           const displayHour = hr === 0 ? '12am' : hr < 12 ? `${hr}am` : hr === 12 ? '12pm' : `${hr - 12}pm`
@@ -1136,7 +1209,7 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
             accent="#E8604A" span={6} />
         })()}
 
-        {/* TIER 3: COMEDY — leaderboard cards */}
+        {/* ── TIER 4: COMEDY ── */}
         {isStatsLoading ? <WarmingCard span={6} /> : (() => {
           const laughers = byLaughsReceived.filter(c => c.laughsReceived > 0).slice(0, 3)
           if (!laughers.length) return null
@@ -1159,23 +1232,14 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
           )
         })()}
 
-        {/* TIER 3.5: MESSAGE VOLUME */}
-        {usageData && usageData.totalMessages > 0 && (
-          <EditorialCard kicker="Your archive"
-            headline={usageData.totalMessages > 1000000
-              ? `You've exchanged over ${Math.floor(usageData.totalMessages / 1000000).toLocaleString()} million messages.`
-              : usageData.totalMessages > 100000
-              ? `${usageData.totalMessages.toLocaleString()} messages in your archive.`
-              : `${usageData.totalMessages.toLocaleString()} messages and counting.`}
-            subtext={usageData.totalMessages > 500000
-              ? 'That\'s not a messaging app. That\'s a life story.'
-              : usageData.totalMessages > 100000
-              ? 'A substantial record of your connections.'
-              : 'Every conversation adds up.'}
-            accent="#E8604A" span={12} />
+        {/* ── TIER 5: STORIES ── */}
+        {byMessages[0] && (
+          <EditorialCard kicker="Ride or die"
+            headline={`${resolveName(byMessages[0].rawName, chatNameMap)} gets more of you than anyone else.`}
+            subtext={`${byMessages[0].messageCount.toLocaleString()} messages. Your default person.`}
+            accent="#E8604A" span={6} />
         )}
 
-        {/* TIER 4: STORIES */}
         {(() => {
           const gone = [...individuals].filter(c => c.messageCount > 50)
             .map(c => ({ ...c, days: Math.floor((Date.now() - new Date(c.lastMessageDate).getTime()) / 86400000) }))
@@ -1187,13 +1251,6 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
               accent="#E8604A" span={6} />
           ) : null
         })()}
-
-        {byMessages[0] && (
-          <EditorialCard kicker="Ride or die"
-            headline={`${resolveName(byMessages[0].rawName, chatNameMap)} gets more of you than anyone else.`}
-            subtext={`${byMessages[0].messageCount.toLocaleString()} messages. Your default person.`}
-            accent="#E8604A" span={6} />
-        )}
 
         {isStatsLoading ? <WarmingCard span={4} /> : (() => {
           const fastest = [...individuals].filter(c => c.avgReplyMinutes > 0 && c.avgReplyMinutes < 60).sort((a, b) => a.avgReplyMinutes - b.avgReplyMinutes)[0]
@@ -1226,10 +1283,6 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
               accent="#E8604A" span={4} />
           ) : null
         })()}
-
-        {networkData && networkData.nodes.length >= 4 && (
-          <ConstellationCard network={networkData} chatNameMap={chatNameMap} onSelectConversation={onSelectConversation} />
-        )}
 
       </div>
     </div>
