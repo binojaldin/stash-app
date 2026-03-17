@@ -29,6 +29,7 @@ const api = {
     totalMessages: number; sentMessages: number; receivedMessages: number
     messagesPerYear: { year: number; count: number }[]
     busiestDay: { date: string; count: number } | null
+    busiestYear: { year: number; count: number } | null
     activeConversations: number
   }> => ipcRenderer.invoke('get-usage-stats', dateFrom, dateTo),
   getMessagingNetwork: (): Promise<{

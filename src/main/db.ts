@@ -377,9 +377,10 @@ export function getUsageStats(dateFrom?: string, dateTo?: string): {
   totalMessages: number; sentMessages: number; receivedMessages: number
   messagesPerYear: { year: number; count: number }[]
   busiestDay: { date: string; count: number } | null
+  busiestYear: { year: number; count: number } | null
   activeConversations: number
 } {
-  const result = { totalMessages: 0, sentMessages: 0, receivedMessages: 0, messagesPerYear: [] as { year: number; count: number }[], busiestDay: null as { date: string; count: number } | null, activeConversations: 0 }
+  const result = { totalMessages: 0, sentMessages: 0, receivedMessages: 0, messagesPerYear: [] as { year: number; count: number }[], busiestDay: null as { date: string; count: number } | null, busiestYear: null as { year: number; count: number } | null, activeConversations: 0 }
   try {
     const { homedir } = require('os')
     const { join } = require('path')
@@ -398,6 +399,10 @@ export function getUsageStats(dateFrom?: string, dateTo?: string): {
 
       const byYear = chatDb.prepare(`SELECT CAST(strftime('%Y', datetime(date/${NS}+${APPLE_EPOCH}, 'unixepoch', 'localtime')) AS INTEGER) as year, COUNT(*) as count FROM message m WHERE (text IS NOT NULL OR cache_has_attachments=1) AND item_type=0 AND is_from_me=1${dateCond} GROUP BY year ORDER BY year ASC`).all() as { year: number; count: number }[]
       result.messagesPerYear = byYear.filter(r => r.year > 2005 && r.year <= new Date().getFullYear())
+      if (result.messagesPerYear.length > 0) {
+        const peak = result.messagesPerYear.reduce((a, b) => b.count > a.count ? b : a)
+        result.busiestYear = { year: peak.year, count: peak.count }
+      }
 
       const busiest = chatDb.prepare(`SELECT date(datetime(date/${NS}+${APPLE_EPOCH}, 'unixepoch', 'localtime')) as d, COUNT(*) as count FROM message m WHERE (text IS NOT NULL OR cache_has_attachments=1) AND item_type=0${dateCond} GROUP BY d ORDER BY count DESC LIMIT 1`).get() as { d: string; count: number } | undefined
       if (busiest) result.busiestDay = { date: busiest.d, count: busiest.count }
@@ -855,6 +860,8 @@ export interface ConversationStats {
   quietestMember: { displayName: string; messageCount: number } | null
   yourContributionPercent: number | null
   memberCount: number
+  peakYear: { year: number; count: number } | null
+  peakYearShareOfTotal: number | null
 }
 
 const MONTH_NAMES_DB = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
@@ -864,7 +871,8 @@ export function getConversationStats(chatIdentifier: string, isGroup: boolean): 
   const result: ConversationStats = {
     firstMessageDate: null, longestStreakDays: 0, mostActiveMonth: null, mostActiveDayOfWeek: null,
     avgMessagesPerDay: 0, peakHour: null, avgResponseTimeMinutes: null, sharedGroupCount: 0,
-    relationshipArc: null, primaryContributor: null, quietestMember: null, yourContributionPercent: null, memberCount: 0
+    relationshipArc: null, primaryContributor: null, quietestMember: null, yourContributionPercent: null, memberCount: 0,
+    peakYear: null, peakYearShareOfTotal: null
   }
 
   try {
@@ -967,6 +975,29 @@ export function getConversationStats(chatIdentifier: string, isGroup: boolean): 
         result.memberCount = (chatDb.prepare(`SELECT COUNT(DISTINCT handle_id) as c FROM chat_handle_join WHERE chat_id IN (${idList})`).get() as { c: number }).c + 1
       } catch { /* ignore */ }
     }
+
+    // Peak year together
+    try {
+      const yearRows = chatDb.prepare(`
+        SELECT CAST(strftime('%Y', datetime(m.date/${NS} + ${APPLE_EPOCH}, 'unixepoch', 'localtime')) AS INTEGER) as year, COUNT(*) as c
+        FROM message m JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
+        WHERE cmj.chat_id IN (${idList}) GROUP BY year ORDER BY c DESC LIMIT 1
+      `).get() as { year: number; c: number } | undefined
+      if (yearRows) {
+        result.peakYear = { year: yearRows.year, count: yearRows.c }
+        // Compute share of total archive in that year
+        try {
+          const totalInYear = chatDb.prepare(`
+            SELECT COUNT(*) as c FROM message m
+            WHERE CAST(strftime('%Y', datetime(m.date/${NS} + ${APPLE_EPOCH}, 'unixepoch', 'localtime')) AS INTEGER) = ?
+              AND (m.text IS NOT NULL OR m.cache_has_attachments = 1)
+          `).get(yearRows.year) as { c: number }
+          if (totalInYear && totalInYear.c > 0) {
+            result.peakYearShareOfTotal = Math.round((yearRows.c / totalInYear.c) * 100)
+          }
+        } catch { /* ignore */ }
+      }
+    } catch { /* ignore */ }
 
     chatDb.close()
   } catch { /* fallback to defaults */ }

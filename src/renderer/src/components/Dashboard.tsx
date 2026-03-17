@@ -19,6 +19,8 @@ interface ConversationStats {
   primaryContributor: { displayName: string; messageCount: number; percent: number } | null
   quietestMember: { displayName: string; messageCount: number } | null
   yourContributionPercent: number | null; memberCount: number
+  peakYear: { year: number; count: number } | null
+  peakYearShareOfTotal: number | null
 }
 
 const arcEmoji: Record<string, string> = { new: '✨', growing: '📈', fading: '📉', rekindled: '🔄', steady: '⚖️' }
@@ -744,6 +746,12 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
               <div style={{ fontSize: 15, color: 'rgba(255,255,255,0.68)', lineHeight: 1.7 }}>
                 {pd ? `${pd.messageCount.toLocaleString()} messages exchanged. ${pd.attachmentCount.toLocaleString()} attachments shared.` : ''}
               </div>
+              {convStats?.peakYear && (
+                <div style={{ fontSize: 13, color: 'rgba(46,196,160,0.6)', marginTop: 6, fontFamily: "'DM Sans'" }}>
+                  Peak year: {convStats.peakYear.year} · {convStats.peakYear.count.toLocaleString()} messages
+                  {convStats.peakYearShareOfTotal && convStats.peakYearShareOfTotal > 1 ? ` · ${convStats.peakYearShareOfTotal}% of your total that year` : ''}
+                </div>
+              )}
               {pd?.lastMessageDate && (
                 <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.45)', marginTop: 4 }}>
                   {(() => {
@@ -1135,6 +1143,22 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
           )
         })()}
 
+        {/* TIER 3.5: MESSAGE VOLUME */}
+        {usageData && usageData.totalMessages > 0 && (
+          <EditorialCard kicker="Your archive"
+            headline={usageData.totalMessages > 1000000
+              ? `You've exchanged over ${Math.floor(usageData.totalMessages / 1000000).toLocaleString()} million messages.`
+              : usageData.totalMessages > 100000
+              ? `${usageData.totalMessages.toLocaleString()} messages in your archive.`
+              : `${usageData.totalMessages.toLocaleString()} messages and counting.`}
+            subtext={usageData.totalMessages > 500000
+              ? 'That\'s not a messaging app. That\'s a life story.'
+              : usageData.totalMessages > 100000
+              ? 'A substantial record of your connections.'
+              : 'Every conversation adds up.'}
+            accent="#E8604A" span={12} />
+        )}
+
         {/* TIER 4: STORIES */}
         {(() => {
           const gone = [...individuals].filter(c => c.messageCount > 50)
@@ -1282,15 +1306,29 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
           )
         })()}
 
+        {usageData && usageData.totalMessages > 0 && (
+          <SplitCard eyebrow="Your message volume"
+            leftValue={usageData.sentMessages.toLocaleString()} leftLabel="You sent"
+            leftSub={`${Math.round((usageData.sentMessages / Math.max(usageData.totalMessages, 1)) * 100)}% of all messages`}
+            rightValue={usageData.receivedMessages.toLocaleString()} rightLabel="You received"
+            rightSub={`${Math.round((usageData.receivedMessages / Math.max(usageData.totalMessages, 1)) * 100)}% of all messages`}
+            leftPct={Math.round((usageData.sentMessages / Math.max(usageData.totalMessages, 1)) * 100)}
+            accent="#7F77DD" span={6} />
+        )}
+        {usageData && usageData.busiestYear && (
+          <EditorialCard kicker="Busiest year"
+            headline={`${usageData.busiestYear.year}. You sent ${usageData.busiestYear.count.toLocaleString()} messages.`}
+            subtext={usageData.messagesPerYear.length > 1 ? `That's more than any other year in your archive.` : 'Your messaging peak.'}
+            accent="#7F77DD" span={6} />
+        )}
         {usageData && (
           <>
             {[
               { label: 'Total messages', value: usageData.totalMessages.toLocaleString(), sub: 'sent + received' },
-              { label: 'You sent', value: usageData.sentMessages.toLocaleString(), sub: usageData.totalMessages > 0 ? `${Math.round((usageData.sentMessages / usageData.totalMessages) * 100)}% of all` : '' },
               { label: 'Busiest day', value: usageData.busiestDay ? usageData.busiestDay.count.toLocaleString() : '—', sub: usageData.busiestDay ? new Date(usageData.busiestDay.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '' },
-              { label: 'Active now', value: usageData.activeConversations.toLocaleString(), sub: 'in last 30 days' },
+              { label: 'Active now', value: usageData.activeConversations.toLocaleString(), sub: 'conversations in last 30 days' },
             ].map(({ label, value, sub }) => (
-              <div key={label} style={{ gridColumn: 'span 3', borderRadius: 16, padding: '18px 20px', background: '#fff', border: '1px solid rgba(0,0,0,0.06)', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}>
+              <div key={label} style={{ gridColumn: 'span 4', borderRadius: 16, padding: '18px 20px', background: '#fff', border: '1px solid rgba(0,0,0,0.06)', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}>
                 <div style={{ fontSize: 10, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#9a948f', marginBottom: 8, fontFamily: "'DM Sans'" }}>{label}</div>
                 <div style={{ fontFamily: "'Unbounded', sans-serif", fontWeight: 200, fontSize: 26, color: '#7F77DD' }}>{value}</div>
                 <div style={{ fontSize: 11, color: '#9a948f', marginTop: 4, fontFamily: "'DM Sans'" }}>{sub}</div>
