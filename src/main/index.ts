@@ -333,12 +333,15 @@ function createTray(): void {
   tray.setToolTip('Stash')
 
   const contextMenu = Menu.buildFromTemplate([
-    { label: 'Open Stash', click: () => { mainWindow?.show() } },
+    { label: 'Open Stash', click: () => { mainWindow?.show(); mainWindow?.focus() } },
     { type: 'separator' },
-    { label: 'Quit', click: () => { isQuitting = true; app.quit() } }
+    { label: 'Quit Stash', click: () => { isQuitting = true; app.quit() } }
   ])
   tray.setContextMenu(contextMenu)
-  tray.on('click', () => { mainWindow?.show() })
+  tray.on('click', () => {
+    if (mainWindow?.isVisible()) { mainWindow.hide() }
+    else { mainWindow?.show(); mainWindow?.focus() }
+  })
 }
 
 function setupLoginItem(): void {
