@@ -82,6 +82,12 @@ function Tile({ attachment, selected, onClick, chatNameMap, height }: {
         <ThumbnailImage attachment={attachment} />
       </div>
       <div style={{ position: 'absolute', top: 6, left: 6, background: badge.bg, color: badge.color, borderRadius: 4, padding: '2px 5px', fontSize: 9, fontWeight: 600, letterSpacing: '0.06em', fontFamily: "'DM Sans'" }}>{badge.label}</div>
+      {(attachment.reaction_count || 0) > 0 && (
+        <div style={{ position: 'absolute', top: 6, right: 6, background: 'rgba(0,0,0,0.55)', borderRadius: 999, padding: '2px 7px', fontSize: 10, color: '#fff', display: 'flex', alignItems: 'center', gap: 3, backdropFilter: 'blur(4px)' }}>
+          <span style={{ color: '#E8604A' }}>♥</span>
+          {attachment.reaction_count}
+        </div>
+      )}
       <div className="card-overlay" style={{ position: 'absolute', inset: 0, border: '1.5px solid #E8604A', borderRadius: 12, opacity: selected ? 1 : 0, pointerEvents: 'none', transition: 'opacity 0.15s' }} />
       <div style={{ padding: '6px 8px 8px' }}>
         <div style={{ fontSize: 11, color: '#d0ccc8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginBottom: 1, fontWeight: 500, fontFamily: "'DM Sans'" }}>{attachment.filename}</div>
@@ -104,7 +110,7 @@ function ClusterHeader({ cluster, chatNameMap }: { cluster: Cluster; chatNameMap
         <div style={{ fontSize: 13, fontWeight: 600, color: '#1A1A1A', letterSpacing: '-0.01em' }}>{cluster.title}</div>
         <div style={{ fontSize: 11, color: '#9a948f', marginTop: 2 }}>
           {cluster.attachments.length} attachments
-          {cluster.totalReactions > 0 && ` · ♥ ${cluster.totalReactions}`}
+          {cluster.totalReactions > 0 && <>{' · '}<span style={{ color: '#E8604A' }}>♥ {cluster.totalReactions}</span></>}
           {` · peak ${cluster.peakHour}`}
         </div>
       </div>
