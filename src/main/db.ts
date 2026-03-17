@@ -410,8 +410,7 @@ export function getStats(chatNameFilter?: string, dateFrom?: string, dateTo?: st
           FROM chat c LEFT JOIN chat_handle_join chj ON c.ROWID = chj.chat_id GROUP BY c.chat_identifier
         `).all() as { chat_name: string; participant_count: number; chat_style: number }[]
         for (const r of partRows) {
-          // chat.style: 43 = direct message, 45 = group chat
-          const isGroup = r.chat_style === 45 || r.participant_count > 1
+          const isGroup = r.chat_style === 45 || (r.chat_style !== 43 && r.participant_count > 1)
           participantMap.set(r.chat_name, isGroup ? 2 : 1)
         }
       } catch { /* fallback to heuristic */ }
