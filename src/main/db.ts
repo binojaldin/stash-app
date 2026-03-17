@@ -404,49 +404,17 @@ export function getStats(chatNameFilter?: string, dateFrom?: string, dateTo?: st
       } catch { /* ignore */ }
 
       // Participant counts to identify group chats
+      // chat.style is NOT reliable (45 = both direct and group in this DB)
+      // Use handle count as the sole signal: 1 handle = direct, >1 = group
       try {
-        type PartRow = {
-          chat_id: number
-          chat_name: string
-          chat_style: number | null
-          participant_count: number
-        }
-
         const partRows = chatDb.prepare(`
-          SELECT
-            c.ROWID as chat_id,
-            c.chat_identifier as chat_name,
-            c.style as chat_style,
-            COUNT(DISTINCT chj.handle_id) as participant_count
+          SELECT c.chat_identifier as chat_name, COUNT(DISTINCT chj.handle_id) as participant_count
           FROM chat c
           LEFT JOIN chat_handle_join chj ON c.ROWID = chj.chat_id
-          GROUP BY c.ROWID, c.chat_identifier, c.style
-        `).all() as PartRow[]
-
-        const grouped = new Map<string, PartRow[]>()
-        for (const row of partRows) {
-          if (!grouped.has(row.chat_name)) grouped.set(row.chat_name, [])
-          grouped.get(row.chat_name)!.push(row)
-        }
-
-        participantMap.clear()
-        for (const [chatName, rows] of grouped) {
-          const hasGroupStyle = rows.some(r => r.chat_style === 45)
-          const hasDirectStyle = rows.some(r => r.chat_style === 43)
-          const maxParticipants = Math.max(...rows.map(r => r.participant_count || 0))
-
-          const isGroup =
-            hasGroupStyle ? true :
-            hasDirectStyle ? false :
-            maxParticipants > 1
-
-          participantMap.set(chatName, isGroup ? 2 : 1)
-        }
-
-        console.log('[GroupDetection] sample', [...participantMap.entries()].slice(0, 10))
-      } catch (err) {
-        console.error('[GroupDetection] failed', err)
-      }
+          GROUP BY c.chat_identifier
+        `).all() as { chat_name: string; participant_count: number }[]
+        for (const r of partRows) participantMap.set(r.chat_name, r.participant_count)
+      } catch { /* fallback */ }
 
       // Laugh detection — cached per session (expensive full-table scan)
       if (!laughCacheValid) {
@@ -571,21 +539,6 @@ export function getStats(chatNameFilter?: string, dateFrom?: string, dateTo?: st
       const bridged = displayToIdentifier.get(r.chat_name)
       if (bridged) ms = msgStats.get(bridged)
     }
-    const directCount = participantMap.get(r.chat_name)
-    const bridgedKey = displayToIdentifier.get(r.chat_name) || ''
-    const bridgedCount = participantMap.get(bridgedKey)
-    const finalIsGroup = (directCount ?? bridgedCount ?? 0) > 1
-
-    if (/jesse jardin/i.test(r.chat_name || '')) {
-      console.log('[GroupDetection][Jesse]', {
-        chat_name: r.chat_name,
-        bridgedKey,
-        directCount,
-        bridgedCount,
-        finalIsGroup
-      })
-    }
-
     return {
       rawName: r.chat_name,
       attachmentCount: r.attachment_count,
@@ -596,7 +549,7 @@ export function getStats(chatNameFilter?: string, dateFrom?: string, dateTo?: st
       initiationCount: ms?.initiationCount || 0,
       laughsGenerated: ms?.laughsGenerated || 0,
       laughsReceived: ms?.laughsReceived || 0,
-      isGroup: finalIsGroup,
+      isGroup: (participantMap.get(r.chat_name) ?? participantMap.get(displayToIdentifier.get(r.chat_name) || '') ?? 0) > 1,
       lateNightRatio: ms?.lateNightRatio || 0,
       avgReplyMinutes: ms?.avgReplyMinutes || 0
     }
