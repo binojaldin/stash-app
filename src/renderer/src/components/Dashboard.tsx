@@ -36,6 +36,13 @@ function formatHour(h: number): string { return `${h % 12 || 12}:00 ${h >= 12 ? 
 
 type InsightSurface = 'relationship' | 'personal' | 'usage' | 'conversational'
 
+const SURFACE_TOKENS = {
+  relationship: { primary: '#2EC4A0', ambient: 'rgba(46,196,160,0.025)', glow: 'rgba(46,196,160,0.07)', faintText: 'rgba(46,196,160,0.035)', word: 'RELATIONSHIPS' },
+  personal: { primary: '#E8604A', ambient: 'rgba(232,96,74,0.025)', glow: 'rgba(232,96,74,0.07)', faintText: 'rgba(232,96,74,0.035)', word: 'PERSONAL' },
+  usage: { primary: '#7F77DD', ambient: 'rgba(127,119,221,0.025)', glow: 'rgba(127,119,221,0.07)', faintText: 'rgba(127,119,221,0.035)', word: 'USAGE' },
+  conversational: { primary: '#888780', ambient: 'rgba(136,135,128,0.02)', glow: 'rgba(136,135,128,0.05)', faintText: 'rgba(136,135,128,0.025)', word: 'SEARCH' },
+} as const
+
 interface Props {
   stats: Stats
   chatNameMap: Record<string, string>
@@ -902,8 +909,12 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
     )
 
     return (
-      <div style={{ flex: 1, overflowY: 'auto', padding: '0 28px 40px', fontFamily: "'DM Sans', sans-serif" }}>
-        <div style={{ maxWidth: 1180, margin: '0 auto', width: '100%' }}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '0 28px 40px', fontFamily: "'DM Sans', sans-serif", position: 'relative' }}>
+        <div style={{ position: 'sticky', top: 0, height: 0, overflow: 'visible', pointerEvents: 'none', zIndex: 0 }}>
+          <div style={{ position: 'absolute', top: 0, left: -28, right: -28, height: '100vh', background: 'linear-gradient(180deg, rgba(46,196,160,0.025) 0%, transparent 50%)' }} />
+          <div style={{ position: 'absolute', top: 0, left: -28, right: -28, height: 200, background: 'radial-gradient(ellipse 70% 100% at 50% -30%, rgba(46,196,160,0.06), transparent)' }} />
+        </div>
+        <div style={{ maxWidth: 1180, margin: '0 auto', width: '100%', position: 'relative', zIndex: 1 }}>
           <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', height: 44, marginBottom: 8 }}>
             <div><span style={{ fontSize: 18, color: '#1A1A1A', fontWeight: 500 }}>{pn}</span><span style={{ fontSize: 12, color: '#9a948f', marginLeft: 10 }}>{dateLabel}</span></div>
             <span style={{ color: '#9a948f', letterSpacing: '0.2em', fontSize: 20 }}>•••</span>
@@ -1217,7 +1228,9 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
         )}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 14 }}>
+      <div style={{ width: 32, height: 2, borderRadius: 1, background: 'rgba(232,96,74,0.3)', marginTop: -8, marginBottom: 16 }} />
+
+      <div data-surface="personal" style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 14 }}>
 
         {/* ── TIER 0: ARCHIVE IDENTITY — the big number ── */}
         {usageData && usageData.totalMessages > 0 && (
@@ -1491,7 +1504,9 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
         )}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 14 }}>
+      <div style={{ width: 32, height: 2, borderRadius: 1, background: 'rgba(127,119,221,0.3)', marginTop: -8, marginBottom: 16 }} />
+
+      <div data-surface="usage" style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 14 }}>
         <PosterCard eyebrow="Your archive" number={stats.total.toLocaleString()} unit="items"
           descriptor={`Across ${chats.length.toLocaleString()} conversations — ${groups.length} group chats, ${individuals.length} one-on-one.`}
           accent="#7F77DD" bg="#1E1A2E" span={12} />
@@ -1711,9 +1726,35 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
   )
 
   return (
-    <div style={{ flex: 1, overflowY: 'auto', padding: '0 28px 40px', fontFamily: "'DM Sans', sans-serif" }}>
-    <style>{`@keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }`}</style>
-    <div style={{ maxWidth: 1180, margin: '0 auto', width: '100%' }}>
+    <div style={{ flex: 1, overflowY: 'auto', padding: '0 28px 40px', fontFamily: "'DM Sans', sans-serif", position: 'relative' }}>
+    <style>{`
+      @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+      [data-surface] > div { transition: box-shadow 0.4s ease; }
+      [data-surface="personal"] > div { box-shadow: 0 2px 14px rgba(232,96,74,0.05), 0 10px 30px rgba(0,0,0,0.04) !important; }
+      [data-surface="usage"] > div { box-shadow: 0 2px 14px rgba(127,119,221,0.05), 0 10px 30px rgba(0,0,0,0.04) !important; }
+      [data-surface="relationship"] > div { box-shadow: 0 2px 14px rgba(46,196,160,0.05), 0 10px 30px rgba(0,0,0,0.04) !important; }
+    `}</style>
+
+    {/* Ambient tint + glow */}
+    <div style={{ position: 'sticky', top: 0, height: 0, overflow: 'visible', pointerEvents: 'none', zIndex: 0 }}>
+      {(['relationship', 'personal', 'usage', 'conversational'] as const).map(s => (
+        <div key={s} style={{ position: 'absolute', top: 0, left: -28, right: -28, height: '100vh', background: `linear-gradient(180deg, ${SURFACE_TOKENS[s].ambient} 0%, transparent 50%)`, opacity: insightSurface === s ? 1 : 0, transition: 'opacity 0.5s ease' }} />
+      ))}
+      {(['relationship', 'personal', 'usage', 'conversational'] as const).map(s => (
+        <div key={`g-${s}`} style={{ position: 'absolute', top: 0, left: -28, right: -28, height: 200, background: `radial-gradient(ellipse 70% 100% at 50% -30%, ${SURFACE_TOKENS[s].glow}, transparent)`, opacity: insightSurface === s ? 1 : 0, transition: 'opacity 0.5s ease' }} />
+      ))}
+    </div>
+
+    {/* Background word */}
+    <div style={{ position: 'sticky', top: '28%', height: 0, overflow: 'visible', pointerEvents: 'none', zIndex: 0 }}>
+      {(['relationship', 'personal', 'usage', 'conversational'] as const).map(s => (
+        <div key={s} style={{ position: 'absolute', top: 0, left: 0, right: 0, fontSize: 130, fontWeight: 200, letterSpacing: '0.1em', color: SURFACE_TOKENS[s].faintText, fontFamily: "'Unbounded', sans-serif", textAlign: 'center', lineHeight: 1, userSelect: 'none' as const, whiteSpace: 'nowrap' as const, overflow: 'hidden' as const, opacity: insightSurface === s ? 1 : 0, transition: 'opacity 0.5s ease' }}>
+          {SURFACE_TOKENS[s].word}
+        </div>
+      ))}
+    </div>
+
+    <div style={{ maxWidth: 1180, margin: '0 auto', width: '100%', position: 'relative', zIndex: 1 }}>
       {/* Topbar */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 44, marginBottom: 8 }}>
         <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, letterSpacing: '0.22em', textTransform: 'uppercase', color: '#8a8480' }}>
@@ -1757,6 +1798,8 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
         </div>
       </div>
 
+      <div style={{ width: 32, height: 2, borderRadius: 1, background: 'rgba(46,196,160,0.3)', marginTop: -8, marginBottom: 16 }} />
+
       {/* Today in History */}
       {todayMemories.length > 0 && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 14, marginBottom: 14 }}>
@@ -1765,7 +1808,7 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
       )}
 
       {/* Global relationship insight grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 14 }}>
+      <div data-surface="relationship" style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 14 }}>
 
         {/* ZONE 1 — Identity: who you are as a communicator */}
         {(() => {
