@@ -43,6 +43,7 @@ export default function App(): JSX.Element {
   const [wordmarkReady, setWordmarkReady] = useState(false)
   const [dateRange, setDateRange] = useState<string>('all')
   const [filters, setFilters] = useState<Filters>({ type: 'all' })
+  const [insightSurface, setInsightSurface] = useState<'relationship' | 'personal' | 'usage' | 'conversational'>('relationship')
   // Contact photos removed — will be re-added with proper architecture
 
   // ── Derived ──
@@ -139,6 +140,8 @@ export default function App(): JSX.Element {
   useEffect(() => { if (appState === 'main') loadStats() }, [dateRange, appState])
   useEffect(() => { if (!isIndexing && appState === 'main') loadStats() }, [isIndexing])
 
+  useEffect(() => { setInsightSurface('relationship') }, [scopedPerson])
+
   // ── Navigation helpers ──
   const goHome = (): void => { setMainView({ kind: 'global-insights' }); setFilters({ type: 'all' }) }
   const scopePerson = (rawName: string): void => { setMainView({ kind: 'person-insights', person: rawName }) }
@@ -228,7 +231,8 @@ export default function App(): JSX.Element {
         {showInsights ? (
           <Dashboard stats={stats} chatNameMap={stats.chatNameMap}
             onSelectConversation={(rawName) => setMainView({ kind: 'person-attachments', person: rawName })}
-            dateRange={dateRange} scopedPerson={scopedPerson} onClearScope={goHome} />
+            dateRange={dateRange} scopedPerson={scopedPerson} onClearScope={goHome}
+            insightSurface={insightSurface} onSurfaceChange={setInsightSurface} />
         ) : (
           <AttachmentsView mainView={mainView} dateRange={dateRange} stats={stats} chatNameMap={stats.chatNameMap} onNavigate={setMainView} />
         )}

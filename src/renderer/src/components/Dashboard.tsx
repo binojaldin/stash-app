@@ -20,6 +20,8 @@ function arcSentence(arc: string, name: string): string {
 }
 function formatHour(h: number): string { return `${h % 12 || 12}:00 ${h >= 12 ? 'PM' : 'AM'}` }
 
+type InsightSurface = 'relationship' | 'personal' | 'usage' | 'conversational'
+
 interface Props {
   stats: Stats
   chatNameMap: Record<string, string>
@@ -27,6 +29,8 @@ interface Props {
   dateRange?: string
   scopedPerson?: string | null
   onClearScope?: () => void
+  insightSurface?: InsightSurface
+  onSurfaceChange?: (s: InsightSurface) => void
 }
 
 function heroTitle(range: string): string {
@@ -110,7 +114,7 @@ const tileBase: React.CSSProperties = {
   boxShadow: '0 10px 30px rgba(0,0,0,0.05)'
 }
 
-export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange = 'all', scopedPerson, onClearScope }: Props): JSX.Element {
+export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange = 'all', scopedPerson, onClearScope, insightSurface = 'relationship', onSurfaceChange }: Props): JSX.Element {
   const currentMonth = MONTH_NAMES[new Date().getMonth()]
   const heroText = heroTitle(dateRange)
   const chats = stats.chatNames as ChatNameEntry[]
@@ -318,6 +322,161 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
 
   const laughLabels = ['Funniest friend', 'Closest behind', 'Group chat chaos']
 
+  const earliestYear = chats.length > 0
+    ? Math.min(...chats.filter(c => c.lastMessageDate).map(c => new Date(c.lastMessageDate).getFullYear()))
+    : 2019
+
+  const pillBar = !scopedPerson && onSurfaceChange && (
+    <div style={{ display: 'flex', gap: 6, marginBottom: 24, marginTop: 4 }}>
+      {([
+        { id: 'relationship' as const, label: 'Relationship', color: '#2EC4A0', meta: `${individuals.length} contacts` },
+        { id: 'personal' as const, label: 'Personal', color: '#E8604A', meta: '8 insights' },
+        { id: 'usage' as const, label: 'Usage', color: '#7F77DD', meta: `since ${earliestYear}` },
+        { id: 'conversational' as const, label: 'Conversational', color: '#888780', meta: 'AI · V2' },
+      ]).map(({ id, label, color, meta }) => (
+        <button key={id} onClick={() => onSurfaceChange(id)}
+          style={{
+            display: 'flex', flexDirection: 'column', padding: '7px 14px',
+            borderRadius: 10, cursor: 'pointer', border: '1px solid',
+            borderColor: insightSurface === id ? 'rgba(0,0,0,0.08)' : 'transparent',
+            background: insightSurface === id ? '#fff' : 'rgba(255,255,255,0.5)',
+            fontFamily: "'DM Sans'"
+          }}>
+          <span style={{ fontSize: 12, fontWeight: 500, color: insightSurface === id ? color : '#6f6a65' }}>{label}</span>
+          <span style={{ fontSize: 10, color: '#9a948f', marginTop: 1 }}>{meta}</span>
+        </button>
+      ))}
+    </div>
+  )
+
+  // ── Personal Insights Surface ──
+  const personalSurface = (
+    <div>
+      <div style={{ background: '#26211d', borderRadius: 18, padding: 24, marginBottom: 24, position: 'relative', overflow: 'hidden' }}>
+        <div style={{ position: 'absolute', right: -60, bottom: -80, width: 240, height: 240, background: 'radial-gradient(circle,rgba(232,96,74,0.2) 0%,transparent 65%)', pointerEvents: 'none' }} />
+        <div style={{ fontSize: 11, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'rgba(232,96,74,0.7)', marginBottom: 10 }}>Personal insights</div>
+        <div style={{ fontFamily: "'Unbounded', sans-serif", fontWeight: 200, fontSize: 22, color: 'white', marginBottom: 6 }}>What your habits say about you.</div>
+        <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.65)', lineHeight: 1.6 }}>Patterns in how, when, and who you communicate with — without reading a single message.</div>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 24 }}>
+        <div style={{ ...tileBase, gridColumn: 'span 4' }}>
+          <TileLabel text="Most messaged" />
+          {byMessages[0] ? <Metric value={resolveName(byMessages[0].rawName, chatNameMap)} sub={`${byMessages[0].messageCount.toLocaleString()} messages exchanged`} /> : <div style={{ color: '#6f6a65' }}>No data</div>}
+        </div>
+        <div style={{ ...tileBase, gridColumn: 'span 4' }}>
+          <TileLabel text="Conversation starter" />
+          <Metric value={`${initiationPct}%`} sub={initiationPct > 60 ? 'You start most conversations.' : initiationPct < 40 ? 'Others reach out to you more.' : 'Balanced — you share the load.'} />
+          <BarTrack pct={initiationPct} />
+        </div>
+        {(() => {
+          const top3Messages = byMessages.slice(0, 3).reduce((s, c) => s + c.messageCount, 0)
+          const totalMessages = chats.reduce((s, c) => s + c.messageCount, 0)
+          const concentration = totalMessages > 0 ? Math.round((top3Messages / totalMessages) * 100) : 0
+          return (
+            <div style={{ ...tileBase, gridColumn: 'span 4' }}>
+              <TileLabel text="Concentration" />
+              <Metric value={`${concentration}%`} sub="of your messages go to your top 3 contacts" />
+              <BarTrack pct={concentration} />
+            </div>
+          )
+        })()}
+        <div style={{ ...tileBase, gridColumn: 'span 6' }}>
+          <TileLabel text="Your comedy record" />
+          {byLaughsGenerated[0] && byLaughsGenerated[0].laughsGenerated > 0 ? (
+            <Metric value={resolveName(byLaughsGenerated[0].rawName, chatNameMap)} sub={`You make them laugh most — ${byLaughsGenerated[0].laughsGenerated.toLocaleString()} times`} />
+          ) : <div style={{ color: '#9a948f', fontSize: 13 }}>No laugh data yet</div>}
+        </div>
+        {(() => {
+          const groupMessages = groups.reduce((s, c) => s + c.messageCount, 0)
+          const totalMsgs = chats.reduce((s, c) => s + c.messageCount, 0)
+          const groupPct = totalMsgs > 0 ? Math.round((groupMessages / totalMsgs) * 100) : 0
+          return (
+            <div style={{ ...tileBase, gridColumn: 'span 6' }}>
+              <TileLabel text="Group vs 1:1" />
+              <Metric value={`${groupPct}%`} sub={groupPct > 50 ? "You're mostly a group chat person." : 'You prefer 1:1 conversations.'} />
+              <BarTrack pct={groupPct} />
+            </div>
+          )
+        })()}
+        {(() => {
+          const topNightOwl = [...individuals].sort((a, b) => b.lateNightRatio - a.lateNightRatio)[0]
+          return topNightOwl && topNightOwl.lateNightRatio > 0 ? (
+            <div style={{ ...tileBase, gridColumn: 'span 4' }}>
+              <TileLabel text="Night owl score" />
+              <Metric value={`${topNightOwl.lateNightRatio}%`} sub={`of messages with ${resolveName(topNightOwl.rawName, chatNameMap)} happen after 11pm`} />
+            </div>
+          ) : <ComingSoonTile label="Night owl score" span={4} />
+        })()}
+        {(() => {
+          const fastest = [...individuals].filter(c => c.avgReplyMinutes > 0 && c.avgReplyMinutes < 60).sort((a, b) => a.avgReplyMinutes - b.avgReplyMinutes)[0]
+          return fastest ? (
+            <div style={{ ...tileBase, gridColumn: 'span 4' }}>
+              <TileLabel text="You reply fastest to" />
+              <Metric value={resolveName(fastest.rawName, chatNameMap)} sub={`~${fastest.avgReplyMinutes} min average reply time`} />
+            </div>
+          ) : <ComingSoonTile label="Reply speed" span={4} />
+        })()}
+        {(() => {
+          const gone = [...individuals].filter(c => c.messageCount > 50).map(c => ({ ...c, days: Math.floor((Date.now() - new Date(c.lastMessageDate).getTime()) / 86400000) })).filter(c => c.days > 30).sort((a, b) => b.days - a.days)[0]
+          return gone ? (
+            <div style={{ ...tileBase, gridColumn: 'span 4' }}>
+              <TileLabel text="Gone quiet" />
+              <Metric value={resolveName(gone.rawName, chatNameMap)} sub={`${gone.days} days since your last message`} />
+            </div>
+          ) : <ComingSoonTile label="Gone quiet" span={4} />
+        })()}
+      </div>
+    </div>
+  )
+
+  // ── Usage Insights Surface ──
+  const usageSurface = (
+    <div>
+      <div style={{ background: '#1E1A2E', borderRadius: 18, padding: 24, marginBottom: 24, position: 'relative', overflow: 'hidden' }}>
+        <div style={{ position: 'absolute', right: -60, bottom: -80, width: 240, height: 240, background: 'radial-gradient(circle,rgba(127,119,221,0.2) 0%,transparent 65%)', pointerEvents: 'none' }} />
+        <div style={{ fontSize: 11, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'rgba(127,119,221,0.7)', marginBottom: 10 }}>Usage insights</div>
+        <div style={{ fontFamily: "'Unbounded', sans-serif", fontWeight: 200, fontSize: 22, color: 'white', marginBottom: 6 }}>Your messaging, by the numbers.</div>
+        <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.65)', lineHeight: 1.6 }}>The full picture of your iMessage activity — volume, attachments, and patterns across time.</div>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 24 }}>
+        <div style={{ ...tileBase, gridColumn: 'span 4' }}><TileLabel text="Total indexed" /><Metric value={stats.total.toLocaleString()} sub="attachments in your archive" /></div>
+        <div style={{ ...tileBase, gridColumn: 'span 4' }}><TileLabel text="Active conversations" /><Metric value={chats.length.toLocaleString()} sub="conversations with indexed content" /></div>
+        <div style={{ ...tileBase, gridColumn: 'span 4' }}><TileLabel text="Group chats" /><Metric value={groups.length.toLocaleString()} sub={`of ${chats.length} total conversations`} /></div>
+        <div style={{ ...tileBase, gridColumn: 'span 3' }}><TileLabel text="Images" /><Metric value={stats.images.toLocaleString()} sub="photos and screenshots" /></div>
+        <div style={{ ...tileBase, gridColumn: 'span 3' }}><TileLabel text="Videos" /><Metric value={stats.videos.toLocaleString()} sub="video files" /></div>
+        <div style={{ ...tileBase, gridColumn: 'span 3' }}><TileLabel text="Documents" /><Metric value={stats.documents.toLocaleString()} sub="files and docs" /></div>
+        <div style={{ ...tileBase, gridColumn: 'span 3' }}><TileLabel text="Audio" /><Metric value={stats.audio.toLocaleString()} sub="voice notes and music" /></div>
+        <div style={{ ...tileBase, gridColumn: 'span 6' }}>
+          <TileLabel text="Most files shared" />
+          {byAttachments[0] ? <Metric value={resolveName(byAttachments[0].rawName, chatNameMap)} sub={`${byAttachments[0].attachmentCount.toLocaleString()} attachments exchanged`} /> : <div style={{ color: '#6f6a65' }}>No data</div>}
+        </div>
+        <div style={{ ...tileBase, gridColumn: 'span 6' }}>
+          <TileLabel text="Most active group" />
+          {topGroup ? <Metric value={resolveName(topGroup.rawName, chatNameMap)} sub={`${topGroup.messageCount.toLocaleString()} messages`} /> : <div style={{ color: '#9a948f', fontSize: 13 }}>No group chats found</div>}
+        </div>
+        <ComingSoonTile label="Activity heatmap · days × hours" span={12} />
+        <ComingSoonTile label="Year-by-year timeline" span={12} />
+      </div>
+    </div>
+  )
+
+  // ── Conversational Insights Surface ──
+  const conversationalSurface = (
+    <div>
+      <div style={{ background: '#1A1A1A', borderRadius: 18, padding: 24, marginBottom: 24 }}>
+        <div style={{ fontSize: 11, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'rgba(180,178,169,0.5)', marginBottom: 10 }}>Conversational insights · V2</div>
+        <div style={{ fontFamily: "'Unbounded', sans-serif", fontWeight: 200, fontSize: 22, color: 'rgba(255,255,255,0.5)', marginBottom: 6 }}>What your conversations actually mean.</div>
+        <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.35)', lineHeight: 1.6 }}>Topics, summaries, recurring jokes, and memory extraction — powered by AI. Coming in V2 when message search is live.</div>
+      </div>
+      <div style={{ fontSize: 11, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#9a948f', marginBottom: 12 }}>What's coming in V2</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {['What do we talk about most?', 'What are our recurring jokes?', 'What important moments happened here?', 'Summarize this conversation', 'When are our conversations most positive?'].map(p => (
+          <div key={p} style={{ background: 'rgba(0,0,0,0.03)', border: '1px dashed rgba(0,0,0,0.12)', borderRadius: 10, padding: '10px 14px', fontSize: 13, color: '#6f6a65', opacity: 0.6 }}>{p}</div>
+        ))}
+      </div>
+    </div>
+  )
+
   return (
     <div style={{ flex: 1, overflowY: 'auto', padding: '0 28px 40px', fontFamily: "'DM Sans', sans-serif" }}>
     <div style={{ maxWidth: 1180, margin: '0 auto', width: '100%' }}>
@@ -329,6 +488,20 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
         <span style={{ color: '#9a948f', letterSpacing: '0.2em', fontSize: 20 }}>•••</span>
       </div>
 
+      {/* Pill bar */}
+      {pillBar}
+
+      {/* Surface: Personal */}
+      {insightSurface === 'personal' && personalSurface}
+
+      {/* Surface: Usage */}
+      {insightSurface === 'usage' && usageSurface}
+
+      {/* Surface: Conversational */}
+      {insightSurface === 'conversational' && conversationalSurface}
+
+      {/* Surface: Relationship (default — existing dashboard) */}
+      {insightSurface === 'relationship' && <>
       {/* Hero card */}
       <div style={{ background: '#26211d', borderRadius: 22, padding: 28, marginBottom: 20, position: 'relative', overflow: 'hidden' }}>
         {/* Coral glow */}
@@ -486,6 +659,7 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
           ))}
         </div>
       </div>
+      </>}
     </div>
     </div>
   )
