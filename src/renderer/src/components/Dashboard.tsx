@@ -819,148 +819,119 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
         </div>
       </div>
 
-      {/* Insight tile grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 24 }}>
-        {/* Tile 1 — Funniest person */}
-        {isStatsLoading ? <WarmingCard span={4} /> : (
-          <div style={{ ...tileBase, gridColumn: 'span 4' }}>
-            <TileLabel text="Funniest person" />
-            {topFunny && topFunny.laughsReceived > 0 ? (
-              <>
-                <Metric value={resolveName(topFunny.rawName, chatNameMap)} sub={`${topFunny.laughsReceived.toLocaleString()} times they made you laugh`} />
-                <CtaPill text="See why → Pro" />
-              </>
-            ) : <div style={{ color: '#9a948f', fontSize: 13 }}>No laugh data for this period</div>}
-          </div>
-        )}
+      {/* Global relationship insight grid */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 14 }}>
 
-        {/* Tile 2 — Initiation balance */}
-        <div style={{ ...tileBase, gridColumn: 'span 4' }}>
-          <TileLabel text="Initiation balance" />
-          <Metric value={`${initiationPct}%`} sub={initiationPct > 60 ? 'You start most conversations. You keep things alive.' : initiationPct < 40 ? 'Others reach out to you more. You respond.' : 'Roughly balanced — you and your contacts share the load.'} />
-          <BarTrack pct={initiationPct} />
-        </div>
+        {/* Funniest person — WINNER */}
+        {isStatsLoading ? <WarmingCard span={4} /> : topFunny && topFunny.laughsReceived > 0 ? (
+          <WinnerCard award="Makes you laugh most" name={resolveName(topFunny.rawName, chatNameMap)}
+            stat={`${topFunny.laughsReceived.toLocaleString()} times`}
+            flavor="Your funniest person — across all conversations."
+            emoji="😂" accentColor="#2EC4A0" span={4} />
+        ) : <div style={{ gridColumn: 'span 4' }} />}
 
-        {/* Tile 3 — Most active chat */}
-        <div style={{ ...tileBase, gridColumn: 'span 4' }}>
-          <TileLabel text="Most active chat" />
-          {topChat ? (
-            <>
-              <Metric value={resolveName(topChat.rawName, chatNameMap)} sub={`${topChat.messageCount.toLocaleString()} messages exchanged`} />
-              <CtaPill text="Open conversation" onClick={() => onSelectConversation(topChat.rawName)} />
-            </>
-          ) : <div style={{ color: '#6f6a65' }}>No data yet</div>}
-        </div>
+        {/* Most active chat — WINNER */}
+        {topChat ? (
+          <WinnerCard award="Most active chat" name={resolveName(topChat.rawName, chatNameMap)}
+            stat={`${topChat.messageCount.toLocaleString()} messages`}
+            flavor="Your most consistent relationship this period."
+            emoji="💬" accentColor="#E8604A" span={4} />
+        ) : <div style={{ gridColumn: 'span 4' }} />}
 
-        {/* Tile 4 — Who makes you laugh most (leaderboard) */}
-        {isStatsLoading ? <WarmingCard span={8} /> : (
-          <div style={{ ...tileBase, gridColumn: 'span 8' }}>
+        {/* Initiation balance — SPLIT */}
+        <SplitCard eyebrow="Who reaches out first"
+          leftValue={`${initiationPct}%`} leftLabel="You initiate"
+          leftSub={initiationPct > 60 ? 'You keep things alive.' : initiationPct < 40 ? 'Others drive this.' : 'You share the load.'}
+          rightValue={`${100 - initiationPct}%`} rightLabel="They initiate"
+          rightSub={initiationPct > 60 ? 'They wait for you.' : initiationPct < 40 ? 'They reach out more.' : 'Pretty balanced.'}
+          leftPct={initiationPct} accent="#E8604A" span={4} />
+
+        {/* Laugh leaderboard */}
+        {isStatsLoading ? <WarmingCard span={6} /> : (
+          <div style={{ ...tileBase, gridColumn: 'span 6' }}>
             <TileLabel text="Who makes you laugh most" />
-            {byLaughsReceived.filter((c) => c.laughsReceived > 0).slice(0, 3).map((c, i) => (
-              <LeaderRow key={c.rawName} rank={i + 1} name={resolveName(c.rawName, chatNameMap)} sub={laughLabels[i] || ''} value={`${c.laughsReceived.toLocaleString()} laughs`} />
+            {byLaughsReceived.filter(c => c.laughsReceived > 0).slice(0, 3).map((c, i) => (
+              <LeaderRow key={c.rawName} rank={i + 1} name={resolveName(c.rawName, chatNameMap)}
+                sub={laughLabels[i] || ''} value={`${c.laughsReceived.toLocaleString()} laughs`} />
             ))}
-            {byLaughsReceived.every((c) => c.laughsReceived === 0) && <div style={{ color: '#9a948f', fontSize: 13, padding: '12px 0' }}>No laugh data for this period</div>}
-            <CtaPill text="See exact messages → Pro" />
+            {byLaughsReceived.every(c => c.laughsReceived === 0) && (
+              <div style={{ color: '#9a948f', fontSize: 13, padding: '12px 0' }}>No laugh data for this period</div>
+            )}
           </div>
         )}
 
-        {/* Tile — You're funniest to */}
-        <div style={{ ...tileBase, gridColumn: 'span 8' }}>
-          <TileLabel text="You're funniest to" />
-          {byLaughsGenerated.filter((c) => c.laughsGenerated > 0).slice(0, 3).map((c, i) => (
-            <LeaderRow key={c.rawName} rank={i + 1} name={resolveName(c.rawName, chatNameMap)}
-              sub={i === 0 ? 'Your best audience' : i === 1 ? 'Close second' : 'Third place'}
-              value={`${c.laughsGenerated.toLocaleString()} laughs`} />
-          ))}
-          {byLaughsGenerated.every((c) => c.laughsGenerated === 0) && <div style={{ color: '#9a948f', fontSize: 13, padding: '12px 0' }}>No laugh data for this period</div>}
-        </div>
+        {/* You're funniest to — leaderboard */}
+        {isStatsLoading ? <WarmingCard span={6} /> : (
+          <div style={{ ...tileBase, gridColumn: 'span 6' }}>
+            <TileLabel text="You're funniest to" />
+            {byLaughsGenerated.filter(c => c.laughsGenerated > 0).slice(0, 3).map((c, i) => (
+              <LeaderRow key={c.rawName} rank={i + 1} name={resolveName(c.rawName, chatNameMap)}
+                sub={i === 0 ? 'Your best audience' : i === 1 ? 'Close second' : 'Third place'}
+                value={`${c.laughsGenerated.toLocaleString()} laughs`} />
+            ))}
+            {byLaughsGenerated.every(c => c.laughsGenerated === 0) && (
+              <div style={{ color: '#9a948f', fontSize: 13, padding: '12px 0' }}>No laugh data for this period</div>
+            )}
+          </div>
+        )}
 
-        {/* Tile — Most one-sided */}
-        <div style={{ ...tileBase, gridColumn: 'span 4' }}>
-          <TileLabel text="Most one-sided chat" />
-          {(() => {
-            const byImbalance = [...individuals].filter((c) => c.sentCount + c.receivedCount > 20)
-              .map((c) => ({ ...c, ratio: c.sentCount / Math.max(c.receivedCount, 1) }))
-              .sort((a, b) => Math.abs(Math.log(b.ratio)) - Math.abs(Math.log(a.ratio)))
-            const m = byImbalance[0]
-            return m ? (
-              <Metric value={resolveName(m.rawName, chatNameMap)}
-                sub={m.ratio > 1 ? `You send ${m.ratio.toFixed(1)}× more than they reply` : `They send ${(1 / m.ratio).toFixed(1)}× more than you reply`} />
-            ) : <div style={{ color: '#6f6a65' }}>Not enough data</div>
-          })()}
-        </div>
-
-        {/* Tile 5 — Most attachments */}
-        <div style={{ ...tileBase, gridColumn: 'span 4' }}>
-          <TileLabel text="Most attachments" />
-          {topAttach ? (
-            <Metric value={topAttach.attachmentCount.toLocaleString()} sub={`${resolveName(topAttach.rawName, chatNameMap)} sent the most photos, screenshots, and files.`} />
-          ) : <div style={{ color: '#6f6a65' }}>No data yet</div>}
-        </div>
-
-        {/* Tile 6 — Night owl connection */}
+        {/* Most one-sided — EDITORIAL */}
         {(() => {
-          const topLateNight = [...individuals]
-            .filter(c => c.lateNightRatio > 0)
+          const byImbalance = [...individuals].filter(c => c.sentCount + c.receivedCount > 20)
+            .map(c => ({ ...c, ratio: c.sentCount / Math.max(c.receivedCount, 1) }))
+            .sort((a, b) => Math.abs(Math.log(b.ratio)) - Math.abs(Math.log(a.ratio)))
+          const m = byImbalance[0]
+          return m ? (
+            <EditorialCard kicker="Most one-sided"
+              headline={`${resolveName(m.rawName, chatNameMap)} — ${m.ratio > 1 ? `you send ${m.ratio.toFixed(1)}× more` : `they send ${(1/m.ratio).toFixed(1)}× more`}.`}
+              subtext={m.ratio > 2 ? 'This one runs on you.' : 'A slight imbalance — might be worth noticing.'}
+              accent="#E8604A" span={4} />
+          ) : null
+        })()}
+
+        {/* Most attachments — WINNER */}
+        {topAttach ? (
+          <WinnerCard award="Most files shared" name={resolveName(topAttach.rawName, chatNameMap)}
+            stat={`${topAttach.attachmentCount.toLocaleString()} attachments`}
+            flavor="Photos, screenshots, docs — all of it."
+            emoji="📎" accentColor="#7F77DD" span={4} />
+        ) : null}
+
+        {/* Night owl — EDITORIAL */}
+        {isStatsLoading ? <WarmingCard span={4} /> : (() => {
+          const topLateNight = [...individuals].filter(c => c.lateNightRatio > 0)
             .sort((a, b) => b.lateNightRatio - a.lateNightRatio)[0]
           return topLateNight ? (
-            <div style={{ ...tileBase, gridColumn: 'span 4' }}>
-              <TileLabel text="Night owl connection" />
-              <Metric
-                value={resolveName(topLateNight.rawName, chatNameMap)}
-                sub={`${topLateNight.lateNightRatio}% of your messages happen after 11pm`}
-              />
-            </div>
-          ) : <ComingSoonTile label="Night owl connection" span={4} />
+            <EditorialCard kicker="Night owl connection"
+              headline={`${topLateNight.lateNightRatio}% of messages with ${resolveName(topLateNight.rawName, chatNameMap)} happen after 11pm.`}
+              subtext="Some relationships only really live after midnight."
+              accent="#7F77DD" span={4} />
+          ) : null
         })()}
 
-        {/* Tile 7 — Most active group */}
-        <div style={{ ...tileBase, gridColumn: 'span 4' }}>
-          <TileLabel text="Most active group" />
-          {topGroup ? (
-            <Metric value={resolveName(topGroup.rawName, chatNameMap)} sub={`${topGroup.messageCount.toLocaleString()} messages exchanged`} />
-          ) : <div style={{ color: '#6f6a65' }}>No group chats indexed</div>}
-        </div>
+        {/* Most active group — WINNER */}
+        {isStatsLoading ? <WarmingCard span={4} /> : topGroup ? (
+          <WinnerCard award="Most active group" name={resolveName(topGroup.rawName, chatNameMap)}
+            stat={`${topGroup.messageCount.toLocaleString()} messages`}
+            flavor="Your busiest room."
+            emoji="🔥" accentColor="#E8604A" span={4} />
+        ) : null}
 
-        {/* Tile — Gone quiet */}
-        <div style={{ ...tileBase, gridColumn: 'span 4' }}>
-          <TileLabel text="Gone quiet" />
-          {(() => {
-            const now = new Date()
-            const gq = [...individuals].filter((c) => c.messageCount > 50)
-              .map((c) => ({ ...c, daysSince: Math.floor((now.getTime() - new Date(c.lastMessageDate).getTime()) / 86400000) }))
-              .filter((c) => c.daysSince > 30)
-              .sort((a, b) => b.daysSince - a.daysSince)[0]
-            return gq ? (
-              <Metric value={resolveName(gq.rawName, chatNameMap)}
-                sub={`${gq.daysSince} days since your last message. You used to talk a lot.`} />
-            ) : <div style={{ color: '#6f6a65' }}>Everyone's been in touch recently</div>
-          })()}
-        </div>
-
-        {/* Tile — Fastest responder */}
+        {/* Gone quiet — EDITORIAL */}
         {(() => {
-          const fastest = [...individuals]
-            .filter(c => c.avgReplyMinutes > 0 && c.avgReplyMinutes < 60)
-            .sort((a, b) => a.avgReplyMinutes - b.avgReplyMinutes)[0]
-          return fastest ? (
-            <div style={{ ...tileBase, gridColumn: 'span 4' }}>
-              <TileLabel text="Fastest responder" />
-              <Metric
-                value={resolveName(fastest.rawName, chatNameMap)}
-                sub={`Replies in ${fastest.avgReplyMinutes < 1 ? 'under a minute' : `~${fastest.avgReplyMinutes} minutes`} on average`}
-              />
-            </div>
-          ) : <ComingSoonTile label="Fastest responder" span={4} />
+          const now = new Date()
+          const gq = [...individuals].filter(c => c.messageCount > 50)
+            .map(c => ({ ...c, daysSince: Math.floor((now.getTime() - new Date(c.lastMessageDate).getTime()) / 86400000) }))
+            .filter(c => c.daysSince > 30)
+            .sort((a, b) => b.daysSince - a.daysSince)[0]
+          return gq ? (
+            <EditorialCard kicker="Gone quiet"
+              headline={`${resolveName(gq.rawName, chatNameMap)}. ${gq.daysSince} days of silence.`}
+              subtext="You used to talk a lot. Something shifted."
+              accent="#E8604A" span={4} />
+          ) : null
         })()}
 
-        {/* Tile 8 — Who you reach out to most (full width leaderboard) */}
-        <div style={{ ...tileBase, gridColumn: 'span 12' }}>
-          <TileLabel text="Who you reach out to most" />
-          {byInitiation.slice(0, 3).map((c, i) => (
-            <LeaderRow key={c.rawName} rank={i + 1} name={resolveName(c.rawName, chatNameMap)} sub={`${c.initiationCount.toLocaleString()} conversation starts`} value={c.initiationCount.toLocaleString()} />
-          ))}
-        </div>
       </div>
       </>}
     </div>
