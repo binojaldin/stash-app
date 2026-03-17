@@ -822,23 +822,50 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
       {/* Global relationship insight grid */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 14 }}>
 
-        {/* Funniest person — WINNER */}
+        {/* ZONE 1 — Identity: who you are as a communicator */}
+        {(() => {
+          const groupMessages = groups.reduce((s, c) => s + c.messageCount, 0)
+          const totalMsgs = chats.reduce((s, c) => s + c.messageCount, 0)
+          const groupPct = totalMsgs > 0 ? Math.round((groupMessages / totalMsgs) * 100) : 0
+          const isGroupPerson = groupPct > 50
+          return (
+            <PosterCard eyebrow="Your social identity"
+              number={isGroupPerson ? `${groupPct}%` : `${100 - groupPct}%`}
+              unit={isGroupPerson ? 'group chats' : 'one-on-one'}
+              descriptor={isGroupPerson
+                ? 'You live in the group chat. The noise is where you belong.'
+                : 'You prefer depth over breadth. One-on-one is your natural mode.'}
+              accent="#2EC4A0" bg="#1E2826" span={7} />
+          )
+        })()}
+        {(() => {
+          const top3 = byMessages.slice(0, 3).reduce((s, c) => s + c.messageCount, 0)
+          const total = chats.reduce((s, c) => s + c.messageCount, 0)
+          const pct = total > 0 ? Math.round((top3 / total) * 100) : 0
+          return (
+            <PosterCard eyebrow="Your inner circle" number={`${pct}%`}
+              descriptor={pct > 60 ? 'of your messages go to just 3 people. You run deep, not wide.'
+                : pct > 40 ? 'to your top 3 contacts. Fairly concentrated.'
+                : 'spread across many people. You keep a wide net.'}
+              accent="#2EC4A0" bg="#F8F4F0" span={5} />
+          )
+        })()}
+
+        {/* ZONE 2 — Named winners */}
         {isStatsLoading ? <WarmingCard span={4} /> : topFunny && topFunny.laughsReceived > 0 ? (
           <WinnerCard award="Makes you laugh most" name={resolveName(topFunny.rawName, chatNameMap)}
-            stat={`${topFunny.laughsReceived.toLocaleString()} times`}
-            flavor="Your funniest person — across all conversations."
+            stat={`${topFunny.laughsReceived.toLocaleString()} times — more than anyone`}
+            flavor="Your funniest person."
             emoji="😂" accentColor="#2EC4A0" span={4} />
         ) : <div style={{ gridColumn: 'span 4' }} />}
 
-        {/* Most active chat — WINNER */}
         {topChat ? (
-          <WinnerCard award="Most active chat" name={resolveName(topChat.rawName, chatNameMap)}
+          <WinnerCard award="Most active relationship" name={resolveName(topChat.rawName, chatNameMap)}
             stat={`${topChat.messageCount.toLocaleString()} messages`}
-            flavor="Your most consistent relationship this period."
+            flavor="Your most consistent connection this period."
             emoji="💬" accentColor="#E8604A" span={4} />
         ) : <div style={{ gridColumn: 'span 4' }} />}
 
-        {/* Initiation balance — SPLIT */}
         <SplitCard eyebrow="Who reaches out first"
           leftValue={`${initiationPct}%`} leftLabel="You initiate"
           leftSub={initiationPct > 60 ? 'You keep things alive.' : initiationPct < 40 ? 'Others drive this.' : 'You share the load.'}
@@ -846,7 +873,60 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
           rightSub={initiationPct > 60 ? 'They wait for you.' : initiationPct < 40 ? 'They reach out more.' : 'Pretty balanced.'}
           leftPct={initiationPct} accent="#E8604A" span={4} />
 
-        {/* Laugh leaderboard */}
+        {/* ZONE 3 — Emotional / editorial */}
+        {(() => {
+          const now = new Date()
+          const gq = [...individuals].filter(c => c.messageCount > 50)
+            .map(c => ({ ...c, daysSince: Math.floor((now.getTime() - new Date(c.lastMessageDate).getTime()) / 86400000) }))
+            .filter(c => c.daysSince > 30)
+            .sort((a, b) => b.daysSince - a.daysSince)[0]
+          return gq ? (
+            <EditorialCard kicker="Gone quiet"
+              headline={`${resolveName(gq.rawName, chatNameMap)}. ${gq.daysSince} days of silence.`}
+              subtext="You used to talk a lot. Something shifted — or life just got busy."
+              accent="#E8604A" span={6} />
+          ) : null
+        })()}
+        {(() => {
+          const byImbalance = [...individuals].filter(c => c.sentCount + c.receivedCount > 20)
+            .map(c => ({ ...c, ratio: c.sentCount / Math.max(c.receivedCount, 1) }))
+            .sort((a, b) => Math.abs(Math.log(b.ratio)) - Math.abs(Math.log(a.ratio)))
+          const m = byImbalance[0]
+          return m ? (
+            <EditorialCard kicker="Most one-sided"
+              headline={`${resolveName(m.rawName, chatNameMap)} — ${m.ratio > 1 ? `you send ${m.ratio.toFixed(1)}× more` : `they send ${(1/m.ratio).toFixed(1)}× more`}.`}
+              subtext={m.ratio > 2 ? 'This one runs almost entirely on you.' : 'A slight imbalance — might be worth noticing.'}
+              accent="#E8604A" span={6} />
+          ) : null
+        })()}
+
+        {/* ZONE 4 — Supporting winners */}
+        {isStatsLoading ? <WarmingCard span={4} /> : (() => {
+          const topLateNight = [...individuals].filter(c => c.lateNightRatio > 0)
+            .sort((a, b) => b.lateNightRatio - a.lateNightRatio)[0]
+          return topLateNight ? (
+            <WinnerCard award="Night owl connection" name={resolveName(topLateNight.rawName, chatNameMap)}
+              stat={`${topLateNight.lateNightRatio}% of messages after 11pm`}
+              flavor="Some relationships only come alive after midnight."
+              emoji="🌙" accentColor="#7F77DD" span={4} />
+          ) : null
+        })()}
+
+        {isStatsLoading ? <WarmingCard span={4} /> : topGroup ? (
+          <WinnerCard award="Most active group" name={resolveName(topGroup.rawName, chatNameMap)}
+            stat={`${topGroup.messageCount.toLocaleString()} messages`}
+            flavor="Your busiest room."
+            emoji="🔥" accentColor="#E8604A" span={4} />
+        ) : null}
+
+        {topAttach ? (
+          <WinnerCard award="Most files shared" name={resolveName(topAttach.rawName, chatNameMap)}
+            stat={`${topAttach.attachmentCount.toLocaleString()} attachments`}
+            flavor="Photos, memes, evidence — all of it."
+            emoji="📎" accentColor="#7F77DD" span={4} />
+        ) : null}
+
+        {/* ZONE 5 — Leaderboard tiles */}
         {isStatsLoading ? <WarmingCard span={6} /> : (
           <div style={{ ...tileBase, gridColumn: 'span 6' }}>
             <TileLabel text="Who makes you laugh most" />
@@ -860,7 +940,6 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
           </div>
         )}
 
-        {/* You're funniest to — leaderboard */}
         {isStatsLoading ? <WarmingCard span={6} /> : (
           <div style={{ ...tileBase, gridColumn: 'span 6' }}>
             <TileLabel text="You're funniest to" />
@@ -874,63 +953,6 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
             )}
           </div>
         )}
-
-        {/* Most one-sided — EDITORIAL */}
-        {(() => {
-          const byImbalance = [...individuals].filter(c => c.sentCount + c.receivedCount > 20)
-            .map(c => ({ ...c, ratio: c.sentCount / Math.max(c.receivedCount, 1) }))
-            .sort((a, b) => Math.abs(Math.log(b.ratio)) - Math.abs(Math.log(a.ratio)))
-          const m = byImbalance[0]
-          return m ? (
-            <EditorialCard kicker="Most one-sided"
-              headline={`${resolveName(m.rawName, chatNameMap)} — ${m.ratio > 1 ? `you send ${m.ratio.toFixed(1)}× more` : `they send ${(1/m.ratio).toFixed(1)}× more`}.`}
-              subtext={m.ratio > 2 ? 'This one runs on you.' : 'A slight imbalance — might be worth noticing.'}
-              accent="#E8604A" span={4} />
-          ) : null
-        })()}
-
-        {/* Most attachments — WINNER */}
-        {topAttach ? (
-          <WinnerCard award="Most files shared" name={resolveName(topAttach.rawName, chatNameMap)}
-            stat={`${topAttach.attachmentCount.toLocaleString()} attachments`}
-            flavor="Photos, screenshots, docs — all of it."
-            emoji="📎" accentColor="#7F77DD" span={4} />
-        ) : null}
-
-        {/* Night owl — EDITORIAL */}
-        {isStatsLoading ? <WarmingCard span={4} /> : (() => {
-          const topLateNight = [...individuals].filter(c => c.lateNightRatio > 0)
-            .sort((a, b) => b.lateNightRatio - a.lateNightRatio)[0]
-          return topLateNight ? (
-            <EditorialCard kicker="Night owl connection"
-              headline={`${topLateNight.lateNightRatio}% of messages with ${resolveName(topLateNight.rawName, chatNameMap)} happen after 11pm.`}
-              subtext="Some relationships only really live after midnight."
-              accent="#7F77DD" span={4} />
-          ) : null
-        })()}
-
-        {/* Most active group — WINNER */}
-        {isStatsLoading ? <WarmingCard span={4} /> : topGroup ? (
-          <WinnerCard award="Most active group" name={resolveName(topGroup.rawName, chatNameMap)}
-            stat={`${topGroup.messageCount.toLocaleString()} messages`}
-            flavor="Your busiest room."
-            emoji="🔥" accentColor="#E8604A" span={4} />
-        ) : null}
-
-        {/* Gone quiet — EDITORIAL */}
-        {(() => {
-          const now = new Date()
-          const gq = [...individuals].filter(c => c.messageCount > 50)
-            .map(c => ({ ...c, daysSince: Math.floor((now.getTime() - new Date(c.lastMessageDate).getTime()) / 86400000) }))
-            .filter(c => c.daysSince > 30)
-            .sort((a, b) => b.daysSince - a.daysSince)[0]
-          return gq ? (
-            <EditorialCard kicker="Gone quiet"
-              headline={`${resolveName(gq.rawName, chatNameMap)}. ${gq.daysSince} days of silence.`}
-              subtext="You used to talk a lot. Something shifted."
-              accent="#E8604A" span={4} />
-          ) : null
-        })()}
 
       </div>
       </>}
