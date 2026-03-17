@@ -555,22 +555,22 @@ function ConstellationCard({ network, chatNameMap, onSelectConversation }: {
               onDoubleClick={() => onSelectConversation(node.rawName)}>
               <circle cx={pos.x} cy={pos.y} r={Math.max(r, 14)} fill="transparent" />
               <circle cx={pos.x} cy={pos.y} r={r} fill={fill} />
-              {showLabel && <text x={pos.x} y={pos.y + r + 11} textAnchor="middle"
-                style={{ fontSize: pos.size >= 10 ? 9 : 8, fill: (isHov || isFoc) ? '#fff' : 'rgba(255,255,255,0.3)', fontFamily: 'DM Sans', pointerEvents: 'none' }}>
+              {showLabel && <text x={pos.x} y={pos.y + r + 13} textAnchor="middle"
+                style={{ fontSize: pos.size >= 14 ? 14 : pos.size >= 10 ? 12 : 11, fill: (isHov || isFoc) ? '#fff' : 'rgba(255,255,255,0.85)', fontFamily: 'DM Sans', pointerEvents: 'none', fontWeight: (isHov || isFoc) ? 500 : 400, filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.7))' }}>
                 {getName(node.rawName)}
               </text>}
               {/* Tooltip on hover */}
               {isHov && (
                 <g>
-                  <rect x={pos.x - 70} y={pos.y - r - 42} width={140} height={34} rx={6}
-                    fill="rgba(0,0,0,0.85)" stroke="rgba(255,255,255,0.1)" strokeWidth={0.5} />
-                  <text x={pos.x} y={pos.y - r - 28} textAnchor="middle"
-                    style={{ fontSize: 9, fill: '#fff', fontFamily: 'DM Sans', fontWeight: 500 }}>
+                  <rect x={pos.x - 85} y={pos.y - r - 50} width={170} height={42} rx={7}
+                    fill="rgba(0,0,0,0.9)" stroke="rgba(255,255,255,0.12)" strokeWidth={0.5} />
+                  <text x={pos.x} y={pos.y - r - 32} textAnchor="middle"
+                    style={{ fontSize: 13, fill: '#fff', fontFamily: 'DM Sans', fontWeight: 600 }}>
                     {getFullName(node.rawName)}
                   </text>
-                  <text x={pos.x} y={pos.y - r - 16} textAnchor="middle"
-                    style={{ fontSize: 8, fill: 'rgba(255,255,255,0.45)', fontFamily: 'DM Sans' }}>
-                    {(msgCountMap.get(node.rawName) || 0).toLocaleString()} msgs · {sharedCount} shared group{sharedCount !== 1 ? 's' : ''}
+                  <text x={pos.x} y={pos.y - r - 17} textAnchor="middle"
+                    style={{ fontSize: 10, fill: 'rgba(255,255,255,0.7)', fontFamily: 'DM Sans', fontWeight: 400 }}>
+                    {(msgCountMap.get(node.rawName) || 0).toLocaleString()} msgs · {sharedCount} group{sharedCount !== 1 ? 's' : ''}
                   </text>
                 </g>
               )}
@@ -589,7 +589,7 @@ function ConstellationCard({ network, chatNameMap, onSelectConversation }: {
         ].map(({ visual, label }) => (
           <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             {visual}
-            <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.25)', fontFamily: "'DM Sans'" }}>{label}</div>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.55)', fontFamily: "'DM Sans'" }}>{label}</div>
           </div>
         ))}
       </div>
