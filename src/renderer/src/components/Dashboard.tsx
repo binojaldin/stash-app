@@ -117,6 +117,115 @@ const tileBase: React.CSSProperties = {
   boxShadow: '0 10px 30px rgba(0,0,0,0.05)'
 }
 
+// ─── ARCHETYPE 1: Poster card — giant number, dramatic scale ───
+function PosterCard({ eyebrow, number, unit, descriptor, accent, bg, span }: {
+  eyebrow: string; number: string; unit?: string; descriptor: string; accent: string; bg: string; span: number
+}): JSX.Element {
+  return (
+    <div style={{ gridColumn: `span ${span}`, borderRadius: 18, padding: '28px 28px 24px', background: bg, position: 'relative', overflow: 'hidden', minHeight: 180 }}>
+      <div style={{ position: 'absolute', right: -30, bottom: -30, width: 180, height: 180, borderRadius: '50%', background: `${accent}18`, pointerEvents: 'none' }} />
+      <div style={{ fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase', color: `${accent}aa`, marginBottom: 16, fontFamily: "'DM Sans'" }}>{eyebrow}</div>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 12 }}>
+        <div style={{ fontFamily: "'Unbounded', sans-serif", fontWeight: 200, fontSize: 52, lineHeight: 1, color: accent }}>{number}</div>
+        {unit && <div style={{ fontFamily: "'Unbounded', sans-serif", fontWeight: 200, fontSize: 20, color: `${accent}88` }}>{unit}</div>}
+      </div>
+      <div style={{ fontSize: 13, color: bg === '#fff' || bg === '#F8F4F0' ? '#4a4542' : 'rgba(255,255,255,0.6)', lineHeight: 1.55, maxWidth: 260, fontFamily: "'DM Sans'" }}>{descriptor}</div>
+    </div>
+  )
+}
+
+// ─── ARCHETYPE 2: Split comparison — two sides in tension ───
+function SplitCard({ eyebrow, leftValue, leftLabel, leftSub, rightValue, rightLabel, rightSub, leftPct, accent, span }: {
+  eyebrow: string; leftValue: string; leftLabel: string; leftSub: string;
+  rightValue: string; rightLabel: string; rightSub: string;
+  leftPct: number; accent: string; span: number
+}): JSX.Element {
+  return (
+    <div style={{ gridColumn: `span ${span}`, borderRadius: 16, padding: '20px 22px', background: '#fff', border: '1px solid rgba(0,0,0,0.06)', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}>
+      <div style={{ fontSize: 10, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#9a948f', marginBottom: 16, fontFamily: "'DM Sans'" }}>{eyebrow}</div>
+      <div style={{ display: 'flex', gap: 1, borderRadius: 4, overflow: 'hidden', marginBottom: 16, height: 5 }}>
+        <div style={{ flex: leftPct, background: accent }} />
+        <div style={{ flex: 100 - leftPct, background: '#EAE5DF' }} />
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+        <div>
+          <div style={{ fontFamily: "'Unbounded', sans-serif", fontWeight: 200, fontSize: 28, color: accent, lineHeight: 1, marginBottom: 4 }}>{leftValue}</div>
+          <div style={{ fontSize: 12, fontWeight: 600, color: '#1A1A1A', marginBottom: 2, fontFamily: "'DM Sans'" }}>{leftLabel}</div>
+          <div style={{ fontSize: 11, color: '#9a948f', fontFamily: "'DM Sans'" }}>{leftSub}</div>
+        </div>
+        <div style={{ borderLeft: '1px solid #EAE5DF', paddingLeft: 16 }}>
+          <div style={{ fontFamily: "'Unbounded', sans-serif", fontWeight: 200, fontSize: 28, color: '#C8C0BA', lineHeight: 1, marginBottom: 4 }}>{rightValue}</div>
+          <div style={{ fontSize: 12, fontWeight: 600, color: '#6f6a65', marginBottom: 2, fontFamily: "'DM Sans'" }}>{rightLabel}</div>
+          <div style={{ fontSize: 11, color: '#9a948f', fontFamily: "'DM Sans'" }}>{rightSub}</div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── ARCHETYPE 3: Named winner — trophy/award feel ───
+function WinnerCard({ award, name, stat, flavor, emoji, accentColor, span }: {
+  award: string; name: string; stat: string; flavor: string; emoji: string; accentColor: string; span: number
+}): JSX.Element {
+  return (
+    <div style={{ gridColumn: `span ${span}`, borderRadius: 16, padding: '20px 22px', background: '#fff', border: '1px solid rgba(0,0,0,0.06)', boxShadow: '0 2px 12px rgba(0,0,0,0.04)', borderTop: `3px solid ${accentColor}` }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
+        <div style={{ width: 44, height: 44, borderRadius: 12, flexShrink: 0, background: `${accentColor}12`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22 }}>{emoji}</div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 9, letterSpacing: '0.18em', textTransform: 'uppercase', color: accentColor, marginBottom: 5, fontFamily: "'DM Sans'", fontWeight: 600 }}>{award}</div>
+          <div style={{ fontSize: 15, fontWeight: 600, color: '#1A1A1A', marginBottom: 3, lineHeight: 1.3, fontFamily: "'DM Sans'" }}>{name}</div>
+          <div style={{ fontSize: 12, color: '#6f6a65', marginBottom: 2, fontFamily: "'DM Sans'" }}>{stat}</div>
+          <div style={{ fontSize: 11, color: '#9a948f', fontStyle: 'italic', fontFamily: "'DM Sans'" }}>{flavor}</div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── ARCHETYPE 4: Story card — editorial, implies meaning ───
+function EditorialCard({ kicker, headline, subtext, accent, span }: {
+  kicker: string; headline: string; subtext: string; accent: string; span: number
+}): JSX.Element {
+  return (
+    <div style={{ gridColumn: `span ${span}`, borderRadius: 16, padding: '22px 24px', background: '#F8F4F0', border: '1px solid rgba(0,0,0,0.04)', borderLeft: `4px solid ${accent}` }}>
+      <div style={{ fontSize: 9, letterSpacing: '0.2em', textTransform: 'uppercase', color: accent, marginBottom: 10, fontFamily: "'DM Sans'", fontWeight: 600 }}>{kicker}</div>
+      <div style={{ fontSize: 16, fontWeight: 500, color: '#1A1A1A', lineHeight: 1.45, marginBottom: 8, fontFamily: "'DM Sans'" }}>{headline}</div>
+      <div style={{ fontSize: 12, color: '#8a8480', lineHeight: 1.55, fontFamily: "'DM Sans'" }}>{subtext}</div>
+    </div>
+  )
+}
+
+// ─── ARCHETYPE 5: Segmented band — categories as proportion ───
+function BandCard({ title, subtitle, segments, span }: {
+  title: string; subtitle: string;
+  segments: { label: string; pct: number; count: string; color: string }[];
+  span: number
+}): JSX.Element {
+  return (
+    <div style={{ gridColumn: `span ${span}`, borderRadius: 16, padding: '20px 22px', background: '#fff', border: '1px solid rgba(0,0,0,0.06)', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}>
+      <div style={{ marginBottom: 4, fontFamily: "'DM Sans'" }}>
+        <div style={{ fontSize: 10, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#9a948f' }}>{title}</div>
+        <div style={{ fontSize: 12, color: '#6f6a65', marginTop: 2 }}>{subtitle}</div>
+      </div>
+      <div style={{ display: 'flex', gap: 2, borderRadius: 6, overflow: 'hidden', margin: '14px 0', height: 10 }}>
+        {segments.map(s => (
+          <div key={s.label} style={{ flex: s.pct, background: s.color, minWidth: s.pct > 0 ? 4 : 0, transition: 'flex 0.4s' }} />
+        ))}
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${segments.length}, 1fr)`, gap: 10 }}>
+        {segments.map(s => (
+          <div key={s.label}>
+            <div style={{ width: 8, height: 8, borderRadius: 2, background: s.color, marginBottom: 5 }} />
+            <div style={{ fontFamily: "'Unbounded', sans-serif", fontWeight: 200, fontSize: 15, color: s.color, lineHeight: 1 }}>{s.pct}%</div>
+            <div style={{ fontSize: 10, color: '#9a948f', marginTop: 3, fontFamily: "'DM Sans'" }}>{s.label}</div>
+            <div style={{ fontSize: 10, color: '#b8b2ad', fontFamily: "'DM Sans'" }}>{s.count}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange = 'all', scopedPerson, onClearScope, insightSurface = 'relationship', onSurfaceChange }: Props): JSX.Element {
   const currentMonth = MONTH_NAMES[new Date().getMonth()]
   const heroText = heroTitle(dateRange)
@@ -432,78 +541,101 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
   // ── Personal Insights Surface ──
   const personalSurface = (
     <div>
-      <div style={{ background: '#26211d', borderRadius: 18, padding: 24, marginBottom: 24, position: 'relative', overflow: 'hidden' }}>
-        <div style={{ position: 'absolute', right: -60, bottom: -80, width: 240, height: 240, background: 'radial-gradient(circle,rgba(232,96,74,0.2) 0%,transparent 65%)', pointerEvents: 'none' }} />
-        <div style={{ fontSize: 11, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'rgba(232,96,74,0.7)', marginBottom: 10 }}>Personal insights</div>
-        <div style={{ fontFamily: "'Unbounded', sans-serif", fontWeight: 200, fontSize: 22, color: 'white', marginBottom: 6 }}>What your habits say about you.</div>
-        <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.65)', lineHeight: 1.6 }}>Patterns in how, when, and who you communicate with — without reading a single message.</div>
+      <div style={{ background: '#26211d', borderRadius: 18, padding: '28px 32px', marginBottom: 20, position: 'relative', overflow: 'hidden' }}>
+        <div style={{ position: 'absolute', right: -80, top: -80, width: 280, height: 280, borderRadius: '50%', background: 'radial-gradient(circle, rgba(232,96,74,0.15) 0%, transparent 70%)', pointerEvents: 'none' }} />
+        <div style={{ fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase', color: 'rgba(232,96,74,0.65)', marginBottom: 12, fontFamily: "'DM Sans'" }}>Personal insights</div>
+        <div style={{ fontFamily: "'Unbounded', sans-serif", fontWeight: 200, fontSize: 24, color: '#fff', marginBottom: 8, lineHeight: 1.3 }}>What your habits say about you.</div>
+        <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', lineHeight: 1.65, maxWidth: 420, fontFamily: "'DM Sans'" }}>Patterns in how, when, and who you communicate with — without reading a single message.</div>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 24 }}>
-        <div style={{ ...tileBase, gridColumn: 'span 4' }}>
-          <TileLabel text="Most messaged" />
-          {byMessages[0] ? <Metric value={resolveName(byMessages[0].rawName, chatNameMap)} sub={`${byMessages[0].messageCount.toLocaleString()} messages exchanged`} /> : <div style={{ color: '#6f6a65' }}>No data</div>}
-        </div>
-        <div style={{ ...tileBase, gridColumn: 'span 4' }}>
-          <TileLabel text="Conversation starter" />
-          <Metric value={`${initiationPct}%`} sub={initiationPct > 60 ? 'You start most conversations.' : initiationPct < 40 ? 'Others reach out to you more.' : 'Balanced — you share the load.'} />
-          <BarTrack pct={initiationPct} />
-        </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 14 }}>
+        {/* Row 1: Two asymmetric poster cards */}
+        {(() => {
+          const groupMessages = groups.reduce((s, c) => s + c.messageCount, 0)
+          const totalMsgs = chats.reduce((s, c) => s + c.messageCount, 0)
+          const groupPct = totalMsgs > 0 ? Math.round((groupMessages / totalMsgs) * 100) : 0
+          const isGroupPerson = groupPct > 50
+          return (
+            <PosterCard
+              eyebrow="Your messaging identity"
+              number={isGroupPerson ? `${groupPct}%` : `${100 - groupPct}%`}
+              unit={isGroupPerson ? 'groups' : 'one-on-one'}
+              descriptor={isGroupPerson
+                ? 'You live in the group chat. The noise is where you\'re comfortable.'
+                : 'You prefer depth over breadth. One-on-one conversations dominate your messaging life.'}
+              accent="#E8604A" bg="#26211d" span={7}
+            />
+          )
+        })()}
         {(() => {
           const top3Messages = byMessages.slice(0, 3).reduce((s, c) => s + c.messageCount, 0)
           const totalMessages = chats.reduce((s, c) => s + c.messageCount, 0)
           const concentration = totalMessages > 0 ? Math.round((top3Messages / totalMessages) * 100) : 0
           return (
-            <div style={{ ...tileBase, gridColumn: 'span 4' }}>
-              <TileLabel text="Concentration" />
-              <Metric value={`${concentration}%`} sub="of your messages go to your top 3 contacts" />
-              <BarTrack pct={concentration} />
-            </div>
+            <PosterCard
+              eyebrow="Your inner circle"
+              number={`${concentration}%`}
+              descriptor={concentration > 60
+                ? 'of your messages go to just 3 people. You run deep, not wide.'
+                : concentration > 40
+                ? 'to your top 3 contacts. Fairly concentrated.'
+                : 'to your top 3. You spread it around more than most.'}
+              accent="#E8604A" bg="#F8F4F0" span={5}
+            />
           )
         })()}
-        <div style={{ ...tileBase, gridColumn: 'span 6' }}>
-          <TileLabel text="Your comedy record" />
-          {byLaughsGenerated[0] && byLaughsGenerated[0].laughsGenerated > 0 ? (
-            <Metric value={resolveName(byLaughsGenerated[0].rawName, chatNameMap)} sub={`You make them laugh most — ${byLaughsGenerated[0].laughsGenerated.toLocaleString()} times`} />
-          ) : <div style={{ color: '#9a948f', fontSize: 13 }}>No laugh data yet</div>}
-        </div>
+
+        {/* Row 2: Split comparison + winner cards */}
+        <SplitCard
+          eyebrow="Conversation dynamics"
+          leftValue={`${initiationPct}%`} leftLabel="You initiate"
+          leftSub={initiationPct > 60 ? 'You keep things alive.' : initiationPct < 40 ? 'They reach out more.' : 'You share the load.'}
+          rightValue={`${100 - initiationPct}%`} rightLabel="They initiate"
+          rightSub={initiationPct > 60 ? 'They wait for you.' : initiationPct < 40 ? 'They drive this.' : 'Pretty even split.'}
+          leftPct={initiationPct} accent="#E8604A" span={5}
+        />
+        {byLaughsGenerated[0] && byLaughsGenerated[0].laughsGenerated > 0 ? (
+          <WinnerCard award="Best audience" name={resolveName(byLaughsGenerated[0].rawName, chatNameMap)}
+            stat={`${byLaughsGenerated[0].laughsGenerated.toLocaleString()} laughs`}
+            flavor="Laughs at everything you say. Keep them close."
+            emoji="😂" accentColor="#E8604A" span={4} />
+        ) : <div style={{ gridColumn: 'span 4' }} />}
+        {byLaughsReceived[0] && byLaughsReceived[0].laughsReceived > 0 && (
+          <WinnerCard award="Makes you laugh most" name={resolveName(byLaughsReceived[0].rawName, chatNameMap)}
+            stat={`${byLaughsReceived[0].laughsReceived.toLocaleString()} times`}
+            flavor="They know exactly how to get you."
+            emoji="🤣" accentColor="#2EC4A0" span={3} />
+        )}
+
+        {/* Row 3: Editorial story cards + winner */}
         {(() => {
-          const groupMessages = groups.reduce((s, c) => s + c.messageCount, 0)
-          const totalMsgs = chats.reduce((s, c) => s + c.messageCount, 0)
-          const groupPct = totalMsgs > 0 ? Math.round((groupMessages / totalMsgs) * 100) : 0
-          return (
-            <div style={{ ...tileBase, gridColumn: 'span 6' }}>
-              <TileLabel text="Group vs 1:1" />
-              <Metric value={`${groupPct}%`} sub={groupPct > 50 ? "You're mostly a group chat person." : 'You prefer 1:1 conversations.'} />
-              <BarTrack pct={groupPct} />
-            </div>
-          )
+          const gone = [...individuals].filter(c => c.messageCount > 50)
+            .map(c => ({ ...c, days: Math.floor((Date.now() - new Date(c.lastMessageDate).getTime()) / 86400000) }))
+            .filter(c => c.days > 30).sort((a, b) => b.days - a.days)[0]
+          return gone ? (
+            <EditorialCard kicker="Gone quiet"
+              headline={`${resolveName(gone.rawName, chatNameMap)}. ${gone.days} days of silence.`}
+              subtext="You used to talk a lot. Something shifted — or life just got busy."
+              accent="#E8604A" span={6} />
+          ) : null
         })()}
         {(() => {
           const topNightOwl = [...individuals].sort((a, b) => b.lateNightRatio - a.lateNightRatio)[0]
-          return topNightOwl && topNightOwl.lateNightRatio > 0 ? (
-            <div style={{ ...tileBase, gridColumn: 'span 4' }}>
-              <TileLabel text="Night owl score" />
-              <Metric value={`${topNightOwl.lateNightRatio}%`} sub={`of messages with ${resolveName(topNightOwl.rawName, chatNameMap)} happen after 11pm`} />
-            </div>
-          ) : <ComingSoonTile label="Night owl score" span={4} />
+          return topNightOwl && topNightOwl.lateNightRatio > 10 ? (
+            <EditorialCard kicker="Night owl connection"
+              headline={`${topNightOwl.lateNightRatio}% of your messages with ${resolveName(topNightOwl.rawName, chatNameMap)} happen after 11pm.`}
+              subtext="Some relationships only really come alive after midnight."
+              accent="#7F77DD" span={6} />
+          ) : null
         })()}
         {(() => {
           const fastest = [...individuals].filter(c => c.avgReplyMinutes > 0 && c.avgReplyMinutes < 60).sort((a, b) => a.avgReplyMinutes - b.avgReplyMinutes)[0]
           return fastest ? (
-            <div style={{ ...tileBase, gridColumn: 'span 4' }}>
-              <TileLabel text="You reply fastest to" />
-              <Metric value={resolveName(fastest.rawName, chatNameMap)} sub={`~${fastest.avgReplyMinutes} min average reply time`} />
-            </div>
-          ) : <ComingSoonTile label="Reply speed" span={4} />
-        })()}
-        {(() => {
-          const gone = [...individuals].filter(c => c.messageCount > 50).map(c => ({ ...c, days: Math.floor((Date.now() - new Date(c.lastMessageDate).getTime()) / 86400000) })).filter(c => c.days > 30).sort((a, b) => b.days - a.days)[0]
-          return gone ? (
-            <div style={{ ...tileBase, gridColumn: 'span 4' }}>
-              <TileLabel text="Gone quiet" />
-              <Metric value={resolveName(gone.rawName, chatNameMap)} sub={`${gone.days} days since your last message`} />
-            </div>
-          ) : <ComingSoonTile label="Gone quiet" span={4} />
+            <WinnerCard award="You reply fastest to" name={resolveName(fastest.rawName, chatNameMap)}
+              stat={`~${fastest.avgReplyMinutes} min average reply time`}
+              flavor={fastest.avgReplyMinutes < 3 ? 'Basically always there for them.' : 'Quicker than you are with most.'}
+              emoji="⚡" accentColor="#2EC4A0" span={4} />
+          ) : null
         })()}
       </div>
     </div>
@@ -512,30 +644,59 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
   // ── Usage Insights Surface ──
   const usageSurface = (
     <div>
-      <div style={{ background: '#1E1A2E', borderRadius: 18, padding: 24, marginBottom: 24, position: 'relative', overflow: 'hidden' }}>
-        <div style={{ position: 'absolute', right: -60, bottom: -80, width: 240, height: 240, background: 'radial-gradient(circle,rgba(127,119,221,0.2) 0%,transparent 65%)', pointerEvents: 'none' }} />
-        <div style={{ fontSize: 11, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'rgba(127,119,221,0.7)', marginBottom: 10 }}>Usage insights</div>
-        <div style={{ fontFamily: "'Unbounded', sans-serif", fontWeight: 200, fontSize: 22, color: 'white', marginBottom: 6 }}>Your messaging, by the numbers.</div>
-        <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.65)', lineHeight: 1.6 }}>The full picture of your iMessage activity — volume, attachments, and patterns across time.</div>
+      <div style={{ background: '#1E1A2E', borderRadius: 18, padding: '28px 32px', marginBottom: 20, position: 'relative', overflow: 'hidden' }}>
+        <div style={{ position: 'absolute', right: -80, bottom: -80, width: 280, height: 280, borderRadius: '50%', background: 'radial-gradient(circle, rgba(127,119,221,0.18) 0%, transparent 70%)', pointerEvents: 'none' }} />
+        <div style={{ fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase', color: 'rgba(127,119,221,0.65)', marginBottom: 12, fontFamily: "'DM Sans'" }}>Usage insights</div>
+        <div style={{ fontFamily: "'Unbounded', sans-serif", fontWeight: 200, fontSize: 24, color: '#fff', marginBottom: 8, lineHeight: 1.3 }}>Your messaging, by the numbers.</div>
+        <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', lineHeight: 1.65, maxWidth: 420, fontFamily: "'DM Sans'" }}>The full picture of your iMessage activity — volume, attachments, and patterns across time.</div>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 16 }}>
-        <div style={{ ...tileBase, gridColumn: 'span 4' }}><TileLabel text="Total indexed" /><Metric value={stats.total.toLocaleString()} sub="attachments in your archive" /></div>
-        <div style={{ ...tileBase, gridColumn: 'span 4' }}><TileLabel text="Active conversations" /><Metric value={chats.length.toLocaleString()} sub="conversations with indexed content" /></div>
-        <div style={{ ...tileBase, gridColumn: 'span 4' }}><TileLabel text="Group chats" /><Metric value={groups.length.toLocaleString()} sub={`of ${chats.length} total conversations`} /></div>
-        <div style={{ ...tileBase, gridColumn: 'span 3' }}><TileLabel text="Images" /><Metric value={stats.images.toLocaleString()} sub="photos and screenshots" /></div>
-        <div style={{ ...tileBase, gridColumn: 'span 3' }}><TileLabel text="Videos" /><Metric value={stats.videos.toLocaleString()} sub="video files" /></div>
-        <div style={{ ...tileBase, gridColumn: 'span 3' }}><TileLabel text="Documents" /><Metric value={stats.documents.toLocaleString()} sub="files and docs" /></div>
-        <div style={{ ...tileBase, gridColumn: 'span 3' }}><TileLabel text="Audio" /><Metric value={stats.audio.toLocaleString()} sub="voice notes and music" /></div>
-        <div style={{ ...tileBase, gridColumn: 'span 6' }}>
-          <TileLabel text="Most files shared" />
-          {byAttachments[0] ? <Metric value={resolveName(byAttachments[0].rawName, chatNameMap)} sub={`${byAttachments[0].attachmentCount.toLocaleString()} attachments exchanged`} /> : <div style={{ color: '#6f6a65' }}>No data</div>}
-        </div>
-        <div style={{ ...tileBase, gridColumn: 'span 6' }}>
-          <TileLabel text="Most active group" />
-          {topGroup ? <Metric value={resolveName(topGroup.rawName, chatNameMap)} sub={`${topGroup.messageCount.toLocaleString()} messages`} /> : <div style={{ color: '#9a948f', fontSize: 13 }}>No group chats found</div>}
-        </div>
-        <ComingSoonTile label="Activity heatmap · days × hours" span={12} />
-        <ComingSoonTile label="Year-by-year timeline" span={12} />
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 14 }}>
+        <PosterCard eyebrow="Your archive" number={stats.total.toLocaleString()} unit="items"
+          descriptor={`Across ${chats.length.toLocaleString()} conversations — ${groups.length} group chats, ${individuals.length} one-on-one.`}
+          accent="#7F77DD" bg="#1E1A2E" span={12} />
+
+        {(() => {
+          const total = stats.total || 1
+          const imgPct = Math.round((stats.images / total) * 100)
+          const vidPct = Math.round((stats.videos / total) * 100)
+          const docPct = Math.round((stats.documents / total) * 100)
+          const audPct = Math.round((stats.audio / total) * 100)
+          return (
+            <BandCard title="What you share" subtitle="Breakdown of your indexed archive by type"
+              segments={[
+                { label: 'Images', pct: imgPct, count: stats.images.toLocaleString(), color: '#E8604A' },
+                { label: 'Videos', pct: vidPct, count: stats.videos.toLocaleString(), color: '#2EC4A0' },
+                { label: 'Docs', pct: docPct, count: stats.documents.toLocaleString(), color: '#7F77DD' },
+                { label: 'Audio', pct: audPct, count: stats.audio.toLocaleString(), color: '#BA7517' },
+              ]} span={12} />
+          )
+        })()}
+
+        {byAttachments[0] && (
+          <WinnerCard award="Most files shared" name={resolveName(byAttachments[0].rawName, chatNameMap)}
+            stat={`${byAttachments[0].attachmentCount.toLocaleString()} attachments exchanged`}
+            flavor="Your most media-heavy relationship." emoji="📎" accentColor="#7F77DD" span={4} />
+        )}
+        {topGroup && (
+          <WinnerCard award="Most active group" name={resolveName(topGroup.rawName, chatNameMap)}
+            stat={`${topGroup.messageCount.toLocaleString()} messages`}
+            flavor="Your busiest room. The chaos lives here." emoji="🔥" accentColor="#E8604A" span={4} />
+        )}
+        {(() => {
+          const groupMessages = groups.reduce((s, c) => s + c.messageCount, 0)
+          const totalMsgs = chats.reduce((s, c) => s + c.messageCount, 0)
+          const groupPct = totalMsgs > 0 ? Math.round((groupMessages / totalMsgs) * 100) : 0
+          return (
+            <SplitCard eyebrow="Where your messages go"
+              leftValue={`${groupPct}%`} leftLabel="Group chats" leftSub={`${groups.length} groups`}
+              rightValue={`${100 - groupPct}%`} rightLabel="One-on-one" rightSub={`${individuals.length} contacts`}
+              leftPct={groupPct} accent="#7F77DD" span={4} />
+          )
+        })()}
+
+        <ComingSoonTile label="Activity heatmap — days × hours" span={6} />
+        <ComingSoonTile label="Year-by-year timeline" span={6} />
       </div>
     </div>
   )
