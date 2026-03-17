@@ -62,6 +62,11 @@ function getRangeLabel(range: string): string {
 
 export function Sidebar({ stats, filters, onFilterChange, onManageConversations, onHideChat, isIndexing, indexingProgress, onGoHome, selectedRange, onDateRangeChange, scopedPerson, onScopePerson, onNavigate, availableYears }: Props): JSX.Element {
   const [chatFilter, setChatFilter] = useState('')
+  const [aiMode, setAiMode] = useState(false)
+  const [aiQuery, setAiQuery] = useState('')
+  const [aiResults, setAiResults] = useState<string[] | null>(null)
+  const [aiLoading, setAiLoading] = useState(false)
+  const [aiError, setAiError] = useState<string | null>(null)
   const [chatSort, setChatSort] = useState<string>('most-messages')
   const [showAllChats, setShowAllChats] = useState(false)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; rawName: string } | null>(null)
@@ -71,6 +76,18 @@ export function Sidebar({ stats, filters, onFilterChange, onManageConversations,
     if (/^\d{4}-\d{2}$/.test(r)) return parseInt(r.split('-')[0])
     return null
   })
+  const handleAiSearch = async (): Promise<void> => {
+    if (!aiQuery.trim() || aiLoading) return
+    setAiLoading(true); setAiError(null)
+    const conversations = (stats.chatNames as ChatNameEntry[]).map(c => ({ display: resolveName(c.rawName, stats.chatNameMap), identifier: c.rawName }))
+    try {
+      const res = await window.api.searchConversationsAi(aiQuery.trim(), conversations)
+      if (res.error) setAiError(res.error); else setAiResults(res.results || [])
+    } catch { setAiError('ERROR') }
+    finally { setAiLoading(false) }
+  }
+  const exitAiMode = (): void => { setAiMode(false); setAiQuery(''); setAiResults(null); setAiError(null) }
+
   const sidebarCurrentYear = new Date().getFullYear()
   const sidebarCurrentMonth = new Date().getMonth()
 
@@ -94,7 +111,9 @@ export function Sidebar({ stats, filters, onFilterChange, onManageConversations,
     })
   }, [stats.chatNames, stats.chatNameMap, chatFilter, chatSort])
 
-  const displayChats = showAllChats || chatFilter ? sortedChats : sortedChats.slice(0, 5)
+  const displayChats = aiResults !== null
+    ? aiResults.map(id => sortedChats.find(c => c.rawName === id)).filter(Boolean) as ChatNameEntry[]
+    : (showAllChats || chatFilter ? sortedChats : sortedChats.slice(0, 5))
 
   const sortLabels: Record<string, string> = { 'most-messages': 'Most messages', 'most-attachments': 'Most attachments', 'most-recent': 'Most recent', 'most-laughs': 'Most laughs' }
   const sortKeys = Object.keys(sortLabels)
@@ -194,12 +213,23 @@ export function Sidebar({ stats, filters, onFilterChange, onManageConversations,
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '0 14px' }}>
-        {/* Search */}
+        {/* Search — normal + AI mode */}
         <div style={{ position: 'relative', marginBottom: 14 }}>
-          <input type="text" value={chatFilter} onChange={(e) => setChatFilter(e.target.value)}
-            placeholder="Find a conversation"
-            style={{ width: '100%', border: '1px solid rgba(255,255,255,0.12)', background: 'rgba(255,255,255,0.03)', borderRadius: 14, padding: '12px 14px', fontSize: 14, color: 'white', outline: 'none', fontFamily: "'DM Sans'" }} />
+          <div style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', opacity: 0.4 }}>
+            {aiMode ? <Sparkles style={{ width: 13, height: 13, color: '#2EC4A0' }} /> : <Search style={{ width: 13, height: 13, color: '#fff' }} />}
+          </div>
+          <input type="text" value={aiMode ? aiQuery : chatFilter}
+            onChange={(e) => aiMode ? setAiQuery(e.target.value) : setChatFilter(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && aiMode && aiQuery.trim()) handleAiSearch(); if (e.key === 'Escape') { if (aiMode) exitAiMode(); else setChatFilter('') } }}
+            placeholder={aiMode ? 'describe a conversation...' : 'find a conversation'}
+            style={{ width: '100%', border: aiMode ? '1px solid rgba(46,196,160,0.4)' : '1px solid rgba(255,255,255,0.12)', background: aiMode ? 'rgba(46,196,160,0.06)' : 'rgba(255,255,255,0.03)', borderRadius: 14, padding: '12px 36px 12px 32px', fontSize: 13, color: 'white', outline: 'none', fontFamily: "'DM Sans'", transition: 'border-color 0.2s, background 0.2s' }} />
+          <button onClick={() => { if (aiMode) { if (aiLoading) return; exitAiMode() } else { setAiMode(true); setChatFilter('') } }}
+            style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: aiLoading ? 'default' : 'pointer', padding: 2 }}>
+            {aiLoading ? <Loader2 style={{ width: 13, height: 13, color: '#2EC4A0', animation: 'spin 0.7s linear infinite' }} /> : <Sparkles style={{ width: 13, height: 13, color: aiMode ? '#2EC4A0' : 'rgba(255,255,255,0.25)' }} />}
+          </button>
         </div>
+        {aiMode && aiError === 'NO_KEY' && <div style={{ fontSize: 10, color: '#E8604A', marginBottom: 10, fontFamily: "'DM Sans'", lineHeight: 1.4 }}>No API key — add anthropic-key.txt to app data folder</div>}
+        <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
 
         {/* Sort pill */}
         <button onClick={cycleSort} style={{ borderRadius: 999, border: '1px solid rgba(255,255,255,0.12)', color: '#b9b9b9', padding: '8px 16px', fontSize: 12, background: 'transparent', cursor: 'pointer', marginBottom: 20, fontFamily: "'DM Sans'" }}>
@@ -296,6 +326,11 @@ export function Sidebar({ stats, filters, onFilterChange, onManageConversations,
           Top chats
         </div>
 
+        {aiResults !== null && (
+          <button onClick={exitAiMode} style={{ fontSize: 10, color: '#2EC4A0', background: 'none', border: 'none', cursor: 'pointer', padding: '0 0 8px', display: 'block', fontFamily: "'DM Sans'" }}>
+            ✕ Clear AI results ({aiResults.length} found)
+          </button>
+        )}
         {displayChats.map((chat) => {
           const dn = resolveName(chat.rawName, stats.chatNameMap)
           const active = filters.chatName === chat.rawName
@@ -304,7 +339,9 @@ export function Sidebar({ stats, filters, onFilterChange, onManageConversations,
               onClick={() => onScopePerson ? onScopePerson(chat.rawName) : onFilterChange({ ...filters, chatName: chat.rawName })}
               onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, rawName: chat.rawName }) }}
               style={{
-                width: '100%', textAlign: 'left', padding: 12, borderRadius: 14, marginBottom: 8, cursor: 'pointer', border: active ? '1px solid rgba(255,255,255,0.08)' : '1px solid transparent',
+                width: '100%', textAlign: 'left', padding: 12, borderRadius: 14, marginBottom: 8, cursor: 'pointer',
+                border: active ? '1px solid rgba(255,255,255,0.08)' : '1px solid transparent',
+                borderLeft: aiResults?.includes(chat.rawName) ? '2px solid #2EC4A0' : undefined,
                 background: active ? 'rgba(255,255,255,0.04)' : 'transparent', display: 'block'
               }}>
               <div style={{ fontSize: 14, color: '#d8d8d8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{dn}</div>

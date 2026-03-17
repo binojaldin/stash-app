@@ -345,6 +345,43 @@ export function getTodayInHistory(): {
   } catch { return [] }
 }
 
+export function getUsageStats(dateFrom?: string, dateTo?: string): {
+  totalMessages: number; sentMessages: number; receivedMessages: number
+  messagesPerYear: { year: number; count: number }[]
+  busiestDay: { date: string; count: number } | null
+  activeConversations: number
+} {
+  const result = { totalMessages: 0, sentMessages: 0, receivedMessages: 0, messagesPerYear: [] as { year: number; count: number }[], busiestDay: null as { date: string; count: number } | null, activeConversations: 0 }
+  try {
+    const { homedir } = require('os')
+    const { join } = require('path')
+    const { existsSync } = require('fs')
+    const chatDbPath = join(homedir(), 'Library/Messages/chat.db')
+    if (!existsSync(chatDbPath)) return result
+    const chatDb = new Database(chatDbPath, { readonly: true })
+    const APPLE_EPOCH = 978307200, NS = 1000000000
+    const dateParts: string[] = []
+    if (dateFrom) dateParts.push(`m.date >= ${(new Date(dateFrom).getTime() / 1000 - APPLE_EPOCH) * NS}`)
+    if (dateTo) dateParts.push(`m.date <= ${(new Date(dateTo).getTime() / 1000 - APPLE_EPOCH) * NS}`)
+    const dateCond = dateParts.length ? ' AND ' + dateParts.join(' AND ') : ''
+    try {
+      const totals = chatDb.prepare(`SELECT COUNT(*) as total, SUM(CASE WHEN is_from_me=1 THEN 1 ELSE 0 END) as sent, SUM(CASE WHEN is_from_me=0 THEN 1 ELSE 0 END) as received FROM message m WHERE (text IS NOT NULL OR cache_has_attachments=1) AND item_type=0${dateCond}`).get() as { total: number; sent: number; received: number }
+      result.totalMessages = totals?.total || 0; result.sentMessages = totals?.sent || 0; result.receivedMessages = totals?.received || 0
+
+      const byYear = chatDb.prepare(`SELECT CAST(strftime('%Y', datetime(date/${NS}+${APPLE_EPOCH}, 'unixepoch', 'localtime')) AS INTEGER) as year, COUNT(*) as count FROM message m WHERE (text IS NOT NULL OR cache_has_attachments=1) AND item_type=0 AND is_from_me=1${dateCond} GROUP BY year ORDER BY year ASC`).all() as { year: number; count: number }[]
+      result.messagesPerYear = byYear.filter(r => r.year > 2005 && r.year <= new Date().getFullYear())
+
+      const busiest = chatDb.prepare(`SELECT date(datetime(date/${NS}+${APPLE_EPOCH}, 'unixepoch', 'localtime')) as d, COUNT(*) as count FROM message m WHERE (text IS NOT NULL OR cache_has_attachments=1) AND item_type=0${dateCond} GROUP BY d ORDER BY count DESC LIMIT 1`).get() as { d: string; count: number } | undefined
+      if (busiest) result.busiestDay = { date: busiest.d, count: busiest.count }
+
+      const thirtyDaysAgo = (Date.now() / 1000 - APPLE_EPOCH - 30 * 86400) * NS
+      const active = chatDb.prepare(`SELECT COUNT(DISTINCT cmj.chat_id) as c FROM message m JOIN chat_message_join cmj ON m.ROWID=cmj.message_id WHERE m.date>=${thirtyDaysAgo} AND (m.text IS NOT NULL OR m.cache_has_attachments=1)`).get() as { c: number }
+      result.activeConversations = active?.c || 0
+    } finally { chatDb.close() }
+  } catch { /* zeros */ }
+  return result
+}
+
 export function getMessagingNetwork(): {
   nodes: { rawName: string; messageCount: number }[]
   edges: { a: string; b: string; sharedGroups: number }[]

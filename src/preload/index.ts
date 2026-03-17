@@ -14,6 +14,12 @@ const api = {
     chatNameMap: Record<string, string>
     globalPeakHour: number | null; globalPeakWeekday: number | null
   }> => ipcRenderer.invoke('get-stats', chatNameFilter, dateFrom, dateTo),
+  getUsageStats: (dateFrom?: string, dateTo?: string): Promise<{
+    totalMessages: number; sentMessages: number; receivedMessages: number
+    messagesPerYear: { year: number; count: number }[]
+    busiestDay: { date: string; count: number } | null
+    activeConversations: number
+  }> => ipcRenderer.invoke('get-usage-stats', dateFrom, dateTo),
   getMessagingNetwork: (): Promise<{
     nodes: { rawName: string; messageCount: number }[]
     edges: { a: string; b: string; sharedGroups: number }[]

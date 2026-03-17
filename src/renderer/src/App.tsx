@@ -5,7 +5,7 @@ import { ChatPriorityScreen } from './components/ChatPriorityScreen'
 import { IndexingOverlay } from './components/IndexingOverlay'
 import { IconRail } from './components/IconRail'
 import { Sidebar } from './components/Sidebar'
-import { Dashboard } from './components/Dashboard'
+import { Dashboard, DrillThroughPanel } from './components/Dashboard'
 import { AttachmentsView } from './components/AttachmentsView'
 import { WrappedView } from './components/WrappedView'
 import type { ChatSummary, Filters, IndexingProgress, Stats } from './types'
@@ -53,6 +53,7 @@ export default function App(): JSX.Element {
   const [filters, setFilters] = useState<Filters>({ type: 'all' })
   const [insightSurface, setInsightSurface] = useState<'relationship' | 'personal' | 'usage' | 'conversational'>('relationship')
   const [isStatsLoading, setIsStatsLoading] = useState(false)
+  const [drillThrough, setDrillThrough] = useState<{ title: string; subtitle: string; freeStats: { label: string; value: string }[] } | null>(null)
   // Contact photos removed — will be re-added with proper architecture
 
   const availableYears = useMemo(() => {
@@ -245,11 +246,16 @@ export default function App(): JSX.Element {
             onSelectConversation={(rawName) => setMainView({ kind: 'person-attachments', person: rawName })}
             dateRange={dateRange} scopedPerson={scopedPerson} onClearScope={goHome}
             insightSurface={insightSurface} onSurfaceChange={setInsightSurface}
-            isStatsLoading={isStatsLoading} />
+            isStatsLoading={isStatsLoading}
+            onDrillThrough={(title, subtitle, freeStats) => setDrillThrough({ title, subtitle, freeStats })} />
         ) : (
           <AttachmentsView mainView={mainView} dateRange={dateRange} stats={stats} chatNameMap={stats.chatNameMap} onNavigate={setMainView} />
         )}
       </div>
+
+      {drillThrough && (
+        <DrillThroughPanel title={drillThrough.title} subtitle={drillThrough.subtitle} freeStats={drillThrough.freeStats} onClose={() => setDrillThrough(null)} />
+      )}
     </div>
   )
 }

@@ -44,6 +44,7 @@ interface Props {
   insightSurface?: InsightSurface
   onSurfaceChange?: (s: InsightSurface) => void
   isStatsLoading?: boolean
+  onDrillThrough?: (title: string, subtitle: string, freeStats: { label: string; value: string }[]) => void
 }
 
 function heroTitle(range: string): string {
@@ -468,7 +469,60 @@ function ConstellationCard({ network, chatNameMap, onSelectConversation }: {
   )
 }
 
-export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange = 'all', scopedPerson, onClearScope, insightSurface = 'relationship', onSurfaceChange, isStatsLoading }: Props): JSX.Element {
+export function DrillThroughPanel({ title, subtitle, freeStats, onClose }: {
+  title: string; subtitle: string; freeStats: { label: string; value: string }[]; onClose: () => void
+}): JSX.Element {
+  const [tab, setTab] = useState<'free' | 'pro'>('free')
+  return (
+    <div style={{ width: 340, background: '#FAFAF8', borderLeft: '1px solid #EAE5DF', display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
+      <div style={{ padding: '20px 20px 14px', borderBottom: '1px solid #EAE5DF', flexShrink: 0 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <div>
+            <div style={{ fontSize: 9, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#9a948f', marginBottom: 5, fontFamily: "'DM Sans'" }}>Evidence</div>
+            <div style={{ fontSize: 15, fontWeight: 500, color: '#1A1A1A', lineHeight: 1.3, fontFamily: "'DM Sans'" }}>{title}</div>
+            <div style={{ fontSize: 11, color: '#9a948f', marginTop: 3, fontFamily: "'DM Sans'" }}>{subtitle}</div>
+          </div>
+          <button onClick={onClose} style={{ width: 26, height: 26, borderRadius: 7, background: '#EAE5DF', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginLeft: 12 }}>
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="#6f6a65" strokeWidth="1.8" strokeLinecap="round"><path d="M1 1l8 8M9 1L1 9"/></svg>
+          </button>
+        </div>
+        <div style={{ display: 'flex', gap: 3, background: '#EAE5DF', borderRadius: 8, padding: 3, marginTop: 14 }}>
+          {(['free', 'pro'] as const).map(t => (
+            <button key={t} onClick={() => setTab(t)} style={{ flex: 1, padding: '5px 0', borderRadius: 6, fontSize: 11, border: 'none', cursor: 'pointer', fontFamily: "'DM Sans'", background: tab === t ? '#fff' : 'transparent', color: tab === t ? '#1A1A1A' : '#9a948f', fontWeight: tab === t ? 500 : 400 }}>{t === 'free' ? 'Overview' : 'Pro'}</button>
+          ))}
+        </div>
+      </div>
+      <div style={{ flex: 1, overflowY: 'auto', padding: 20 }}>
+        {tab === 'free' ? (
+          <>
+            {freeStats.map(({ label, value }) => (
+              <div key={label} style={{ padding: '12px 14px', borderRadius: 10, background: '#F5F0EA', marginBottom: 8 }}>
+                <div style={{ fontSize: 10, color: '#9a948f', marginBottom: 4, letterSpacing: '0.08em', textTransform: 'uppercase', fontFamily: "'DM Sans'" }}>{label}</div>
+                <div style={{ fontSize: 16, fontWeight: 500, color: '#1A1A1A', fontFamily: "'DM Sans'" }}>{value}</div>
+              </div>
+            ))}
+            <div style={{ marginTop: 14, padding: '12px 14px', borderRadius: 10, background: '#F0EBE6', border: '1px dashed rgba(232,96,74,0.3)' }}>
+              <div style={{ fontSize: 11, color: '#E8604A', fontWeight: 500, marginBottom: 3, fontFamily: "'DM Sans'" }}>Unlock the moments</div>
+              <div style={{ fontSize: 11, color: '#9a948f', lineHeight: 1.55, fontFamily: "'DM Sans'" }}>See the actual messages behind this insight. Stash Pro.</div>
+            </div>
+          </>
+        ) : (
+          <div style={{ textAlign: 'center', padding: '36px 16px' }}>
+            <div style={{ fontSize: 28, marginBottom: 14 }}>🔒</div>
+            <div style={{ fontSize: 14, fontWeight: 500, color: '#1A1A1A', marginBottom: 6, fontFamily: "'DM Sans'" }}>Stash Pro</div>
+            <div style={{ fontSize: 12, color: '#6f6a65', lineHeight: 1.6, marginBottom: 20, fontFamily: "'DM Sans'" }}>The full timeline and actual messages behind every insight.</div>
+            <div style={{ background: '#26211d', borderRadius: 10, padding: '12px 20px', display: 'inline-block' }}>
+              <div style={{ fontSize: 12, color: '#E8604A', fontWeight: 500, fontFamily: "'DM Sans'" }}>$29 one-time</div>
+              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', marginTop: 2, fontFamily: "'DM Sans'" }}>Coming soon</div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange = 'all', scopedPerson, onClearScope, insightSurface = 'relationship', onSurfaceChange, isStatsLoading, onDrillThrough }: Props): JSX.Element {
   const currentMonth = MONTH_NAMES[new Date().getMonth()]
   const heroText = heroTitle(dateRange)
   const chats = stats.chatNames as ChatNameEntry[]
@@ -486,6 +540,19 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
 
   const [todayMemories, setTodayMemories] = useState<MemoryItem[]>([])
   const [networkData, setNetworkData] = useState<NetworkData | null>(null)
+
+  type UsageData = { totalMessages: number; sentMessages: number; receivedMessages: number; messagesPerYear: { year: number; count: number }[]; busiestDay: { date: string; count: number } | null; activeConversations: number }
+  const [usageData, setUsageData] = useState<UsageData | null>(null)
+  useEffect(() => {
+    const bounds: { from?: string; to?: string } = {}
+    if (dateRange === '7days') { const d = new Date(); d.setDate(d.getDate()-7); bounds.from = d.toISOString().split('T')[0] }
+    else if (dateRange === '30days') { const d = new Date(); d.setDate(d.getDate()-30); bounds.from = d.toISOString().split('T')[0] }
+    else if (dateRange === 'month') { bounds.from = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0] }
+    else if (dateRange === 'year') { bounds.from = `${new Date().getFullYear()}-01-01` }
+    else if (/^\d{4}$/.test(dateRange || '')) { bounds.from = `${dateRange}-01-01`; bounds.to = `${dateRange}-12-31` }
+    else if (/^\d{4}-\d{2}$/.test(dateRange || '')) { const [y,m] = (dateRange||'').split('-'); bounds.from = `${y}-${m}-01`; bounds.to = new Date(+y, +m, 0).toISOString().split('T')[0] }
+    window.api.getUsageStats(bounds.from, bounds.to).then(setUsageData).catch(() => {})
+  }, [dateRange])
   useEffect(() => { window.api.getTodayInHistory().then(setTodayMemories).catch(() => {}) }, [])
   useEffect(() => { window.api.getMessagingNetwork().then(setNetworkData).catch(() => {}) }, [])
 
@@ -1057,8 +1124,45 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
           )
         })()}
 
-        <ComingSoonTile label="Activity heatmap — days × hours" span={6} />
-        <ComingSoonTile label="Year-by-year timeline" span={6} />
+        {usageData && usageData.messagesPerYear.length > 1 && (() => {
+          const years = usageData.messagesPerYear
+          const maxCount = Math.max(...years.map(y => y.count))
+          return (
+            <div style={{ gridColumn: 'span 12', borderRadius: 16, padding: '20px 22px', background: '#fff', border: '1px solid rgba(0,0,0,0.06)', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}>
+              <div style={{ fontSize: 10, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#9a948f', marginBottom: 16, fontFamily: "'DM Sans'" }}>Messages sent · by year</div>
+              <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, height: 80 }}>
+                {years.map(y => {
+                  const pct = Math.round((y.count / maxCount) * 100)
+                  const isMax = y.count === maxCount
+                  return (
+                    <div key={y.year} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                      <div style={{ fontSize: 9, color: isMax ? '#7F77DD' : '#c8c0ba', fontFamily: "'DM Sans'", fontWeight: isMax ? 600 : 400 }}>{y.count >= 1000 ? `${Math.round(y.count/1000)}k` : y.count}</div>
+                      <div style={{ width: '100%', height: `${Math.max(pct * 0.64, 4)}px`, background: isMax ? '#7F77DD' : '#EAE5DF', borderRadius: 3 }} />
+                      <div style={{ fontSize: 9, color: '#9a948f', fontFamily: "'DM Sans'" }}>{String(y.year).slice(2)}</div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )
+        })()}
+
+        {usageData && (
+          <>
+            {[
+              { label: 'Total messages', value: usageData.totalMessages.toLocaleString(), sub: 'sent + received' },
+              { label: 'You sent', value: usageData.sentMessages.toLocaleString(), sub: usageData.totalMessages > 0 ? `${Math.round((usageData.sentMessages / usageData.totalMessages) * 100)}% of all` : '' },
+              { label: 'Busiest day', value: usageData.busiestDay ? usageData.busiestDay.count.toLocaleString() : '—', sub: usageData.busiestDay ? new Date(usageData.busiestDay.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '' },
+              { label: 'Active now', value: usageData.activeConversations.toLocaleString(), sub: 'in last 30 days' },
+            ].map(({ label, value, sub }) => (
+              <div key={label} style={{ gridColumn: 'span 3', borderRadius: 16, padding: '18px 20px', background: '#fff', border: '1px solid rgba(0,0,0,0.06)', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}>
+                <div style={{ fontSize: 10, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#9a948f', marginBottom: 8, fontFamily: "'DM Sans'" }}>{label}</div>
+                <div style={{ fontFamily: "'Unbounded', sans-serif", fontWeight: 200, fontSize: 26, color: '#7F77DD' }}>{value}</div>
+                <div style={{ fontSize: 11, color: '#9a948f', marginTop: 4, fontFamily: "'DM Sans'" }}>{sub}</div>
+              </div>
+            ))}
+          </>
+        )}
       </div>
     </div>
   )
