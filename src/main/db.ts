@@ -404,17 +404,38 @@ export function getStats(chatNameFilter?: string, dateFrom?: string, dateTo?: st
       } catch { /* ignore */ }
 
       // Participant counts to identify group chats
-      // chat.style is NOT reliable (45 = both direct and group in this DB)
-      // Use handle count as the sole signal: 1 handle = direct, >1 = group
       try {
+        type PartRow = {
+          chat_id: number
+          chat_name: string
+          participant_count: number
+        }
+
         const partRows = chatDb.prepare(`
-          SELECT c.chat_identifier as chat_name, COUNT(DISTINCT chj.handle_id) as participant_count
+          SELECT
+            c.ROWID as chat_id,
+            c.chat_identifier as chat_name,
+            COUNT(DISTINCT chj.handle_id) as participant_count
           FROM chat c
           LEFT JOIN chat_handle_join chj ON c.ROWID = chj.chat_id
-          GROUP BY c.chat_identifier
-        `).all() as { chat_name: string; participant_count: number }[]
-        for (const r of partRows) participantMap.set(r.chat_name, r.participant_count)
-      } catch { /* fallback */ }
+          GROUP BY c.ROWID, c.chat_identifier
+        `).all() as PartRow[]
+
+        const grouped = new Map<string, PartRow[]>()
+        for (const row of partRows) {
+          if (!grouped.has(row.chat_name)) grouped.set(row.chat_name, [])
+          grouped.get(row.chat_name)!.push(row)
+        }
+
+        participantMap.clear()
+        for (const [chatName, rows] of grouped) {
+          const maxParticipants = Math.max(...rows.map(r => r.participant_count || 0))
+          const isGroup = maxParticipants > 1
+          participantMap.set(chatName, isGroup ? 2 : 1)
+        }
+      } catch (err) {
+        console.error('[GroupDetection] failed', err)
+      }
 
       // Laugh detection — cached per session (expensive full-table scan)
       if (!laughCacheValid) {
