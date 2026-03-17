@@ -258,6 +258,56 @@ function BandCard({ title, subtitle, segments, span }: {
   )
 }
 
+// ─── ARCHETYPE 6: Spectrum card — where you fall on a scale ───
+function SpectrumCard({ eyebrow, leftLabel, rightLabel, markerPct, markerLabel, descriptor, accent, span }: {
+  eyebrow: string; leftLabel: string; rightLabel: string
+  markerPct: number; markerLabel: string; descriptor: string
+  accent: string; span: number
+}): JSX.Element {
+  return (
+    <div style={{ gridColumn: `span ${span}`, borderRadius: 16, padding: '20px 22px', background: '#fff', border: '1px solid rgba(0,0,0,0.06)', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}>
+      <div style={{ fontSize: 10, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#9a948f', marginBottom: 16, fontFamily: "'DM Sans'" }}>{eyebrow}</div>
+      <div style={{ position: 'relative', height: 6, borderRadius: 3, background: '#EAE5DF', marginBottom: 10 }}>
+        <div style={{ position: 'absolute', left: 0, width: `${markerPct}%`, height: '100%', borderRadius: 3, background: `linear-gradient(90deg, #EAE5DF, ${accent})` }} />
+        <div style={{ position: 'absolute', top: '50%', left: `${markerPct}%`, transform: 'translate(-50%, -50%)', width: 14, height: 14, borderRadius: '50%', background: accent, border: '2px solid #fff', boxShadow: `0 0 0 2px ${accent}40` }} />
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
+        <div style={{ fontSize: 10, color: '#b8b2ad', fontFamily: "'DM Sans'" }}>{leftLabel}</div>
+        <div style={{ fontSize: 10, color: '#b8b2ad', fontFamily: "'DM Sans'" }}>{rightLabel}</div>
+      </div>
+      <div style={{ fontFamily: "'Unbounded', sans-serif", fontWeight: 200, fontSize: 15, color: accent, marginBottom: 4 }}>{markerLabel}</div>
+      <div style={{ fontSize: 12, color: '#6f6a65', lineHeight: 1.5, fontFamily: "'DM Sans'" }}>{descriptor}</div>
+    </div>
+  )
+}
+
+// ─── ARCHETYPE 7: Leaderboard card — ranked list with bars ───
+function LeaderboardCard({ eyebrow, items, accent, span }: {
+  eyebrow: string; items: { name: string; value: string; pct: number }[]; accent: string; span: number
+}): JSX.Element {
+  return (
+    <div style={{ gridColumn: `span ${span}`, borderRadius: 16, padding: '20px 22px', background: '#fff', border: '1px solid rgba(0,0,0,0.06)', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}>
+      <div style={{ fontSize: 10, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#9a948f', marginBottom: 14, fontFamily: "'DM Sans'" }}>{eyebrow}</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {items.map((item, i) => (
+          <div key={i}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{ fontSize: 10, color: i === 0 ? accent : '#c8c0ba', fontWeight: 600, width: 14, fontFamily: "'DM Sans'" }}>{i + 1}</div>
+                <div style={{ fontSize: 13, fontWeight: i === 0 ? 600 : 400, color: i === 0 ? '#1A1A1A' : '#4a4542', fontFamily: "'DM Sans'" }}>{item.name}</div>
+              </div>
+              <div style={{ fontSize: 12, color: i === 0 ? accent : '#9a948f', fontFamily: "'DM Sans'" }}>{item.value}</div>
+            </div>
+            <div style={{ height: 3, borderRadius: 2, background: '#EAE5DF', overflow: 'hidden' }}>
+              <div style={{ height: '100%', width: `${item.pct}%`, background: i === 0 ? accent : '#D4CFC9', borderRadius: 2, transition: 'width 0.4s' }} />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function TodayInHistoryCard({ memories, chatNameMap, onSelectConversation }: {
   memories: MemoryItem[]; chatNameMap: Record<string, string>; onSelectConversation: (rawName: string) => void
 }): JSX.Element | null {
@@ -649,69 +699,102 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 14 }}>
-        {/* Row 1: Two asymmetric poster cards */}
+
+        {/* TIER 1: IDENTITY */}
         {(() => {
           const groupMessages = groups.reduce((s, c) => s + c.messageCount, 0)
           const totalMsgs = chats.reduce((s, c) => s + c.messageCount, 0)
           const groupPct = totalMsgs > 0 ? Math.round((groupMessages / totalMsgs) * 100) : 0
           const isGroupPerson = groupPct > 50
           return (
-            <PosterCard
-              eyebrow="Your messaging identity"
+            <PosterCard eyebrow="Your messaging identity"
               number={isGroupPerson ? `${groupPct}%` : `${100 - groupPct}%`}
-              unit={isGroupPerson ? 'groups' : 'one-on-one'}
+              unit={isGroupPerson ? 'group chats' : 'one-on-one'}
               descriptor={isGroupPerson
                 ? 'You live in the group chat. The noise is where you\'re comfortable.'
                 : 'You prefer depth over breadth. One-on-one conversations dominate your messaging life.'}
-              accent="#E8604A" bg="#26211d" span={7}
-            />
+              accent="#E8604A" bg="#26211d" span={7} />
           )
         })()}
         {(() => {
-          const top3Messages = byMessages.slice(0, 3).reduce((s, c) => s + c.messageCount, 0)
-          const totalMessages = chats.reduce((s, c) => s + c.messageCount, 0)
-          const concentration = totalMessages > 0 ? Math.round((top3Messages / totalMessages) * 100) : 0
+          const top3 = byMessages.slice(0, 3).reduce((s, c) => s + c.messageCount, 0)
+          const total = chats.reduce((s, c) => s + c.messageCount, 0)
+          const pct = total > 0 ? Math.round((top3 / total) * 100) : 0
           return (
-            <PosterCard
-              eyebrow="Your inner circle"
-              number={`${concentration}%`}
-              descriptor={concentration > 60
-                ? 'of your messages go to just 3 people. You run deep, not wide.'
-                : concentration > 40
-                ? 'to your top 3 contacts. Fairly concentrated.'
-                : 'to your top 3. You spread it around more than most.'}
-              accent="#E8604A" bg="#F8F4F0" span={5}
-            />
+            <PosterCard eyebrow="Your inner circle" number={`${pct}%`}
+              descriptor={pct > 60 ? 'of your messages go to just 3 people. You run deep, not wide.'
+                : pct > 40 ? 'to your top 3. A fairly concentrated social life.'
+                : 'spread wide. You keep a lot of threads alive at once.'}
+              accent="#E8604A" bg="#F8F4F0" span={5} />
           )
         })()}
 
-        {/* Row 2: Split comparison + winner cards */}
-        <SplitCard
-          eyebrow="Conversation dynamics"
-          leftValue={`${initiationPct}%`} leftLabel="You initiate"
-          leftSub={initiationPct > 60 ? 'You keep things alive.' : initiationPct < 40 ? 'They reach out more.' : 'You share the load.'}
-          rightValue={`${100 - initiationPct}%`} rightLabel="They initiate"
-          rightSub={initiationPct > 60 ? 'They wait for you.' : initiationPct < 40 ? 'They drive this.' : 'Pretty even split.'}
-          leftPct={initiationPct} accent="#E8604A" span={5}
-        />
-        {isStatsLoading ? <WarmingCard span={4} /> : (
-          byLaughsGenerated[0] && byLaughsGenerated[0].laughsGenerated > 0 ? (
-            <WinnerCard award="Best audience" name={resolveName(byLaughsGenerated[0].rawName, chatNameMap)}
-              stat={`${byLaughsGenerated[0].laughsGenerated.toLocaleString()} laughs`}
-              flavor="Laughs at everything you say — your best audience globally."
-              emoji="😂" accentColor="#E8604A" span={4} />
-          ) : <div style={{ gridColumn: 'span 4' }} />
-        )}
-        {isStatsLoading ? <WarmingCard span={3} /> : (
-          byLaughsReceived[0] && byLaughsReceived[0].laughsReceived > 0 && (
-            <WinnerCard award="Makes you laugh most" name={resolveName(byLaughsReceived[0].rawName, chatNameMap)}
-              stat={`${byLaughsReceived[0].laughsReceived.toLocaleString()} times`}
-              flavor="They get you more than anyone else."
-              emoji="🤣" accentColor="#2EC4A0" span={3} />
-          )
-        )}
+        {/* TIER 2: DYNAMICS — spectrums */}
+        <SpectrumCard eyebrow="Your conversational role" leftLabel="Pure responder" rightLabel="Always initiates"
+          markerPct={initiationPct}
+          markerLabel={initiationPct > 65 ? 'The Initiator' : initiationPct > 45 ? 'The Collaborator' : initiationPct > 25 ? 'The Responder' : 'The Receiver'}
+          descriptor={initiationPct > 65 ? `You start ${initiationPct}% of conversations. You keep things alive — and you know it.`
+            : initiationPct > 45 ? `${initiationPct}% initiation. You pull your weight without overdoing it.`
+            : initiationPct > 25 ? `${initiationPct}% initiation. You tend to wait for others to reach out.`
+            : `Only ${initiationPct}% initiation. People come to you.`}
+          accent="#E8604A" span={4} />
 
-        {/* Row 3: Editorial story cards + winner */}
+        {isStatsLoading ? <WarmingCard span={4} /> : (() => {
+          const allReplyTimes = individuals.filter(c => c.avgReplyMinutes > 0)
+          if (!allReplyTimes.length) return <div style={{ gridColumn: 'span 4' }} />
+          const avgReply = Math.round(allReplyTimes.reduce((s, c) => s + c.avgReplyMinutes, 0) / allReplyTimes.length)
+          const mp = Math.min(95, Math.max(5, 100 - Math.round((Math.min(avgReply, 120) / 120) * 90)))
+          return (
+            <SpectrumCard eyebrow="Your reply style" leftLabel="Takes their time" rightLabel="Always instant"
+              markerPct={mp}
+              markerLabel={avgReply < 3 ? 'Instant' : avgReply < 15 ? 'Quick' : avgReply < 45 ? 'Unhurried' : 'Deliberate'}
+              descriptor={avgReply < 3 ? 'You reply almost immediately. You\'re never far from your phone.'
+                : avgReply < 15 ? `~${avgReply} min average. Quick enough that people know you're paying attention.`
+                : avgReply < 45 ? `~${avgReply} min average. Unhurried. You reply on your own terms.`
+                : `~${avgReply} min average. You make people wait for it.`}
+              accent="#E8604A" span={4} />
+          )
+        })()}
+
+        {isStatsLoading ? <WarmingCard span={4} /> : (() => {
+          const totalMessages = chats.reduce((s, c) => s + c.messageCount, 0)
+          const totalLateNight = individuals.reduce((s, c) => s + (c.messageCount * c.lateNightRatio / 100), 0)
+          const globalLateNightPct = totalMessages > 0 ? Math.round((totalLateNight / totalMessages) * 100) : 0
+          return (
+            <SpectrumCard eyebrow="Your active hours" leftLabel="Early bird" rightLabel="Night owl"
+              markerPct={Math.min(95, globalLateNightPct * 4)}
+              markerLabel={globalLateNightPct > 25 ? 'Night Owl' : globalLateNightPct > 10 ? 'Balanced' : globalLateNightPct > 3 ? 'Daytime' : 'Early Bird'}
+              descriptor={globalLateNightPct > 25 ? `${globalLateNightPct}% of your messages happen after 11pm. You come alive at night.`
+                : globalLateNightPct > 10 ? `${globalLateNightPct}% late night messages. You keep mostly daytime hours — with exceptions.`
+                : `Under ${globalLateNightPct + 5}% late night. You're a daytime communicator.`}
+              accent="#7F77DD" span={4} />
+          )
+        })()}
+
+        {/* TIER 3: COMEDY — leaderboard cards */}
+        {isStatsLoading ? <WarmingCard span={6} /> : (() => {
+          const laughers = byLaughsReceived.filter(c => c.laughsReceived > 0).slice(0, 3)
+          if (!laughers.length) return null
+          const maxL = laughers[0].laughsReceived
+          return (
+            <LeaderboardCard eyebrow="Who makes you laugh most"
+              items={laughers.map(c => ({ name: resolveName(c.rawName, chatNameMap), value: `${c.laughsReceived.toLocaleString()} laughs`, pct: Math.round((c.laughsReceived / maxL) * 100) }))}
+              accent="#E8604A" span={6} />
+          )
+        })()}
+
+        {isStatsLoading ? <WarmingCard span={6} /> : (() => {
+          const audience = byLaughsGenerated.filter(c => c.laughsGenerated > 0).slice(0, 3)
+          if (!audience.length) return null
+          const maxL = audience[0].laughsGenerated
+          return (
+            <LeaderboardCard eyebrow="Your best audience"
+              items={audience.map(c => ({ name: resolveName(c.rawName, chatNameMap), value: `${c.laughsGenerated.toLocaleString()} laughs`, pct: Math.round((c.laughsGenerated / maxL) * 100) }))}
+              accent="#2EC4A0" span={6} />
+          )
+        })()}
+
+        {/* TIER 4: STORIES */}
         {(() => {
           const gone = [...individuals].filter(c => c.messageCount > 50)
             .map(c => ({ ...c, days: Math.floor((Date.now() - new Date(c.lastMessageDate).getTime()) / 86400000) }))
@@ -723,24 +806,46 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
               accent="#E8604A" span={6} />
           ) : null
         })()}
-        {isStatsLoading ? <WarmingCard span={6} /> : (() => {
-          const topNightOwl = [...individuals].sort((a, b) => b.lateNightRatio - a.lateNightRatio)[0]
-          return topNightOwl && topNightOwl.lateNightRatio > 10 ? (
-            <EditorialCard kicker="Night owl connection"
-              headline={`${topNightOwl.lateNightRatio}% of your messages with ${resolveName(topNightOwl.rawName, chatNameMap)} happen after 11pm.`}
-              subtext="Some relationships only really come alive after midnight."
-              accent="#7F77DD" span={6} />
-          ) : null
-        })()}
+
+        {byMessages[0] && (
+          <EditorialCard kicker="Ride or die"
+            headline={`${resolveName(byMessages[0].rawName, chatNameMap)} gets more of you than anyone else.`}
+            subtext={`${byMessages[0].messageCount.toLocaleString()} messages. Your default person.`}
+            accent="#E8604A" span={6} />
+        )}
+
         {isStatsLoading ? <WarmingCard span={4} /> : (() => {
           const fastest = [...individuals].filter(c => c.avgReplyMinutes > 0 && c.avgReplyMinutes < 60).sort((a, b) => a.avgReplyMinutes - b.avgReplyMinutes)[0]
           return fastest ? (
             <WinnerCard award="You reply fastest to" name={resolveName(fastest.rawName, chatNameMap)}
-              stat={`~${fastest.avgReplyMinutes} min average reply time`}
+              stat={`~${fastest.avgReplyMinutes} min average`}
               flavor={fastest.avgReplyMinutes < 3 ? 'Basically always there for them.' : 'Quicker than you are with most.'}
               emoji="⚡" accentColor="#2EC4A0" span={4} />
           ) : null
         })()}
+
+        {isStatsLoading ? <WarmingCard span={4} /> : (() => {
+          const topNightOwl = [...individuals].sort((a, b) => b.lateNightRatio - a.lateNightRatio)[0]
+          return topNightOwl && topNightOwl.lateNightRatio > 10 ? (
+            <WinnerCard award="Night owl connection" name={resolveName(topNightOwl.rawName, chatNameMap)}
+              stat={`${topNightOwl.lateNightRatio}% of messages after 11pm`}
+              flavor="Some relationships only come alive after midnight."
+              emoji="🌙" accentColor="#7F77DD" span={4} />
+          ) : null
+        })()}
+
+        {(() => {
+          const m = [...individuals].filter(c => c.sentCount + c.receivedCount > 20)
+            .map(c => ({ ...c, ratio: c.sentCount / Math.max(c.receivedCount, 1) }))
+            .sort((a, b) => Math.abs(Math.log(b.ratio)) - Math.abs(Math.log(a.ratio)))[0]
+          return m && (m.ratio > 1.8 || m.ratio < 0.55) ? (
+            <EditorialCard kicker="Most one-sided"
+              headline={`${resolveName(m.rawName, chatNameMap)} — ${m.ratio > 1 ? `you send ${m.ratio.toFixed(1)}× more` : `they send ${(1/m.ratio).toFixed(1)}× more`}.`}
+              subtext={m.ratio > 2 ? 'This one runs almost entirely on you.' : 'A noticeable imbalance.'}
+              accent="#E8604A" span={4} />
+          ) : null
+        })()}
+
       </div>
     </div>
   )
