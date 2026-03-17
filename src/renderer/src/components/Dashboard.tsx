@@ -736,10 +736,20 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
           ) : (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 14 }}>
               {pd && <>
-                <WinnerCard award="Comedy advantage" name={pd.laughsReceived > pd.laughsGenerated ? 'You win' : `${firstName} wins`}
-                  stat={`You got ${pd.laughsGenerated.toLocaleString()} laughs out of them`}
-                  flavor={pd.laughsReceived > pd.laughsGenerated ? 'You win. They have no defense against you.' : 'They get you every time. Keep them close.'}
-                  emoji="🎭" accentColor="#2EC4A0" span={4} />
+                <div style={{ gridColumn: 'span 4', cursor: 'pointer', position: 'relative' }}
+                  onClick={() => onDrillThrough?.(`${firstName}'s comedy record`, `${firstName} · all time`, [
+                    { label: 'Made you laugh', value: `${pd.laughsReceived.toLocaleString()} times` },
+                    { label: 'You made them laugh', value: `${pd.laughsGenerated.toLocaleString()} times` },
+                    { label: 'Laugh rate', value: `${Math.round((pd.laughsReceived / Math.max(pd.messageCount, 1)) * 100)}% of messages got a laugh` },
+                  ])}>
+                  <WinnerCard award="Comedy advantage" name={pd.laughsReceived > pd.laughsGenerated ? 'You win' : `${firstName} wins`}
+                    stat={`You got ${pd.laughsGenerated.toLocaleString()} laughs out of them`}
+                    flavor={pd.laughsReceived > pd.laughsGenerated ? 'You win. They have no defense against you.' : 'They get you every time. Keep them close.'}
+                    emoji="🎭" accentColor="#2EC4A0" span={12} />
+                  <div style={{ position: 'absolute', top: 8, right: 8, width: 18, height: 18, background: 'rgba(232,96,74,0.1)', borderRadius: 5, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+                    <svg width="7" height="10" viewBox="0 0 7 10" fill="none"><path d="M1.5 1.5l4 3.5-4 3.5" stroke="#E8604A" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                  </div>
+                </div>
                 <WinnerCard award="Your comedian" name={firstName}
                   stat={`${pd.laughsReceived.toLocaleString()} times they've made you laugh`}
                   flavor={pd.laughsReceived > 500 ? "That's not funny, that's a gift." : 'They know exactly how to get you.'}
@@ -756,10 +766,20 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
                   rightValue={`${100 - sentPct}%`} rightLabel={firstName}
                   rightSub={sentPct > 55 ? 'They mostly listen.' : sentPct < 45 ? 'They carry it.' : 'Balanced.'}
                   leftPct={sentPct} accent="#2EC4A0" span={6} />
-                <RelCard emoji="📸" title="The Archive" span={6}
-                  metric={pd.attachmentCount.toLocaleString()}
-                  sentence={`${pd.attachmentCount.toLocaleString()} things shared between you.`}
-                  flavor="Photos, memes, evidence." />
+                <div style={{ gridColumn: 'span 6', cursor: 'pointer', position: 'relative' }}
+                  onClick={() => onDrillThrough?.('Shared archive', `${firstName} · all attachments`, [
+                    { label: 'Total shared', value: `${pd.attachmentCount.toLocaleString()} files` },
+                    { label: 'Your share of messages', value: `${Math.round((pd.sentCount / Math.max(pd.messageCount, 1)) * 100)}% sent by you` },
+                    { label: 'Relationship since', value: convStats?.firstMessageDate ? new Date(convStats.firstMessageDate).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : '—' },
+                  ])}>
+                  <RelCard emoji="📸" title="The Archive" span={12}
+                    metric={pd.attachmentCount.toLocaleString()}
+                    sentence={`${pd.attachmentCount.toLocaleString()} things shared between you.`}
+                    flavor="Photos, memes, evidence." />
+                  <div style={{ position: 'absolute', top: 8, right: 8, width: 18, height: 18, background: 'rgba(46,196,160,0.15)', borderRadius: 5, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+                    <svg width="7" height="10" viewBox="0 0 7 10" fill="none"><path d="M1.5 1.5l4 3.5-4 3.5" stroke="#2EC4A0" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                  </div>
+                </div>
               </>}
               {/* Enriched stats from getConversationStats */}
               {convStats?.relationshipArc && (
@@ -769,9 +789,19 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
                   accent="#2EC4A0" span={4} />
               )}
               {convStats && convStats.longestStreakDays > 0 && (
-                <PosterCard eyebrow="Longest streak" number={`${convStats.longestStreakDays}`} unit="days"
-                  descriptor={convStats.longestStreakDays > 60 ? `${convStats.longestStreakDays} days straight. What were you two even talking about?` : 'Your longest run of consecutive daily messages.'}
-                  accent="#2EC4A0" bg="#F8F4F0" span={4} />
+                <div style={{ gridColumn: 'span 4', cursor: 'pointer', position: 'relative' }}
+                  onClick={() => onDrillThrough?.('Longest streak', `${firstName} · consecutive days`, [
+                    { label: 'Record streak', value: `${convStats.longestStreakDays} days in a row` },
+                    { label: 'Total messages', value: pd!.messageCount.toLocaleString() },
+                    { label: 'Avg messages/day', value: `~${Math.round(pd!.messageCount / Math.max(convStats.longestStreakDays, 1))} on active days` },
+                  ])}>
+                  <PosterCard eyebrow="Longest streak" number={`${convStats.longestStreakDays}`} unit="days"
+                    descriptor={convStats.longestStreakDays > 60 ? `${convStats.longestStreakDays} days straight. What were you two even talking about?` : 'Your longest run of consecutive daily messages.'}
+                    accent="#2EC4A0" bg="#F8F4F0" span={12} />
+                  <div style={{ position: 'absolute', top: 8, right: 8, width: 18, height: 18, background: 'rgba(46,196,160,0.15)', borderRadius: 5, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+                    <svg width="7" height="10" viewBox="0 0 7 10" fill="none"><path d="M1.5 1.5l4 3.5-4 3.5" stroke="#2EC4A0" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                  </div>
+                </div>
               )}
               {convStats?.peakHour !== null && convStats?.peakHour !== undefined && (
                 <RelCard emoji="🕐" title="Your Peak Hour" span={4}
