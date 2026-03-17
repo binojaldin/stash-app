@@ -397,7 +397,7 @@ export function getUsageStats(dateFrom?: string, dateTo?: string): {
       const totals = chatDb.prepare(`SELECT COUNT(*) as total, SUM(CASE WHEN is_from_me=1 THEN 1 ELSE 0 END) as sent, SUM(CASE WHEN is_from_me=0 THEN 1 ELSE 0 END) as received FROM message m WHERE (text IS NOT NULL OR cache_has_attachments=1) AND item_type=0${dateCond}`).get() as { total: number; sent: number; received: number }
       result.totalMessages = totals?.total || 0; result.sentMessages = totals?.sent || 0; result.receivedMessages = totals?.received || 0
 
-      const byYear = chatDb.prepare(`SELECT CAST(strftime('%Y', datetime(date/${NS}+${APPLE_EPOCH}, 'unixepoch', 'localtime')) AS INTEGER) as year, COUNT(*) as count FROM message m WHERE (text IS NOT NULL OR cache_has_attachments=1) AND item_type=0 AND is_from_me=1${dateCond} GROUP BY year ORDER BY year ASC`).all() as { year: number; count: number }[]
+      const byYear = chatDb.prepare(`SELECT CAST(strftime('%Y', datetime(date/${NS}+${APPLE_EPOCH}, 'unixepoch', 'localtime')) AS INTEGER) as year, COUNT(*) as count FROM message m WHERE (text IS NOT NULL OR cache_has_attachments=1) AND item_type=0${dateCond} GROUP BY year ORDER BY year ASC`).all() as { year: number; count: number }[]
       result.messagesPerYear = byYear.filter(r => r.year > 2005 && r.year <= new Date().getFullYear())
       if (result.messagesPerYear.length > 0) {
         const peak = result.messagesPerYear.reduce((a, b) => b.count > a.count ? b : a)

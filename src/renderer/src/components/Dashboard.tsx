@@ -590,7 +590,7 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
   const [todayMemories, setTodayMemories] = useState<MemoryItem[]>([])
   const [networkData, setNetworkData] = useState<NetworkData | null>(null)
 
-  type UsageData = { totalMessages: number; sentMessages: number; receivedMessages: number; messagesPerYear: { year: number; count: number }[]; busiestDay: { date: string; count: number } | null; activeConversations: number }
+  type UsageData = { totalMessages: number; sentMessages: number; receivedMessages: number; messagesPerYear: { year: number; count: number }[]; busiestDay: { date: string; count: number } | null; busiestYear: { year: number; count: number } | null; activeConversations: number }
   const [usageData, setUsageData] = useState<UsageData | null>(null)
   useEffect(() => {
     const bounds: { from?: string; to?: string } = {}
@@ -744,12 +744,16 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
               <div style={{ fontSize: 11, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'rgba(46,196,160,0.7)', marginBottom: 12 }}>THE DYNAMIC</div>
               <div style={{ fontFamily: "'Unbounded', sans-serif", fontWeight: 200, fontSize: 28, color: 'white', letterSpacing: '0.02em', marginBottom: 10 }}>{isGroupChat ? `${pn}.` : `The ${firstName} Files.`}</div>
               <div style={{ fontSize: 15, color: 'rgba(255,255,255,0.68)', lineHeight: 1.7 }}>
-                {pd ? `${pd.messageCount.toLocaleString()} messages exchanged. ${pd.attachmentCount.toLocaleString()} attachments shared.` : ''}
+                {pd ? `${pd.messageCount.toLocaleString()} messages exchanged.` : ''}
               </div>
+              {pd && pd.attachmentCount > 0 && (
+                <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)', marginTop: 2 }}>
+                  {pd.attachmentCount.toLocaleString()} attachments shared.
+                </div>
+              )}
               {convStats?.peakYear && (
-                <div style={{ fontSize: 13, color: 'rgba(46,196,160,0.6)', marginTop: 6, fontFamily: "'DM Sans'" }}>
+                <div style={{ fontSize: 13, color: 'rgba(46,196,160,0.55)', marginTop: 6, fontFamily: "'DM Sans'" }}>
                   Peak year: {convStats.peakYear.year} · {convStats.peakYear.count.toLocaleString()} messages
-                  {convStats.peakYearShareOfTotal && convStats.peakYearShareOfTotal > 1 ? ` · ${convStats.peakYearShareOfTotal}% of your total that year` : ''}
                 </div>
               )}
               {pd?.lastMessageDate && (
@@ -948,6 +952,18 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
                   metric={convStats.mostActiveMonth}
                   sentence="Your most active month together."
                   flavor="Something was happening." />
+              )}
+              {convStats?.peakYear && convStats.peakYearShareOfTotal && convStats.peakYearShareOfTotal > 3 && (
+                <EditorialCard kicker={`${convStats.peakYear.year} · share of attention`}
+                  headline={convStats.peakYearShareOfTotal > 15
+                    ? `In ${convStats.peakYear.year}, ${firstName} had ${convStats.peakYearShareOfTotal}% of your total messaging. That's not a conversation — that's a relationship.`
+                    : `In ${convStats.peakYear.year}, this conversation accounted for ${convStats.peakYearShareOfTotal}% of everything you sent and received.`}
+                  subtext={convStats.peakYearShareOfTotal > 25
+                    ? 'More than a quarter of your entire messaging life that year.'
+                    : convStats.peakYearShareOfTotal > 10
+                    ? 'A significant share of your attention.'
+                    : ''}
+                  accent="#2EC4A0" span={6} />
               )}
               {vocabStats && vocabStats.theirAvgWordsPerMessage > 0 && (
                 <LoquaciousnessCard myAvg={vocabStats.avgWordsPerMessage} theirAvg={vocabStats.theirAvgWordsPerMessage} theirName={firstName}
@@ -1288,7 +1304,7 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
           const maxCount = Math.max(...years.map(y => y.count))
           return (
             <div style={{ gridColumn: 'span 12', borderRadius: 16, padding: '20px 22px', background: '#fff', border: '1px solid rgba(0,0,0,0.06)', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}>
-              <div style={{ fontSize: 10, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#9a948f', marginBottom: 16, fontFamily: "'DM Sans'" }}>Messages sent · by year</div>
+              <div style={{ fontSize: 10, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#9a948f', marginBottom: 16, fontFamily: "'DM Sans'" }}>Message volume · by year</div>
               <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, height: 80 }}>
                 {years.map(y => {
                   const pct = Math.round((y.count / maxCount) * 100)
@@ -1317,8 +1333,8 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
         )}
         {usageData && usageData.busiestYear && (
           <EditorialCard kicker="Busiest year"
-            headline={`${usageData.busiestYear.year}. You sent ${usageData.busiestYear.count.toLocaleString()} messages.`}
-            subtext={usageData.messagesPerYear.length > 1 ? `That's more than any other year in your archive.` : 'Your messaging peak.'}
+            headline={`${usageData.busiestYear.year}. ${usageData.busiestYear.count.toLocaleString()} messages exchanged.`}
+            subtext={usageData.messagesPerYear.length > 1 ? 'More than any other year in your archive.' : 'Your messaging peak.'}
             accent="#7F77DD" span={6} />
         )}
         {usageData && (
