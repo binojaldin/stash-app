@@ -221,62 +221,59 @@ export function Sidebar({ stats, filters, onFilterChange, onManageConversations,
             })}
           </div>
 
-          {/* Year chips with expandable months */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {/* Year chips — compact horizontal wrap */}
+          <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
             {(availableYears || []).map(year => {
               const isYearActive = (selectedRange || 'all') === String(year)
               const isMonthInYear = (selectedRange || '').startsWith(String(year) + '-')
               const isActive = isYearActive || isMonthInYear
-              const isExpanded = expandedYear === year
-
               return (
-                <div key={year}>
-                  <button
-                    onClick={() => {
-                      if (isExpanded) {
-                        setExpandedYear(null)
-                      } else {
-                        setExpandedYear(year)
-                        onDateRangeChange?.(String(year))
-                      }
-                    }}
-                    style={{
-                      width: '100%', padding: '6px 10px', borderRadius: 8, fontSize: 12,
-                      cursor: 'pointer', fontFamily: "'DM Sans'", border: '1px solid',
-                      borderColor: isActive ? '#E8604A' : 'rgba(255,255,255,0.1)',
-                      background: isActive ? 'rgba(232,96,74,0.1)' : 'transparent',
-                      color: isActive ? '#E8604A' : '#8a8480',
-                      display: 'flex', alignItems: 'center', justifyContent: 'space-between'
-                    }}>
-                    <span>{year}</span>
-                    <span style={{ fontSize: 9, opacity: 0.4 }}>{isExpanded ? '▴' : '▾'}</span>
-                  </button>
-
-                  {isExpanded && (
-                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', padding: '6px 2px 2px' }}>
-                      {MONTH_SHORT.map((mo, idx) => {
-                        if (year === sidebarCurrentYear && idx > sidebarCurrentMonth) return null
-                        const val = `${year}-${String(idx + 1).padStart(2, '0')}`
-                        const isMonthActive = (selectedRange || 'all') === val
-                        return (
-                          <button key={val} onClick={() => onDateRangeChange?.(val)}
-                            style={{
-                              padding: '4px 8px', borderRadius: 6, fontSize: 10, cursor: 'pointer',
-                              fontFamily: "'DM Sans'", border: '1px solid',
-                              borderColor: isMonthActive ? '#E8604A' : 'rgba(255,255,255,0.08)',
-                              background: isMonthActive ? 'rgba(232,96,74,0.15)' : 'rgba(255,255,255,0.02)',
-                              color: isMonthActive ? '#E8604A' : '#6a6460'
-                            }}>
-                            {mo}
-                          </button>
-                        )
-                      })}
-                    </div>
-                  )}
-                </div>
+                <button key={year}
+                  onClick={() => {
+                    if (expandedYear === year) {
+                      setExpandedYear(null)
+                    } else {
+                      setExpandedYear(year)
+                      onDateRangeChange?.(String(year))
+                    }
+                  }}
+                  style={{
+                    padding: '5px 10px', borderRadius: 8, fontSize: 11, cursor: 'pointer',
+                    fontFamily: "'DM Sans'", border: '1px solid',
+                    borderColor: isActive ? '#E8604A' : 'rgba(255,255,255,0.1)',
+                    background: isActive ? 'rgba(232,96,74,0.1)' : 'transparent',
+                    color: isActive ? '#E8604A' : '#8a8480',
+                    transition: 'all 0.1s'
+                  }}>
+                  {year}
+                </button>
               )
             })}
           </div>
+
+          {/* Month chips — shared row below year chips */}
+          {expandedYear !== null && (
+            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', paddingTop: 6 }}>
+              {MONTH_SHORT.map((mo, idx) => {
+                if (expandedYear === sidebarCurrentYear && idx > sidebarCurrentMonth) return null
+                const val = `${expandedYear}-${String(idx + 1).padStart(2, '0')}`
+                const isMonthActive = (selectedRange || 'all') === val
+                return (
+                  <button key={val} onClick={() => onDateRangeChange?.(val)}
+                    style={{
+                      padding: '4px 8px', borderRadius: 6, fontSize: 10, cursor: 'pointer',
+                      fontFamily: "'DM Sans'", border: '1px solid',
+                      borderColor: isMonthActive ? '#E8604A' : 'rgba(255,255,255,0.08)',
+                      background: isMonthActive ? 'rgba(232,96,74,0.15)' : 'rgba(255,255,255,0.02)',
+                      color: isMonthActive ? '#E8604A' : '#6a6460',
+                      transition: 'all 0.1s'
+                    }}>
+                    {mo}
+                  </button>
+                )
+              })}
+            </div>
+          )}
         </div>
 
         {/* Top chats */}

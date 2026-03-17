@@ -732,12 +732,12 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
             stat={`${byAttachments[0].attachmentCount.toLocaleString()} attachments exchanged`}
             flavor="Your most media-heavy relationship." emoji="📎" accentColor="#7F77DD" span={4} />
         )}
-        {topGroup && (
+        {isStatsLoading ? <WarmingCard span={4} /> : topGroup ? (
           <WinnerCard award="Most active group" name={resolveName(topGroup.rawName, chatNameMap)}
             stat={`${topGroup.messageCount.toLocaleString()} messages`}
             flavor="Your busiest room. The chaos lives here." emoji="🔥" accentColor="#E8604A" span={4} />
-        )}
-        {(() => {
+        ) : null}
+        {isStatsLoading ? <WarmingCard span={4} /> : (() => {
           const groupMessages = groups.reduce((s, c) => s + c.messageCount, 0)
           const totalMsgs = chats.reduce((s, c) => s + c.messageCount, 0)
           const groupPct = totalMsgs > 0 ? Math.round((groupMessages / totalMsgs) * 100) : 0
