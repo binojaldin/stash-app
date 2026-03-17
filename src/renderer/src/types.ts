@@ -58,6 +58,8 @@ export interface Stats {
   unavailable: number
   chatNames: ChatNameEntry[]
   chatNameMap: Record<string, string>
+  globalPeakHour?: number | null
+  globalPeakWeekday?: number | null
 }
 
 export interface ChatSummary {

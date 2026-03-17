@@ -12,6 +12,7 @@ const api = {
     total: number; images: number; videos: number; documents: number; audio: number; unavailable: number
     chatNames: { rawName: string; attachmentCount: number; lastMessageDate: string; messageCount: number; sentCount: number; receivedCount: number; initiationCount: number; laughsGenerated: number; laughsReceived: number; isGroup: boolean; lateNightRatio: number; avgReplyMinutes: number }[]
     chatNameMap: Record<string, string>
+    globalPeakHour: number | null; globalPeakWeekday: number | null
   }> => ipcRenderer.invoke('get-stats', chatNameFilter, dateFrom, dateTo),
   getMessagingNetwork: (): Promise<{
     nodes: { rawName: string; messageCount: number }[]
@@ -25,6 +26,7 @@ const api = {
     total: number; images: number; videos: number; documents: number; audio: number; unavailable: number
     chatNames: { rawName: string; attachmentCount: number; lastMessageDate: string; messageCount: number; sentCount: number; receivedCount: number; initiationCount: number; laughsGenerated: number; laughsReceived: number; isGroup: boolean; lateNightRatio: number; avgReplyMinutes: number }[]
     chatNameMap: Record<string, string>
+    globalPeakHour: number | null; globalPeakWeekday: number | null
   }> => ipcRenderer.invoke('get-fast-stats', chatNameFilter, dateFrom, dateTo),
   getAttachment: (id: number): Promise<unknown> => ipcRenderer.invoke('get-attachment', id),
   openInFinder: (path: string): Promise<boolean> => ipcRenderer.invoke('open-in-finder', path),

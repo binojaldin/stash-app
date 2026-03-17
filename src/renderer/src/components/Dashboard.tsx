@@ -65,6 +65,20 @@ function heroTitle(range: string): string {
 
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 
+function getVibeTag(c: ChatNameEntry): { label: string; color: string } | null {
+  const total = c.messageCount
+  if (total < 10) return null
+  const sentPct = total > 0 ? c.sentCount / total : 0.5
+  const recvPct = 1 - sentPct
+  if (sentPct > 0.72 && total > 30) return { label: 'One-sided', color: '#9a948f' }
+  if (recvPct > 0.72 && total > 30) return { label: 'They carry it', color: '#9a948f' }
+  if (c.lateNightRatio > 40) return { label: 'Late night', color: '#7F77DD' }
+  if (c.laughsReceived > 20 && c.laughsReceived / Math.max(total * 0.01, 1) > 2) return { label: 'Comedy', color: '#E8604A' }
+  if (c.avgReplyMinutes > 0 && c.avgReplyMinutes < 5 && total > 100) return { label: 'Always on', color: '#2EC4A0' }
+  if (c.avgReplyMinutes > 120 && total > 20) return { label: 'Slow burn', color: '#9a948f' }
+  return null
+}
+
 function resolveName(raw: string, map: Record<string, string>): string {
   const n = map[raw] || raw
   return n.startsWith('#') ? 'Group chat' : n
@@ -865,6 +879,35 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
                 : `Under ${globalLateNightPct + 5}% late night. You're a daytime communicator.`}
               accent="#7F77DD" span={4} />
           )
+        })()}
+
+        {/* TIER 2.5: TIMING */}
+        {stats.globalPeakHour !== null && stats.globalPeakHour !== undefined && (() => {
+          const hr = stats.globalPeakHour as number
+          const displayHour = hr === 0 ? '12am' : hr < 12 ? `${hr}am` : hr === 12 ? '12pm' : `${hr - 12}pm`
+          const isMorning = hr >= 6 && hr < 12, isAfternoon = hr >= 12 && hr < 17, isEvening = hr >= 17 && hr < 22, isNight = hr >= 22 || hr < 6
+          const archetype = isMorning ? 'Morning Texter' : isAfternoon ? 'Afternoon Person' : isEvening ? 'Evening Communicator' : 'Night Owl'
+          const descriptor = isMorning ? `${displayHour} is your peak texting hour. You get it done before the day gets loud.`
+            : isAfternoon ? `${displayHour} is when you're most likely to reach out. Prime afternoon hours.`
+            : isEvening ? `${displayHour} — after the day settles, you connect.`
+            : `${displayHour} is your peak hour. You come alive when others wind down.`
+          return <SpectrumCard eyebrow="Your peak texting hour" leftLabel="Midnight" rightLabel="11pm"
+            markerPct={Math.round((hr / 23) * 100)} markerLabel={archetype} descriptor={descriptor}
+            accent={isNight ? '#7F77DD' : '#E8604A'} span={6} />
+        })()}
+
+        {stats.globalPeakWeekday !== null && stats.globalPeakWeekday !== undefined && (() => {
+          const dow = stats.globalPeakWeekday as number
+          const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+          const dayName = dayNames[dow]
+          const isWeekend = dow === 0 || dow === 6, isFriday = dow === 5
+          const archetype = isWeekend ? 'Weekend Texter' : isFriday ? 'End-of-Week Connector' : 'Weekday Communicator'
+          const descriptor = isWeekend ? `${dayName} is your most active messaging day. You connect when you have space to breathe.`
+            : isFriday ? `${dayName}s. The week winds down and the conversation picks up.`
+            : `${dayName}s are your most active. You message most when the week is in motion.`
+          return <SpectrumCard eyebrow="Your most active day" leftLabel="Sunday" rightLabel="Saturday"
+            markerPct={Math.round((dow / 6) * 100)} markerLabel={archetype} descriptor={descriptor}
+            accent="#E8604A" span={6} />
         })()}
 
         {/* TIER 3: COMEDY — leaderboard cards */}

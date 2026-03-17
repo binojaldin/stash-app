@@ -19,6 +19,20 @@ interface Props {
   availableYears?: number[]
 }
 
+function getVibeTag(c: ChatNameEntry): { label: string; color: string } | null {
+  const total = c.messageCount
+  if (total < 10) return null
+  const sentPct = total > 0 ? c.sentCount / total : 0.5
+  const recvPct = 1 - sentPct
+  if (sentPct > 0.72 && total > 30) return { label: 'One-sided', color: '#9a948f' }
+  if (recvPct > 0.72 && total > 30) return { label: 'They carry it', color: '#9a948f' }
+  if (c.lateNightRatio > 40) return { label: 'Late night', color: '#7F77DD' }
+  if (c.laughsReceived > 20 && c.laughsReceived / Math.max(total * 0.01, 1) > 2) return { label: 'Comedy', color: '#E8604A' }
+  if (c.avgReplyMinutes > 0 && c.avgReplyMinutes < 5 && total > 100) return { label: 'Always on', color: '#2EC4A0' }
+  if (c.avgReplyMinutes > 120 && total > 20) return { label: 'Slow burn', color: '#9a948f' }
+  return null
+}
+
 function resolveName(raw: string, map: Record<string, string>): string {
   const n = map[raw] || raw
   return n.startsWith('#') ? 'Group chat' : n
@@ -123,6 +137,7 @@ export function Sidebar({ stats, filters, onFilterChange, onManageConversations,
         <div style={{ padding: '16px 14px 12px', borderBottom: '1px solid #1A1A1A' }}>
           <div style={{ width: 44, height: 44, borderRadius: '50%', background: '#2EC4A0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, fontWeight: 600, color: '#0A0A0A', marginBottom: 10 }}>{initials}</div>
           <div style={{ fontSize: 15, color: '#fff', fontWeight: 500, marginBottom: 3 }}>{personName}</div>
+          {(() => { if (!personData) return null; const vibe = getVibeTag(personData); return vibe ? <div style={{ fontSize: 10, color: vibe.color, letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 4, fontFamily: "'DM Sans'" }}>{vibe.label}</div> : null })()}
           <div style={{ fontSize: 11, color: '#7c7c7c' }}>
             {personData ? `${compactNum(personData.messageCount)} messages` : ''} <span style={{ color: '#2EC4A0' }}>·</span> {personData ? `${compactNum(personData.attachmentCount)} attachments` : ''}
           </div>
@@ -296,6 +311,7 @@ export function Sidebar({ stats, filters, onFilterChange, onManageConversations,
               <div style={{ fontSize: 11, color: '#5a5550', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {compactNum(chat.messageCount)} msgs <span style={{ color: '#E8604A' }}>·</span> {compactNum(chat.attachmentCount)} files
               </div>
+              {(() => { const vibe = getVibeTag(chat); return vibe ? <div style={{ fontSize: 10, color: vibe.color, marginTop: 2, letterSpacing: '0.08em', fontFamily: "'DM Sans'" }}>{vibe.label}</div> : null })()}
             </button>
           )
         })}

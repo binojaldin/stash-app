@@ -418,7 +418,7 @@ export function getMessagingNetwork(): {
 }
 
 export function getFastStats(chatNameFilter?: string, dateFrom?: string, dateTo?: string): {
-  total: number; images: number; videos: number; documents: number; audio: number; unavailable: number; chatNames: ChatNameEntry[]
+  total: number; images: number; videos: number; documents: number; audio: number; unavailable: number; chatNames: ChatNameEntry[]; globalPeakHour: number | null; globalPeakWeekday: number | null
 } {
   const d = initDb()
   const dateParts: string[] = []
@@ -454,11 +454,11 @@ export function getFastStats(chatNameFilter?: string, dateFrom?: string, dateTo?
     lateNightRatio: 0, avgReplyMinutes: 0
   }))
 
-  return { total, images, videos, documents, audio, unavailable, chatNames }
+  return { total, images, videos, documents, audio, unavailable, chatNames, globalPeakHour: null, globalPeakWeekday: null }
 }
 
 export function getStats(chatNameFilter?: string, dateFrom?: string, dateTo?: string): {
-  total: number; images: number; videos: number; documents: number; audio: number; unavailable: number; chatNames: ChatNameEntry[]
+  total: number; images: number; videos: number; documents: number; audio: number; unavailable: number; chatNames: ChatNameEntry[]; globalPeakHour: number | null; globalPeakWeekday: number | null
 } {
   const d = initDb()
   // Build date condition for stash.db queries
@@ -486,6 +486,8 @@ export function getStats(chatNameFilter?: string, dateFrom?: string, dateTo?: st
 
   // Enrich with message counts from chat.db
   let msgStats = new Map<string, { messageCount: number; sentCount: number; receivedCount: number; initiationCount: number; laughsGenerated: number; laughsReceived: number; lateNightRatio: number; avgReplyMinutes: number }>()
+  let globalPeakHour: number | null = null
+  let globalPeakWeekday: number | null = null
   let participantMap = new Map<string, number>()
   let displayToIdentifier = new Map<string, string>()
   try {
@@ -669,6 +671,23 @@ export function getStats(chatNameFilter?: string, dateFrom?: string, dateTo?: st
         } catch (err) { console.error('[ReplyLatency] Error:', err) }
       }
 
+      // Global peak hour and weekday
+      try {
+        const peakHourRow = chatDb.prepare(`
+          SELECT CAST(strftime('%H', datetime(m.date / ${NS} + ${APPLE_EPOCH}, 'unixepoch', 'localtime')) AS INTEGER) as hr, COUNT(*) as c
+          FROM message m WHERE (m.text IS NOT NULL OR m.cache_has_attachments = 1) AND m.is_from_me = 1${dateCond}
+          GROUP BY hr ORDER BY c DESC LIMIT 1
+        `).get() as { hr: number; c: number } | undefined
+        globalPeakHour = peakHourRow?.hr ?? null
+
+        const peakDayRow = chatDb.prepare(`
+          SELECT CAST(strftime('%w', datetime(m.date / ${NS} + ${APPLE_EPOCH}, 'unixepoch', 'localtime')) AS INTEGER) as dow, COUNT(*) as c
+          FROM message m WHERE (m.text IS NOT NULL OR m.cache_has_attachments = 1) AND m.is_from_me = 1${dateCond}
+          GROUP BY dow ORDER BY c DESC LIMIT 1
+        `).get() as { dow: number; c: number } | undefined
+        globalPeakWeekday = peakDayRow?.dow ?? null
+      } catch { /* ignore */ }
+
       for (const r of rows) {
         const laughs = laughCache.get(r.chat_name)
         msgStats.set(r.chat_name, {
@@ -709,7 +728,7 @@ export function getStats(chatNameFilter?: string, dateFrom?: string, dateTo?: st
     }
   })
 
-  return { total, images, videos, documents, audio, unavailable, chatNames }
+  return { total, images, videos, documents, audio, unavailable, chatNames, globalPeakHour, globalPeakWeekday }
 }
 
 // Returns chat names with contact resolution applied
