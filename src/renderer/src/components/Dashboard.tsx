@@ -34,6 +34,7 @@ interface Props {
   onClearScope?: () => void
   insightSurface?: InsightSurface
   onSurfaceChange?: (s: InsightSurface) => void
+  isStatsLoading?: boolean
 }
 
 function heroTitle(range: string): string {
@@ -120,6 +121,27 @@ const tileBase: React.CSSProperties = {
   borderRadius: 22,
   padding: '20px 20px 18px',
   boxShadow: '0 10px 30px rgba(0,0,0,0.05)'
+}
+
+// ─── Warming placeholder ───
+function WarmingCard({ span }: { span: number }): JSX.Element {
+  return (
+    <div style={{
+      gridColumn: `span ${span}`, borderRadius: 16, padding: '20px 22px',
+      background: '#fff', border: '1px solid rgba(0,0,0,0.06)', minHeight: 120,
+      display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', gap: 8,
+      overflow: 'hidden', position: 'relative'
+    }}>
+      <div style={{
+        position: 'absolute', inset: 0,
+        background: 'linear-gradient(90deg, transparent 0%, rgba(232,96,74,0.04) 50%, transparent 100%)',
+        animation: 'shimmer 2s ease-in-out infinite', backgroundSize: '200% 100%'
+      }} />
+      <div style={{ width: '40%', height: 8, borderRadius: 4, background: 'rgba(0,0,0,0.06)' }} />
+      <div style={{ width: '70%', height: 20, borderRadius: 4, background: 'rgba(0,0,0,0.06)' }} />
+      <div style={{ width: '90%', height: 10, borderRadius: 4, background: 'rgba(0,0,0,0.04)' }} />
+    </div>
+  )
 }
 
 // ─── ARCHETYPE 1: Poster card — giant number, dramatic scale ───
@@ -231,7 +253,7 @@ function BandCard({ title, subtitle, segments, span }: {
   )
 }
 
-export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange = 'all', scopedPerson, onClearScope, insightSurface = 'relationship', onSurfaceChange }: Props): JSX.Element {
+export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange = 'all', scopedPerson, onClearScope, insightSurface = 'relationship', onSurfaceChange, isStatsLoading }: Props): JSX.Element {
   const currentMonth = MONTH_NAMES[new Date().getMonth()]
   const heroText = heroTitle(dateRange)
   const chats = stats.chatNames as ChatNameEntry[]
@@ -357,7 +379,7 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
             </div>
           </div>
 
-          {trophies.length > 0 && (
+          {!isStatsLoading && trophies.length > 0 && (
             <div style={{ marginBottom: 20 }}>
               <div style={{ fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase', color: '#9a948f', marginBottom: 10 }}>Trophies</div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -612,17 +634,21 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
           rightSub={initiationPct > 60 ? 'They wait for you.' : initiationPct < 40 ? 'They drive this.' : 'Pretty even split.'}
           leftPct={initiationPct} accent="#E8604A" span={5}
         />
-        {byLaughsGenerated[0] && byLaughsGenerated[0].laughsGenerated > 0 ? (
-          <WinnerCard award="Best audience" name={resolveName(byLaughsGenerated[0].rawName, chatNameMap)}
-            stat={`${byLaughsGenerated[0].laughsGenerated.toLocaleString()} laughs`}
-            flavor="Laughs at everything you say — your best audience globally."
-            emoji="😂" accentColor="#E8604A" span={4} />
-        ) : <div style={{ gridColumn: 'span 4' }} />}
-        {byLaughsReceived[0] && byLaughsReceived[0].laughsReceived > 0 && (
-          <WinnerCard award="Makes you laugh most" name={resolveName(byLaughsReceived[0].rawName, chatNameMap)}
-            stat={`${byLaughsReceived[0].laughsReceived.toLocaleString()} times`}
-            flavor="They get you more than anyone else."
-            emoji="🤣" accentColor="#2EC4A0" span={3} />
+        {isStatsLoading ? <WarmingCard span={4} /> : (
+          byLaughsGenerated[0] && byLaughsGenerated[0].laughsGenerated > 0 ? (
+            <WinnerCard award="Best audience" name={resolveName(byLaughsGenerated[0].rawName, chatNameMap)}
+              stat={`${byLaughsGenerated[0].laughsGenerated.toLocaleString()} laughs`}
+              flavor="Laughs at everything you say — your best audience globally."
+              emoji="😂" accentColor="#E8604A" span={4} />
+          ) : <div style={{ gridColumn: 'span 4' }} />
+        )}
+        {isStatsLoading ? <WarmingCard span={3} /> : (
+          byLaughsReceived[0] && byLaughsReceived[0].laughsReceived > 0 && (
+            <WinnerCard award="Makes you laugh most" name={resolveName(byLaughsReceived[0].rawName, chatNameMap)}
+              stat={`${byLaughsReceived[0].laughsReceived.toLocaleString()} times`}
+              flavor="They get you more than anyone else."
+              emoji="🤣" accentColor="#2EC4A0" span={3} />
+          )
         )}
 
         {/* Row 3: Editorial story cards + winner */}
@@ -637,7 +663,7 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
               accent="#E8604A" span={6} />
           ) : null
         })()}
-        {(() => {
+        {isStatsLoading ? <WarmingCard span={6} /> : (() => {
           const topNightOwl = [...individuals].sort((a, b) => b.lateNightRatio - a.lateNightRatio)[0]
           return topNightOwl && topNightOwl.lateNightRatio > 10 ? (
             <EditorialCard kicker="Night owl connection"
@@ -646,7 +672,7 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
               accent="#7F77DD" span={6} />
           ) : null
         })()}
-        {(() => {
+        {isStatsLoading ? <WarmingCard span={4} /> : (() => {
           const fastest = [...individuals].filter(c => c.avgReplyMinutes > 0 && c.avgReplyMinutes < 60).sort((a, b) => a.avgReplyMinutes - b.avgReplyMinutes)[0]
           return fastest ? (
             <WinnerCard award="You reply fastest to" name={resolveName(fastest.rawName, chatNameMap)}
@@ -748,11 +774,15 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
 
   return (
     <div style={{ flex: 1, overflowY: 'auto', padding: '0 28px 40px', fontFamily: "'DM Sans', sans-serif" }}>
+    <style>{`@keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }`}</style>
     <div style={{ maxWidth: 1180, margin: '0 auto', width: '100%' }}>
       {/* Topbar */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 44, marginBottom: 8 }}>
-        <span style={{ fontSize: 12, letterSpacing: '0.22em', textTransform: 'uppercase', color: '#8a8480' }}>
-          {dateRange === 'all' ? 'All time' : dateRange === 'month' ? `${currentMonth}` : dateRange === 'year' ? `${new Date().getFullYear()}` : dateRange === '30days' ? 'Last 30 days' : 'Last 7 days'} · surfaced automatically
+        <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, letterSpacing: '0.22em', textTransform: 'uppercase', color: '#8a8480' }}>
+          {isStatsLoading && (
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#E8604A', display: 'inline-block', animation: 'shimmer 1.5s ease-in-out infinite', opacity: 0.7 }} />
+          )}
+          {isStatsLoading ? 'Warming up...' : (heroText.replace('.', '') + ' · surfaced automatically')}
         </span>
         <span style={{ color: '#9a948f', letterSpacing: '0.2em', fontSize: 20 }}>•••</span>
       </div>
@@ -792,15 +822,17 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
       {/* Insight tile grid */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 24 }}>
         {/* Tile 1 — Funniest person */}
-        <div style={{ ...tileBase, gridColumn: 'span 4' }}>
-          <TileLabel text="Funniest person" />
-          {topFunny && topFunny.laughsReceived > 0 ? (
-            <>
-              <Metric value={resolveName(topFunny.rawName, chatNameMap)} sub={`${topFunny.laughsReceived.toLocaleString()} times they made you laugh`} />
-              <CtaPill text="See why → Pro" />
-            </>
-          ) : <div style={{ color: '#9a948f', fontSize: 13 }}>No laugh data for this period</div>}
-        </div>
+        {isStatsLoading ? <WarmingCard span={4} /> : (
+          <div style={{ ...tileBase, gridColumn: 'span 4' }}>
+            <TileLabel text="Funniest person" />
+            {topFunny && topFunny.laughsReceived > 0 ? (
+              <>
+                <Metric value={resolveName(topFunny.rawName, chatNameMap)} sub={`${topFunny.laughsReceived.toLocaleString()} times they made you laugh`} />
+                <CtaPill text="See why → Pro" />
+              </>
+            ) : <div style={{ color: '#9a948f', fontSize: 13 }}>No laugh data for this period</div>}
+          </div>
+        )}
 
         {/* Tile 2 — Initiation balance */}
         <div style={{ ...tileBase, gridColumn: 'span 4' }}>
@@ -821,14 +853,16 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
         </div>
 
         {/* Tile 4 — Who makes you laugh most (leaderboard) */}
-        <div style={{ ...tileBase, gridColumn: 'span 8' }}>
-          <TileLabel text="Who makes you laugh most" />
-          {byLaughsReceived.filter((c) => c.laughsReceived > 0).slice(0, 3).map((c, i) => (
-            <LeaderRow key={c.rawName} rank={i + 1} name={resolveName(c.rawName, chatNameMap)} sub={laughLabels[i] || ''} value={`${c.laughsReceived.toLocaleString()} laughs`} />
-          ))}
-          {byLaughsReceived.every((c) => c.laughsReceived === 0) && <div style={{ color: '#9a948f', fontSize: 13, padding: '12px 0' }}>No laugh data for this period</div>}
-          <CtaPill text="See exact messages → Pro" />
-        </div>
+        {isStatsLoading ? <WarmingCard span={8} /> : (
+          <div style={{ ...tileBase, gridColumn: 'span 8' }}>
+            <TileLabel text="Who makes you laugh most" />
+            {byLaughsReceived.filter((c) => c.laughsReceived > 0).slice(0, 3).map((c, i) => (
+              <LeaderRow key={c.rawName} rank={i + 1} name={resolveName(c.rawName, chatNameMap)} sub={laughLabels[i] || ''} value={`${c.laughsReceived.toLocaleString()} laughs`} />
+            ))}
+            {byLaughsReceived.every((c) => c.laughsReceived === 0) && <div style={{ color: '#9a948f', fontSize: 13, padding: '12px 0' }}>No laugh data for this period</div>}
+            <CtaPill text="See exact messages → Pro" />
+          </div>
+        )}
 
         {/* Tile — You're funniest to */}
         <div style={{ ...tileBase, gridColumn: 'span 8' }}>

@@ -52,6 +52,7 @@ export default function App(): JSX.Element {
   const [dateRange, setDateRange] = useState<string>('all')
   const [filters, setFilters] = useState<Filters>({ type: 'all' })
   const [insightSurface, setInsightSurface] = useState<'relationship' | 'personal' | 'usage' | 'conversational'>('relationship')
+  const [isStatsLoading, setIsStatsLoading] = useState(false)
   // Contact photos removed — will be re-added with proper architecture
 
   const availableYears = useMemo(() => {
@@ -147,9 +148,12 @@ export default function App(): JSX.Element {
 
   // ── Stats loading ──
   const loadStats = useCallback(async (chatFilter?: string) => {
-    const bounds = dateRangeToBounds(dateRange)
-    const s = await window.api.getStats(chatFilter, bounds.from || undefined, bounds.to || undefined)
-    setStats(s)
+    setIsStatsLoading(true)
+    try {
+      const bounds = dateRangeToBounds(dateRange)
+      const s = await window.api.getStats(chatFilter, bounds.from || undefined, bounds.to || undefined)
+      setStats(s)
+    } finally { setIsStatsLoading(false) }
   }, [dateRange])
 
   useEffect(() => { if (appState === 'main') loadStats() }, [dateRange, appState])
@@ -224,7 +228,8 @@ export default function App(): JSX.Element {
           <Dashboard stats={stats} chatNameMap={stats.chatNameMap}
             onSelectConversation={(rawName) => setMainView({ kind: 'person-attachments', person: rawName })}
             dateRange={dateRange} scopedPerson={scopedPerson} onClearScope={goHome}
-            insightSurface={insightSurface} onSurfaceChange={setInsightSurface} />
+            insightSurface={insightSurface} onSurfaceChange={setInsightSurface}
+            isStatsLoading={isStatsLoading} />
         ) : (
           <AttachmentsView mainView={mainView} dateRange={dateRange} stats={stats} chatNameMap={stats.chatNameMap} onNavigate={setMainView} />
         )}
