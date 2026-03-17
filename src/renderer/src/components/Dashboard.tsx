@@ -162,6 +162,39 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
     const initPct = pd ? Math.min(99, Math.round((pd.initiationCount / Math.max(pd.messageCount * 0.1, 1)) * 100)) : 0
     const sentPct = pd ? Math.round((pd.sentCount / Math.max(pd.messageCount, 1)) * 100) : 50
 
+    const trophies: { emoji: string; label: string; sublabel: string }[] = []
+    if (pd) {
+      if (byMessages[0]?.rawName === pd.rawName)
+        trophies.push({ emoji: '👑', label: '#1 Most Messaged', sublabel: 'Your most texted person' })
+      if (byLaughsReceived[0]?.rawName === pd.rawName && pd.laughsReceived > 0)
+        trophies.push({ emoji: '😂', label: 'Chief Comedian', sublabel: 'Makes you laugh most' })
+      if (byLaughsGenerated[0]?.rawName === pd.rawName && pd.laughsGenerated > 0)
+        trophies.push({ emoji: '🎭', label: 'Best Audience', sublabel: 'Laughs at everything you say' })
+      if (byAttachments[0]?.rawName === pd.rawName && pd.attachmentCount > 0)
+        trophies.push({ emoji: '📸', label: 'Photo Dumper', sublabel: 'Most files shared' })
+      if (pd.initiationCount > 0) {
+        const initPctVal = Math.round((pd.initiationCount / Math.max(pd.sentCount, 1)) * 100)
+        if (initPctVal >= 70)
+          trophies.push({ emoji: '⚡', label: 'Always Initiates', sublabel: 'You keep this alive' })
+      }
+      const topNightOwl = [...individuals].sort((a, b) => b.lateNightRatio - a.lateNightRatio)[0]
+      if (topNightOwl?.rawName === pd.rawName && pd.lateNightRatio > 20)
+        trophies.push({ emoji: '🌙', label: 'Night Owl', sublabel: 'Your latest-night connection' })
+      const fastestResponder = [...individuals].filter(c => c.avgReplyMinutes > 0).sort((a, b) => a.avgReplyMinutes - b.avgReplyMinutes)[0]
+      if (fastestResponder?.rawName === pd.rawName)
+        trophies.push({ emoji: '⚡', label: 'Fastest Responder', sublabel: 'You reply fastest to them' })
+      const daysSince = pd.lastMessageDate ? Math.floor((Date.now() - new Date(pd.lastMessageDate).getTime()) / 86400000) : 0
+      if (pd.messageCount > 200 && daysSince > 60)
+        trophies.push({ emoji: '👻', label: 'The Ghost', sublabel: `${daysSince} days of silence` })
+      if (convStats?.firstMessageDate) {
+        const earliestChat = [...individuals].filter(c => c.lastMessageDate).sort((a, b) =>
+          new Date(a.lastMessageDate).getTime() - new Date(b.lastMessageDate).getTime()
+        )[0]
+        if (earliestChat?.rawName === pd.rawName)
+          trophies.push({ emoji: '🏛', label: 'Longest Standing', sublabel: 'Known you the longest' })
+      }
+    }
+
     const RelCard = ({ emoji, title, metric, sentence, flavor, span }: { emoji: string; title: string; metric: string; sentence: string; flavor: string; span: number }): JSX.Element => (
       <div style={{ ...tileBase, gridColumn: `span ${span}` }}>
         <div style={{ fontSize: 10, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#2EC4A0', marginBottom: 8, fontWeight: 600 }}>{emoji} {title}</div>
@@ -209,6 +242,28 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
               )}
             </div>
           </div>
+
+          {trophies.length > 0 && (
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase', color: '#9a948f', marginBottom: 10 }}>Trophies</div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {trophies.map(t => (
+                  <div key={t.label} style={{
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    background: '#fff', border: '1px solid rgba(0,0,0,0.07)',
+                    borderRadius: 12, padding: '8px 12px',
+                    boxShadow: '0 1px 4px rgba(0,0,0,0.04)'
+                  }}>
+                    <span style={{ fontSize: 18 }}>{t.emoji}</span>
+                    <div>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: '#1A1A1A', lineHeight: 1.2 }}>{t.label}</div>
+                      <div style={{ fontSize: 10, color: '#9a948f', marginTop: 1 }}>{t.sublabel}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {isGroupChat ? (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 24 }}>
