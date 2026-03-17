@@ -2,6 +2,10 @@ import { useState, useEffect } from 'react'
 import { Lock } from 'lucide-react'
 import type { Stats, ChatNameEntry } from '../types'
 
+type NetworkNode = { rawName: string; messageCount: number }
+type NetworkEdge = { a: string; b: string; sharedGroups: number }
+type NetworkData = { nodes: NetworkNode[]; edges: NetworkEdge[] }
+
 type MemoryItem = {
   id: number; filename: string; original_path: string; thumbnail_path: string | null;
   created_at: string; chat_name: string | null; is_image: number; is_available: number
@@ -360,6 +364,96 @@ function TodayInHistoryCard({ memories, chatNameMap, onSelectConversation }: {
   )
 }
 
+function ConstellationCard({ network, chatNameMap, onSelectConversation }: {
+  network: NetworkData; chatNameMap: Record<string, string>; onSelectConversation: (rawName: string) => void
+}): JSX.Element | null {
+  const [hovered, setHovered] = useState<string | null>(null)
+  if (network.nodes.length < 4) return null
+
+  const W = 600, H = 380, CX = W / 2, CY = H / 2
+  const sorted = network.nodes
+  const rings = [
+    { nodes: sorted.slice(0, 5), r: 85, dotSize: 7 },
+    { nodes: sorted.slice(5, 14), r: 155, dotSize: 5 },
+    { nodes: sorted.slice(14, 35), r: 215, dotSize: 3.5 },
+  ]
+
+  const positions = new Map<string, { x: number; y: number; size: number }>()
+  for (const ring of rings) {
+    ring.nodes.forEach((node, i) => {
+      const angle = (i / Math.max(ring.nodes.length, 1)) * Math.PI * 2 - Math.PI / 2
+      positions.set(node.rawName, { x: CX + Math.cos(angle) * ring.r, y: CY + Math.sin(angle) * ring.r, size: ring.dotSize })
+    })
+  }
+
+  const edgeCounts = new Map<string, number>()
+  for (const e of network.edges) {
+    if (positions.has(e.a)) edgeCounts.set(e.a, (edgeCounts.get(e.a) || 0) + 1)
+    if (positions.has(e.b)) edgeCounts.set(e.b, (edgeCounts.get(e.b) || 0) + 1)
+  }
+  const bridgeEntry = [...edgeCounts.entries()].sort((a, b) => b[1] - a[1])[0]
+  const bridgeName = bridgeEntry?.[0]
+  const visibleEdges = network.edges.filter(e => positions.has(e.a) && positions.has(e.b))
+
+  const getName = (raw: string) => {
+    const full = chatNameMap[raw] || raw
+    const clean = full.replace(/^#/, '').replace(/^\+/, '').split(' ')[0]
+    return clean.length > 9 ? clean.slice(0, 8) + '\u2026' : clean
+  }
+
+  return (
+    <div style={{ gridColumn: 'span 12', borderRadius: 18, background: '#0F0F0F', border: '1px solid rgba(255,255,255,0.06)', boxShadow: '0 4px 24px rgba(0,0,0,0.2)', padding: '22px 24px 16px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 2 }}>
+        <div>
+          <div style={{ fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'rgba(232,96,74,0.65)', marginBottom: 6, fontFamily: "'DM Sans'" }}>Your messaging network</div>
+          <div style={{ fontFamily: "'Unbounded', sans-serif", fontWeight: 200, fontSize: 15, color: '#fff', lineHeight: 1.4 }}>{network.nodes.length} people · {network.edges.length} shared connections.</div>
+        </div>
+        {bridgeName && positions.has(bridgeName) && (
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(232,96,74,0.45)', marginBottom: 3, fontFamily: "'DM Sans'" }}>Bridge contact</div>
+            <div style={{ fontSize: 12, color: '#E8604A', fontFamily: "'DM Sans'", fontWeight: 500 }}>{getName(bridgeName)}</div>
+            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', fontFamily: "'DM Sans'" }}>appears in {edgeCounts.get(bridgeName)} of your groups</div>
+          </div>
+        )}
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block', margin: '4px 0' }}>
+        {rings.map((ring, i) => <circle key={i} cx={CX} cy={CY} r={ring.r} fill="none" stroke="rgba(255,255,255,0.035)" strokeWidth={1} />)}
+        {visibleEdges.map((edge, i) => {
+          const a = positions.get(edge.a)!, b = positions.get(edge.b)!
+          const isHot = hovered === edge.a || hovered === edge.b
+          return <line key={i} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={isHot ? 'rgba(232,96,74,0.55)' : 'rgba(255,255,255,0.07)'} strokeWidth={isHot ? 1.5 : 0.75} />
+        })}
+        <circle cx={CX} cy={CY} r={10} fill="#E8604A" />
+        <circle cx={CX} cy={CY} r={17} fill="none" stroke="rgba(232,96,74,0.2)" strokeWidth={1.5} />
+        <text x={CX} y={CY + 28} textAnchor="middle" style={{ fontSize: 8, fill: 'rgba(232,96,74,0.6)', fontFamily: 'DM Sans', letterSpacing: '0.12em' }}>YOU</text>
+        {rings.flatMap(ring => ring.nodes.map(node => {
+          const pos = positions.get(node.rawName)
+          if (!pos) return null
+          const isHov = hovered === node.rawName, isBridge = node.rawName === bridgeName
+          const fill = isBridge ? '#E8604A' : isHov ? '#2EC4A0' : 'rgba(255,255,255,0.45)'
+          const r = isHov ? pos.size + 2.5 : pos.size
+          return (
+            <g key={node.rawName} style={{ cursor: 'pointer' }} onMouseEnter={() => setHovered(node.rawName)} onMouseLeave={() => setHovered(null)} onClick={() => onSelectConversation(node.rawName)}>
+              <circle cx={pos.x} cy={pos.y} r={Math.max(r, 12)} fill="transparent" />
+              <circle cx={pos.x} cy={pos.y} r={r} fill={fill} />
+              {pos.size >= 5 && <text x={pos.x} y={pos.y + r + 11} textAnchor="middle" style={{ fontSize: pos.size >= 7 ? 9 : 8, fill: isHov ? '#fff' : 'rgba(255,255,255,0.3)', fontFamily: 'DM Sans', pointerEvents: 'none' }}>{getName(node.rawName)}</text>}
+              {isHov && pos.size < 5 && <text x={pos.x} y={pos.y - r - 4} textAnchor="middle" style={{ fontSize: 8, fill: '#fff', fontFamily: 'DM Sans', pointerEvents: 'none' }}>{getName(node.rawName)}</text>}
+            </g>
+          )
+        }))}
+      </svg>
+      <div style={{ display: 'flex', gap: 18, paddingTop: 4 }}>
+        {[{ color: 'rgba(255,255,255,0.07)', label: 'Shared group', isLine: true }, { color: '#E8604A', label: 'Bridge — most connected', isLine: false }, { color: 'rgba(255,255,255,0.4)', label: 'Inner ring = more messages', isLine: false }].map(({ color, label, isLine }) => (
+          <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            {isLine ? <div style={{ width: 16, height: 1.5, background: 'rgba(255,255,255,0.25)' }} /> : <div style={{ width: 7, height: 7, borderRadius: '50%', background: color }} />}
+            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', fontFamily: "'DM Sans'" }}>{label}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange = 'all', scopedPerson, onClearScope, insightSurface = 'relationship', onSurfaceChange, isStatsLoading }: Props): JSX.Element {
   const currentMonth = MONTH_NAMES[new Date().getMonth()]
   const heroText = heroTitle(dateRange)
@@ -377,7 +471,9 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
   const topGroup = [...groups].sort((a, b) => b.messageCount - a.messageCount)[0]
 
   const [todayMemories, setTodayMemories] = useState<MemoryItem[]>([])
+  const [networkData, setNetworkData] = useState<NetworkData | null>(null)
   useEffect(() => { window.api.getTodayInHistory().then(setTodayMemories).catch(() => {}) }, [])
+  useEffect(() => { window.api.getMessagingNetwork().then(setNetworkData).catch(() => {}) }, [])
 
   const topFunny = byLaughsReceived[0]
   const topChat = byMessages[0]
@@ -845,6 +941,10 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
               accent="#E8604A" span={4} />
           ) : null
         })()}
+
+        {networkData && networkData.nodes.length >= 4 && (
+          <ConstellationCard network={networkData} chatNameMap={chatNameMap} onSelectConversation={onSelectConversation} />
+        )}
 
       </div>
     </div>

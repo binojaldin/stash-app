@@ -13,6 +13,10 @@ const api = {
     chatNames: { rawName: string; attachmentCount: number; lastMessageDate: string; messageCount: number; sentCount: number; receivedCount: number; initiationCount: number; laughsGenerated: number; laughsReceived: number; isGroup: boolean; lateNightRatio: number; avgReplyMinutes: number }[]
     chatNameMap: Record<string, string>
   }> => ipcRenderer.invoke('get-stats', chatNameFilter, dateFrom, dateTo),
+  getMessagingNetwork: (): Promise<{
+    nodes: { rawName: string; messageCount: number }[]
+    edges: { a: string; b: string; sharedGroups: number }[]
+  }> => ipcRenderer.invoke('get-messaging-network'),
   getTodayInHistory: (): Promise<{
     id: number; filename: string; original_path: string; thumbnail_path: string | null;
     created_at: string; chat_name: string | null; is_image: number; is_available: number

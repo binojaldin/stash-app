@@ -345,6 +345,78 @@ export function getTodayInHistory(): {
   } catch { return [] }
 }
 
+export function getMessagingNetwork(): {
+  nodes: { rawName: string; messageCount: number }[]
+  edges: { a: string; b: string; sharedGroups: number }[]
+} {
+  try {
+    const { homedir } = require('os')
+    const { join } = require('path')
+    const { existsSync } = require('fs')
+    const chatDbPath = join(homedir(), 'Library/Messages/chat.db')
+    if (!existsSync(chatDbPath)) return { nodes: [], edges: [] }
+
+    const chatDb = new Database(chatDbPath, { readonly: true })
+    try {
+      const rows = chatDb.prepare(`
+        SELECT c.chat_identifier as chat_id, h.id as handle_id
+        FROM chat c
+        JOIN chat_handle_join chj ON c.ROWID = chj.chat_id
+        JOIN handle h ON chj.handle_id = h.ROWID
+        WHERE (SELECT COUNT(DISTINCT chj2.handle_id) FROM chat_handle_join chj2 WHERE chj2.chat_id = c.ROWID) > 1
+      `).all() as { chat_id: string; handle_id: string }[]
+
+      const handleMsgRows = chatDb.prepare(`
+        SELECT h.id as handle_id, COUNT(m.ROWID) as cnt
+        FROM message m JOIN handle h ON m.handle_id = h.ROWID
+        WHERE m.is_from_me = 0
+        GROUP BY h.id
+      `).all() as { handle_id: string; cnt: number }[]
+
+      const handleMsgMap = new Map(handleMsgRows.map(r => [r.handle_id, r.cnt]))
+
+      const chatToHandles = new Map<string, Set<string>>()
+      for (const row of rows) {
+        if (!chatToHandles.has(row.chat_id)) chatToHandles.set(row.chat_id, new Set())
+        chatToHandles.get(row.chat_id)!.add(row.handle_id)
+      }
+
+      const edgeMap = new Map<string, number>()
+      for (const handles of chatToHandles.values()) {
+        const arr = Array.from(handles).sort()
+        for (let i = 0; i < arr.length; i++) {
+          for (let j = i + 1; j < arr.length; j++) {
+            const key = `${arr[i]}|||${arr[j]}`
+            edgeMap.set(key, (edgeMap.get(key) || 0) + 1)
+          }
+        }
+      }
+
+      const allHandles = new Set<string>()
+      for (const handles of chatToHandles.values()) for (const h of handles) allHandles.add(h)
+
+      const nodes = Array.from(allHandles)
+        .map(h => ({ rawName: h, messageCount: handleMsgMap.get(h) || 0 }))
+        .sort((a, b) => b.messageCount - a.messageCount || a.rawName.localeCompare(b.rawName))
+        .slice(0, 40)
+
+      const nodeSet = new Set(nodes.map(n => n.rawName))
+      const edges: { a: string; b: string; sharedGroups: number }[] = []
+      for (const [key, count] of edgeMap) {
+        const sep = key.indexOf('|||')
+        const a = key.slice(0, sep), b = key.slice(sep + 3)
+        if (nodeSet.has(a) && nodeSet.has(b)) edges.push({ a, b, sharedGroups: count })
+      }
+
+      return { nodes, edges }
+    } finally {
+      try { chatDb.close() } catch { /* ignore double close */ }
+    }
+  } catch {
+    return { nodes: [], edges: [] }
+  }
+}
+
 export function getFastStats(chatNameFilter?: string, dateFrom?: string, dateTo?: string): {
   total: number; images: number; videos: number; documents: number; audio: number; unavailable: number; chatNames: ChatNameEntry[]
 } {
