@@ -420,24 +420,28 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
               <SoonCard emoji="😂" title="Meme density" span={6} />
             </div>
           ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 24 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 14 }}>
               {pd && <>
-                <RelCard emoji="🎭" title="Comedy Advantage" span={4}
-                  metric={pd.laughsReceived > pd.laughsGenerated ? 'You win' : `${firstName} wins`}
-                  sentence={`You got ${pd.laughsGenerated.toLocaleString()} laughs out of them.`}
-                  flavor={pd.laughsReceived > pd.laughsGenerated ? 'You win. They have no defense against you.' : "They get you every time. Keep them close."} />
-                <RelCard emoji="😂" title="Your Comedian" span={4}
-                  metric={pd.laughsReceived.toLocaleString()}
-                  sentence={`${firstName} made you laugh ${pd.laughsReceived.toLocaleString()} times.`}
-                  flavor={pd.laughsReceived > 500 ? `${pd.laughsReceived.toLocaleString()} times. That's not funny, that's a gift.` : 'They know exactly how to get you.'} />
-                <RelCard emoji="⚡" title="Conversation Instigator" span={4}
-                  metric={`${initPct}%`}
-                  sentence={`You started ${initPct}% of threads.`}
-                  flavor={initPct > 70 ? 'You carry this. They show up when you call.' : initPct > 50 ? 'You keep this thing alive.' : initPct < 30 ? "They want this more than you do. Or they're just keen." : 'You both reach out. Rarer than you think.'} />
-                <RelCard emoji="💬" title="Message Balance" span={6}
-                  metric={`${sentPct}/${100 - sentPct}`}
-                  sentence={`You sent ${sentPct}% of the words.`}
-                  flavor={sentPct > 55 ? 'You talk more. No shame.' : sentPct < 45 ? 'They do most of the talking.' : 'Perfectly balanced, as all things should be.'} />
+                <WinnerCard award="Comedy advantage" name={pd.laughsReceived > pd.laughsGenerated ? 'You win' : `${firstName} wins`}
+                  stat={`You got ${pd.laughsGenerated.toLocaleString()} laughs out of them`}
+                  flavor={pd.laughsReceived > pd.laughsGenerated ? 'You win. They have no defense against you.' : 'They get you every time. Keep them close.'}
+                  emoji="🎭" accentColor="#2EC4A0" span={4} />
+                <WinnerCard award="Your comedian" name={firstName}
+                  stat={`${pd.laughsReceived.toLocaleString()} times they've made you laugh`}
+                  flavor={pd.laughsReceived > 500 ? "That's not funny, that's a gift." : 'They know exactly how to get you.'}
+                  emoji="😂" accentColor="#2EC4A0" span={4} />
+                <SplitCard eyebrow="Who reaches first"
+                  leftValue={`${initPct}%`} leftLabel="You initiate"
+                  leftSub={initPct > 60 ? 'You keep this alive.' : initPct < 30 ? 'You wait for them.' : 'You share it.'}
+                  rightValue={`${100 - initPct}%`} rightLabel={firstName}
+                  rightSub={initPct > 60 ? 'They show up when you call.' : initPct < 30 ? 'They drive this.' : 'Pretty even.'}
+                  leftPct={initPct} accent="#2EC4A0" span={4} />
+                <SplitCard eyebrow="Message balance"
+                  leftValue={`${sentPct}%`} leftLabel="You"
+                  leftSub={sentPct > 55 ? 'You talk more.' : sentPct < 45 ? 'You listen more.' : 'Even split.'}
+                  rightValue={`${100 - sentPct}%`} rightLabel={firstName}
+                  rightSub={sentPct > 55 ? 'They mostly listen.' : sentPct < 45 ? 'They carry it.' : 'Balanced.'}
+                  leftPct={sentPct} accent="#2EC4A0" span={6} />
                 <RelCard emoji="📸" title="The Archive" span={6}
                   metric={pd.attachmentCount.toLocaleString()}
                   sentence={`${pd.attachmentCount.toLocaleString()} things shared between you.`}
@@ -445,16 +449,15 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
               </>}
               {/* Enriched stats from getConversationStats */}
               {convStats?.relationshipArc && (
-                <RelCard emoji={arcEmoji[convStats.relationshipArc] || '⚖️'} title="Relationship Arc" span={4}
-                  metric={arcLabel[convStats.relationshipArc] || 'Steady'}
-                  sentence={arcSentence(convStats.relationshipArc, firstName)}
-                  flavor="" />
+                <EditorialCard kicker={`${arcLabel[convStats.relationshipArc] || 'Steady'} ${arcEmoji[convStats.relationshipArc] || ''}`}
+                  headline={arcSentence(convStats.relationshipArc, firstName)}
+                  subtext={convStats.relationshipArc === 'fading' ? 'You used to talk more. Something shifted.' : convStats.relationshipArc === 'growing' ? 'Something is building here.' : convStats.relationshipArc === 'rekindled' ? 'You found your way back.' : ''}
+                  accent="#2EC4A0" span={4} />
               )}
               {convStats && convStats.longestStreakDays > 0 && (
-                <RelCard emoji="🔥" title="Longest Streak" span={4}
-                  metric={`${convStats.longestStreakDays} days`}
-                  sentence="Your longest run of consecutive daily messages."
-                  flavor={convStats.longestStreakDays > 60 ? `${convStats.longestStreakDays} days straight. What were you two even talking about?` : convStats.longestStreakDays > 14 ? 'A proper run. Something was happening that month.' : ''} />
+                <PosterCard eyebrow="Longest streak" number={`${convStats.longestStreakDays}`} unit="days"
+                  descriptor={convStats.longestStreakDays > 60 ? `${convStats.longestStreakDays} days straight. What were you two even talking about?` : 'Your longest run of consecutive daily messages.'}
+                  accent="#2EC4A0" bg="#F8F4F0" span={4} />
               )}
               {convStats?.peakHour !== null && convStats?.peakHour !== undefined && (
                 <RelCard emoji="🕐" title="Your Peak Hour" span={4}
@@ -464,22 +467,22 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
               )}
               {convStats?.firstMessageDate && (() => {
                 const years = Math.floor((Date.now() - new Date(convStats.firstMessageDate!).getTime()) / (86400000 * 365))
-                return <RelCard emoji="📅" title="Since" span={4}
-                  metric={new Date(convStats.firstMessageDate!).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                  sentence={`Your first message with ${firstName}.`}
-                  flavor={years >= 5 ? `${years} years. That's not a contact, that's a constant.` : years >= 2 ? `${years} years and counting.` : 'Still early days.'} />
+                return <PosterCard eyebrow={`Since ${new Date(convStats.firstMessageDate!).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}`}
+                  number={years > 0 ? `${years}` : '<1'} unit={years === 1 ? 'year' : 'years'}
+                  descriptor={years >= 5 ? "That's not a contact, that's a constant." : years >= 2 ? `${years} years and counting.` : `Still early days with ${firstName}.`}
+                  accent="#2EC4A0" bg="#F8F4F0" span={4} />
               })()}
               {convStats?.avgResponseTimeMinutes !== null && convStats?.avgResponseTimeMinutes !== undefined && (
-                <RelCard emoji="⏱" title="Reply Speed" span={4}
-                  metric={`${convStats.avgResponseTimeMinutes}m`}
-                  sentence={convStats.avgResponseTimeMinutes < 2 ? "You're basically always there." : convStats.avgResponseTimeMinutes < 10 ? "Quick. They know you're paying attention." : convStats.avgResponseTimeMinutes < 60 ? "Unhurried. You reply when you're ready." : 'You make them wait for it.'}
-                  flavor="" />
+                <EditorialCard kicker="Reply speed"
+                  headline={convStats.avgResponseTimeMinutes < 2 ? "You're basically always there." : convStats.avgResponseTimeMinutes < 10 ? `${convStats.avgResponseTimeMinutes} min. Quick — they know you're paying attention.` : convStats.avgResponseTimeMinutes < 60 ? `${convStats.avgResponseTimeMinutes} min. Unhurried.` : `${convStats.avgResponseTimeMinutes} min. You make them wait for it.`}
+                  subtext={`Your average reply time with ${firstName}.`}
+                  accent="#2EC4A0" span={4} />
               )}
               {pd && pd.lateNightRatio > 0 ? (
-                <RelCard emoji="🌙" title="Night Owls" span={4}
-                  metric={`${pd.lateNightRatio}%`}
-                  sentence={`${pd.lateNightRatio}% of your messages happen after 11pm.`}
-                  flavor={pd.lateNightRatio > 40 ? 'This is a late-night relationship.' : 'Mostly daytime people.'} />
+                <EditorialCard kicker="Night owl connection"
+                  headline={`${pd.lateNightRatio}% of your messages happen after 11pm.`}
+                  subtext={pd.lateNightRatio > 40 ? 'This is a late-night relationship. Some things only come alive after midnight.' : 'Mostly daytime — but you have your late-night moments.'}
+                  accent="#7F77DD" span={4} />
               ) : <SoonCard emoji="🌙" title="Night Owls" span={4} />}
               {convStats?.sharedGroupCount !== undefined && convStats.sharedGroupCount > 0 && (
                 <RelCard emoji="👥" title="In common" span={4}
