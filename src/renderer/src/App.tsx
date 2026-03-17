@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { Sparkles } from 'lucide-react'
 import { PermissionScreen } from './components/PermissionScreen'
 import { ChatPriorityScreen } from './components/ChatPriorityScreen'
@@ -20,6 +20,14 @@ type MainView =
 
 function dateRangeToBounds(range: string): { from: string | null; to: string | null } {
   const now = new Date()
+  if (/^\d{4}$/.test(range)) {
+    const y = parseInt(range)
+    return { from: new Date(y, 0, 1).toISOString(), to: new Date(y, 11, 31, 23, 59, 59).toISOString() }
+  }
+  if (/^\d{4}-\d{2}$/.test(range)) {
+    const [y, m] = range.split('-').map(Number)
+    return { from: new Date(y, m - 1, 1).toISOString(), to: new Date(y, m, 0, 23, 59, 59).toISOString() }
+  }
   switch (range) {
     case '7days': { const d = new Date(now); d.setDate(d.getDate() - 7); return { from: d.toISOString(), to: null } }
     case '30days': { const d = new Date(now); d.setDate(d.getDate() - 30); return { from: d.toISOString(), to: null } }
@@ -45,6 +53,13 @@ export default function App(): JSX.Element {
   const [filters, setFilters] = useState<Filters>({ type: 'all' })
   const [insightSurface, setInsightSurface] = useState<'relationship' | 'personal' | 'usage' | 'conversational'>('relationship')
   // Contact photos removed — will be re-added with proper architecture
+
+  const availableYears = useMemo(() => {
+    const chats = stats.chatNames as { lastMessageDate: string }[]
+    if (!chats.length) return []
+    const years = new Set(chats.filter(c => c.lastMessageDate).map(c => new Date(c.lastMessageDate).getFullYear()))
+    return Array.from(years).sort((a, b) => b - a)
+  }, [stats.chatNames])
 
   // ── Derived ──
   const scopedPerson = (mainView.kind === 'person-insights' || mainView.kind === 'person-attachments') ? mainView.person : null
@@ -175,6 +190,7 @@ export default function App(): JSX.Element {
             scopedPerson={scopedPerson}
             onScopePerson={(rawName) => rawName ? scopePerson(rawName) : goHome()}
             selectedRange={dateRange} onDateRangeChange={setDateRange}
+            availableYears={availableYears}
             onNavigate={(view) => setMainView(view as MainView)}
           />
         )}

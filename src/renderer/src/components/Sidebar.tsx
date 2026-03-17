@@ -16,6 +16,7 @@ interface Props {
   scopedPerson?: string | null
   onScopePerson?: (rawName: string | null) => void
   onNavigate?: (view: { kind: string; person?: string }) => void
+  availableYears?: number[]
 }
 
 function resolveName(raw: string, map: Record<string, string>): string {
@@ -29,13 +30,35 @@ function compactNum(n: number): string {
   return String(n)
 }
 
-export function Sidebar({ stats, filters, onFilterChange, onManageConversations, onHideChat, isIndexing, indexingProgress, onGoHome, selectedRange, onDateRangeChange, scopedPerson, onScopePerson, onNavigate }: Props): JSX.Element {
+const MONTH_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+
+function getRangeLabel(range: string): string {
+  if (!range || range === 'all') return 'All time'
+  if (range === '7days') return 'Last 7 days'
+  if (range === '30days') return 'Last 30 days'
+  if (range === 'month') return MONTH_SHORT[new Date().getMonth()] + ' ' + new Date().getFullYear()
+  if (range === 'year') return String(new Date().getFullYear())
+  if (/^\d{4}$/.test(range)) return range
+  if (/^\d{4}-\d{2}$/.test(range)) {
+    const [y, m] = range.split('-').map(Number)
+    return MONTH_SHORT[m - 1] + ' ' + y
+  }
+  return 'All time'
+}
+
+export function Sidebar({ stats, filters, onFilterChange, onManageConversations, onHideChat, isIndexing, indexingProgress, onGoHome, selectedRange, onDateRangeChange, scopedPerson, onScopePerson, onNavigate, availableYears }: Props): JSX.Element {
   const [chatFilter, setChatFilter] = useState('')
   const [chatSort, setChatSort] = useState<string>('most-messages')
   const [showAllChats, setShowAllChats] = useState(false)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; rawName: string } | null>(null)
-  const [showDateMenu, setShowDateMenu] = useState(false)
-  const dateLabels: Record<string, string> = { all: 'All time', month: 'This month', year: 'This year', '30days': 'Last 30 days', '7days': 'Last 7 days' }
+  const [expandedYear, setExpandedYear] = useState<number | null>(() => {
+    const r = selectedRange || 'all'
+    if (/^\d{4}$/.test(r)) return parseInt(r)
+    if (/^\d{4}-\d{2}$/.test(r)) return parseInt(r.split('-')[0])
+    return null
+  })
+  const sidebarCurrentYear = new Date().getFullYear()
+  const sidebarCurrentMonth = new Date().getMonth()
 
   const sortedChats = useMemo(() => {
     let list = stats.chatNames as ChatNameEntry[]
@@ -169,23 +192,91 @@ export function Sidebar({ stats, filters, onFilterChange, onManageConversations,
         </button>
 
         {/* Date range */}
-        <div style={{ fontSize: 11, letterSpacing: '0.2em', textTransform: 'uppercase', color: '#E8604A', margin: '18px 0 10px' }}>Date range</div>
-        <div style={{ position: 'relative', marginBottom: 20 }}>
-          <button onClick={() => setShowDateMenu(!showDateMenu)}
-            style={{ width: '100%', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 10, padding: '10px 12px', fontSize: 13, color: '#d8d8d8', outline: 'none', cursor: 'pointer', fontFamily: "'DM Sans'", display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span>{dateLabels[selectedRange || 'all']}</span>
-            <span style={{ color: '#555', fontSize: 10 }}>▾</span>
-          </button>
-          {showDateMenu && (
-            <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4, background: '#1A1A1A', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 10, overflow: 'hidden', zIndex: 100 }}>
-              {Object.entries(dateLabels).map(([val, label]) => (
-                <button key={val} onClick={() => { onDateRangeChange?.(val); setShowDateMenu(false) }}
-                  style={{ width: '100%', textAlign: 'left', padding: '10px 14px', fontSize: 13, color: (selectedRange || 'all') === val ? '#E8604A' : '#d8d8d8', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: "'DM Sans'" }}>
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ fontSize: 10, letterSpacing: '0.2em', textTransform: 'uppercase', color: '#E8604A', marginBottom: 10, fontFamily: "'DM Sans'" }}>
+            {getRangeLabel(selectedRange || 'all')}
+          </div>
+
+          {/* Quick presets */}
+          <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 8 }}>
+            {([
+              { val: 'all', label: 'All time' },
+              { val: '7days', label: '7 days' },
+              { val: '30days', label: '30 days' },
+              { val: 'month', label: 'This month' },
+            ] as const).map(({ val, label }) => {
+              const isActive = (selectedRange || 'all') === val
+              return (
+                <button key={val} onClick={() => { onDateRangeChange?.(val); setExpandedYear(null) }}
+                  style={{
+                    padding: '5px 10px', borderRadius: 8, fontSize: 11, cursor: 'pointer',
+                    fontFamily: "'DM Sans'", border: '1px solid',
+                    borderColor: isActive ? '#E8604A' : 'rgba(255,255,255,0.1)',
+                    background: isActive ? 'rgba(232,96,74,0.1)' : 'transparent',
+                    color: isActive ? '#E8604A' : '#8a8480'
+                  }}>
                   {label}
                 </button>
-              ))}
-            </div>
-          )}
+              )
+            })}
+          </div>
+
+          {/* Year chips with expandable months */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {(availableYears || []).map(year => {
+              const isYearActive = (selectedRange || 'all') === String(year)
+              const isMonthInYear = (selectedRange || '').startsWith(String(year) + '-')
+              const isActive = isYearActive || isMonthInYear
+              const isExpanded = expandedYear === year
+
+              return (
+                <div key={year}>
+                  <button
+                    onClick={() => {
+                      if (isExpanded) {
+                        setExpandedYear(null)
+                      } else {
+                        setExpandedYear(year)
+                        onDateRangeChange?.(String(year))
+                      }
+                    }}
+                    style={{
+                      width: '100%', padding: '6px 10px', borderRadius: 8, fontSize: 12,
+                      cursor: 'pointer', fontFamily: "'DM Sans'", border: '1px solid',
+                      borderColor: isActive ? '#E8604A' : 'rgba(255,255,255,0.1)',
+                      background: isActive ? 'rgba(232,96,74,0.1)' : 'transparent',
+                      color: isActive ? '#E8604A' : '#8a8480',
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between'
+                    }}>
+                    <span>{year}</span>
+                    <span style={{ fontSize: 9, opacity: 0.4 }}>{isExpanded ? '▴' : '▾'}</span>
+                  </button>
+
+                  {isExpanded && (
+                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', padding: '6px 2px 2px' }}>
+                      {MONTH_SHORT.map((mo, idx) => {
+                        if (year === sidebarCurrentYear && idx > sidebarCurrentMonth) return null
+                        const val = `${year}-${String(idx + 1).padStart(2, '0')}`
+                        const isMonthActive = (selectedRange || 'all') === val
+                        return (
+                          <button key={val} onClick={() => onDateRangeChange?.(val)}
+                            style={{
+                              padding: '4px 8px', borderRadius: 6, fontSize: 10, cursor: 'pointer',
+                              fontFamily: "'DM Sans'", border: '1px solid',
+                              borderColor: isMonthActive ? '#E8604A' : 'rgba(255,255,255,0.08)',
+                              background: isMonthActive ? 'rgba(232,96,74,0.15)' : 'rgba(255,255,255,0.02)',
+                              color: isMonthActive ? '#E8604A' : '#6a6460'
+                            }}>
+                            {mo}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
         </div>
 
         {/* Top chats */}

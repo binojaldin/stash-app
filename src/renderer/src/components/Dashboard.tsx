@@ -39,12 +39,17 @@ interface Props {
 function heroTitle(range: string): string {
   const month = MONTH_NAMES[new Date().getMonth()]
   const year = new Date().getFullYear()
+  if (/^\d{4}$/.test(range)) return `${range}.`
+  if (/^\d{4}-\d{2}$/.test(range)) {
+    const [y, m] = range.split('-').map(Number)
+    return `${MONTH_NAMES[m - 1]} ${y}.`
+  }
   switch (range) {
-    case 'month': return `${month}. Your messages, surfaced.`
-    case 'year': return `${year}. Your messages, surfaced.`
-    case '7days': return `Last 7 days. Your messages, surfaced.`
-    case '30days': return `Last 30 days. Your messages, surfaced.`
-    default: return `Your messages, surfaced.`
+    case 'month': return `${month}.`
+    case 'year': return `${year}.`
+    case '7days': return 'Last 7 days.'
+    case '30days': return 'Last 30 days.'
+    default: return 'All time.'
   }
 }
 
@@ -551,7 +556,12 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
         <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', lineHeight: 1.65, maxWidth: 420, fontFamily: "'DM Sans'" }}>Patterns in how, when, and who you communicate with — without reading a single message.</div>
         {dateRange !== 'all' && (
           <div style={{ fontSize: 11, color: 'rgba(232,96,74,0.45)', marginTop: 8, fontFamily: "'DM Sans'", letterSpacing: '0.1em', textTransform: 'uppercase' }}>
-            {dateRange === 'month' ? currentMonth : dateRange === 'year' ? String(new Date().getFullYear()) : dateRange === '30days' ? 'Last 30 days' : 'Last 7 days'}
+            {/^\d{4}$/.test(dateRange) ? dateRange
+              : /^\d{4}-\d{2}$/.test(dateRange) ? (() => { const [y,m] = dateRange.split('-').map(Number); return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][m-1] + ' ' + y })()
+              : dateRange === 'month' ? new Date().toLocaleString('en-US', {month:'long'})
+              : dateRange === 'year' ? String(new Date().getFullYear())
+              : dateRange === '30days' ? 'Last 30 days'
+              : 'Last 7 days'}
           </div>
         )}
       </div>
@@ -605,13 +615,13 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
         {byLaughsGenerated[0] && byLaughsGenerated[0].laughsGenerated > 0 ? (
           <WinnerCard award="Best audience" name={resolveName(byLaughsGenerated[0].rawName, chatNameMap)}
             stat={`${byLaughsGenerated[0].laughsGenerated.toLocaleString()} laughs`}
-            flavor="Laughs at everything you say. Keep them close."
+            flavor="Laughs at everything you say — your best audience globally."
             emoji="😂" accentColor="#E8604A" span={4} />
         ) : <div style={{ gridColumn: 'span 4' }} />}
         {byLaughsReceived[0] && byLaughsReceived[0].laughsReceived > 0 && (
           <WinnerCard award="Makes you laugh most" name={resolveName(byLaughsReceived[0].rawName, chatNameMap)}
             stat={`${byLaughsReceived[0].laughsReceived.toLocaleString()} times`}
-            flavor="They know exactly how to get you."
+            flavor="They get you more than anyone else."
             emoji="🤣" accentColor="#2EC4A0" span={3} />
         )}
 
@@ -659,7 +669,12 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
         <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', lineHeight: 1.65, maxWidth: 420, fontFamily: "'DM Sans'" }}>The full picture of your iMessage activity — volume, attachments, and patterns across time.</div>
         {dateRange !== 'all' && (
           <div style={{ fontSize: 11, color: 'rgba(127,119,221,0.45)', marginTop: 8, fontFamily: "'DM Sans'", letterSpacing: '0.1em', textTransform: 'uppercase' }}>
-            {dateRange === 'month' ? currentMonth : dateRange === 'year' ? String(new Date().getFullYear()) : dateRange === '30days' ? 'Last 30 days' : 'Last 7 days'}
+            {/^\d{4}$/.test(dateRange) ? dateRange
+              : /^\d{4}-\d{2}$/.test(dateRange) ? (() => { const [y,m] = dateRange.split('-').map(Number); return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][m-1] + ' ' + y })()
+              : dateRange === 'month' ? new Date().toLocaleString('en-US', {month:'long'})
+              : dateRange === 'year' ? String(new Date().getFullYear())
+              : dateRange === '30days' ? 'Last 30 days'
+              : 'Last 7 days'}
           </div>
         )}
       </div>
