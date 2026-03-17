@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain, dialog, Menu, Tray, nativeImage } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, dialog, Menu, Tray, nativeImage, powerSaveBlocker } from 'electron'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import { checkFullDiskAccess } from './messagesReader'
@@ -198,7 +198,14 @@ function setupIpc(): void {
   })
 
   ipcMain.handle('get-indexing-progress', () => getIndexingProgress())
-  ipcMain.handle('start-indexing', (_event, priorityChats?: string[]) => { startIndexing(mainWindow, priorityChats) })
+  ipcMain.handle('start-indexing', async (_event, priorityChats?: string[]) => {
+    const blockerId = powerSaveBlocker.start('prevent-app-suspension')
+    try {
+      await startIndexing(mainWindow, priorityChats)
+    } finally {
+      powerSaveBlocker.stop(blockerId)
+    }
+  })
   ipcMain.handle('get-chat-summaries', () => fetchChatSummaries())
   ipcMain.handle('resolve-chat-names', () => { resolveNamesInBackground(mainWindow) })
   ipcMain.handle('save-chat-priorities', (_event, chats: string[]) => { saveChatPriorities(chats) })
