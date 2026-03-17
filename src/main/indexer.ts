@@ -430,6 +430,52 @@ export async function startIndexing(win: BrowserWindow | null, selectedChats?: s
   // Update reaction counts from chat.db
   try { updateReactionCounts() } catch (e) { console.error('[Reactions] Error updating counts:', e) }
 
+  // ── Phase 6: Message text indexing (V2 FTS) ──
+  indexingProgress = { total: 0, processed: 0, currentFile: '', phase: 'Indexing message text...' }
+  sendProgress(win)
+  try {
+    const chatDbPath = join(homedir(), 'Library/Messages/chat.db')
+    if (existsSync(chatDbPath)) {
+      const Database2 = require('better-sqlite3')
+      const chatDb = new Database2(chatDbPath, { readonly: true })
+      const stashDb = initDb()
+      const APPLE_EPOCH = 978307200, NS = 1000000000
+      const alreadyIndexed = (stashDb.prepare('SELECT COUNT(*) as c FROM messages').get() as { c: number }).c
+      const lastDate = alreadyIndexed > 0 ? (stashDb.prepare('SELECT MAX(apple_date) as d FROM messages').get() as { d: number }).d : 0
+      const countNew = (chatDb.prepare(`SELECT COUNT(*) as c FROM message m WHERE text IS NOT NULL AND trim(text) != '' AND item_type = 0 AND m.date > ?`).get(lastDate) as { c: number }).c
+      indexingProgress.total = countNew
+      sendProgress(win)
+      if (countNew > 0) {
+        const insertMsg = stashDb.prepare(`INSERT OR IGNORE INTO messages (id, chat_name, sender_handle, is_from_me, body, sent_at, apple_date) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+        const insertMany = stashDb.transaction((rows: { id: number; chat_name: string; sender_handle: string | null; is_from_me: number; body: string; sent_at: string; apple_date: number }[]) => {
+          for (const r of rows) insertMsg.run(r.id, r.chat_name, r.sender_handle, r.is_from_me, r.body, r.sent_at, r.apple_date)
+        })
+        const BATCH = 5000
+        let offset = 0, fetched = 0
+        while (true) {
+          const batch = chatDb.prepare(`
+            SELECT m.ROWID as id, COALESCE(NULLIF(c.display_name,''), c.chat_identifier, 'Unknown') as chat_name,
+              h.id as sender_handle, m.is_from_me, m.text as body,
+              datetime(m.date / ${NS} + ${APPLE_EPOCH}, 'unixepoch', 'localtime') as sent_at, m.date as apple_date
+            FROM message m LEFT JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
+            LEFT JOIN chat c ON cmj.chat_id = c.ROWID LEFT JOIN handle h ON m.handle_id = h.ROWID
+            WHERE m.text IS NOT NULL AND trim(m.text) != '' AND m.item_type = 0 AND m.date > ?
+            ORDER BY m.date ASC LIMIT ? OFFSET ?
+          `).all(lastDate, BATCH, offset) as { id: number; chat_name: string; sender_handle: string | null; is_from_me: number; body: string; sent_at: string; apple_date: number }[]
+          if (batch.length === 0) break
+          insertMany(batch)
+          fetched += batch.length; offset += BATCH
+          indexingProgress.processed = fetched
+          indexingProgress.currentFile = `${fetched.toLocaleString()} messages indexed`
+          sendProgress(win)
+          await new Promise(resolve => setTimeout(resolve, 0))
+        }
+        console.log(`[MessageFTS] Indexed ${fetched} new messages (${alreadyIndexed + fetched} total)`)
+      }
+      chatDb.close()
+    }
+  } catch (err) { console.error('[MessageFTS] Error:', err) }
+
   isIndexing = false
   const finalTotal = Math.max(totalEnrich, targetAttachments.length, 1)
   indexingProgress = { total: finalTotal, processed: finalTotal, currentFile: '', phase: 'Up to date' }

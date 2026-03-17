@@ -14,6 +14,13 @@ const api = {
     chatNameMap: Record<string, string>
     globalPeakHour: number | null; globalPeakWeekday: number | null
   }> => ipcRenderer.invoke('get-stats', chatNameFilter, dateFrom, dateTo),
+  searchMessages: (query: string, chatName?: string, limit?: number): Promise<{
+    id: number; body: string; chat_name: string; sender_handle: string | null; is_from_me: number; sent_at: string; snippet: string
+  }[]> => ipcRenderer.invoke('search-messages', query, chatName, limit),
+  getMessageIndexStatus: (): Promise<{ total: number; indexed: number }> => ipcRenderer.invoke('get-message-index-status'),
+  getVocabStats: (chatName?: string): Promise<{
+    uniqueWords: number; totalWords: number; avgWordsPerMessage: number; topWords: { word: string; count: number }[]
+  }> => ipcRenderer.invoke('get-vocab-stats', chatName),
   getUsageStats: (dateFrom?: string, dateTo?: string): Promise<{
     totalMessages: number; sentMessages: number; receivedMessages: number
     messagesPerYear: { year: number; count: number }[]

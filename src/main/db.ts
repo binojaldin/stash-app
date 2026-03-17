@@ -111,6 +111,34 @@ export function initDb(): Database.Database {
   addColumnIfMissing('source', "TEXT DEFAULT 'messages'")
   addColumnIfMissing('reaction_count', 'INTEGER DEFAULT 0')
 
+  // ── V2: messages table + FTS ──
+  try { db.prepare('SELECT id FROM messages LIMIT 1').get() }
+  catch {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS messages (
+        id INTEGER PRIMARY KEY, chat_name TEXT NOT NULL, sender_handle TEXT,
+        is_from_me INTEGER NOT NULL DEFAULT 0, body TEXT NOT NULL,
+        sent_at TEXT NOT NULL, apple_date INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_messages_chat ON messages(chat_name);
+      CREATE INDEX IF NOT EXISTS idx_messages_sent ON messages(sent_at);
+      CREATE INDEX IF NOT EXISTS idx_messages_me ON messages(is_from_me);
+      CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
+        body, chat_name UNINDEXED, sender_handle UNINDEXED,
+        is_from_me UNINDEXED, sent_at UNINDEXED,
+        content='messages', content_rowid='id'
+      );
+      CREATE TRIGGER IF NOT EXISTS messages_ai AFTER INSERT ON messages BEGIN
+        INSERT INTO messages_fts(rowid, body, chat_name, sender_handle, is_from_me, sent_at)
+        VALUES (new.id, new.body, new.chat_name, new.sender_handle, new.is_from_me, new.sent_at);
+      END;
+      CREATE TRIGGER IF NOT EXISTS messages_ad AFTER DELETE ON messages BEGIN
+        INSERT INTO messages_fts(messages_fts, rowid, body, chat_name, sender_handle, is_from_me, sent_at)
+        VALUES ('delete', old.id, old.body, old.chat_name, old.sender_handle, old.is_from_me, old.sent_at);
+      END;
+    `)
+  }
+
   // Backfill null chat_name from Messages chat.db
   try {
     const nullCount = (db.prepare("SELECT COUNT(*) as c FROM attachments WHERE chat_name IS NULL OR chat_name = ''").get() as { c: number }).c
@@ -1025,6 +1053,63 @@ export function updateReactionCounts(): void {
   } catch (err) {
     console.error('[Reactions] Error:', err)
   }
+}
+
+// ── V2: Message search ──
+
+export function searchMessages(query: string, chatName?: string, limit = 50): {
+  id: number; body: string; chat_name: string; sender_handle: string | null; is_from_me: number; sent_at: string; snippet: string
+}[] {
+  const d = initDb()
+  if (!query.trim()) return []
+  try {
+    const terms = query.trim().split(/\s+/).map(w => `"${w.replace(/"/g, '""')}"*`).join(' ')
+    const chatFilter = chatName ? ' AND m.chat_name = ?' : ''
+    const params: (string | number)[] = [terms]
+    if (chatName) params.push(chatName)
+    params.push(limit)
+    return d.prepare(`
+      SELECT m.id, m.body, m.chat_name, m.sender_handle, m.is_from_me, m.sent_at,
+        snippet(messages_fts, 0, '<mark>', '</mark>', '…', 12) as snippet
+      FROM messages_fts JOIN messages m ON messages_fts.rowid = m.id
+      WHERE messages_fts MATCH ?${chatFilter} ORDER BY rank LIMIT ?
+    `).all(...params) as { id: number; body: string; chat_name: string; sender_handle: string | null; is_from_me: number; sent_at: string; snippet: string }[]
+  } catch { return [] }
+}
+
+export function getMessageIndexStatus(): { total: number; indexed: number } {
+  const d = initDb()
+  try {
+    const indexed = (d.prepare('SELECT COUNT(*) as c FROM messages').get() as { c: number }).c
+    const { homedir } = require('os'); const { join } = require('path'); const { existsSync } = require('fs')
+    const chatDbPath = join(homedir(), 'Library/Messages/chat.db')
+    if (!existsSync(chatDbPath)) return { total: 0, indexed }
+    const chatDb = new Database(chatDbPath, { readonly: true })
+    const total = (chatDb.prepare('SELECT COUNT(*) as c FROM message WHERE text IS NOT NULL AND item_type = 0').get() as { c: number }).c
+    chatDb.close()
+    return { total, indexed }
+  } catch { return { total: 0, indexed: 0 } }
+}
+
+export function getVocabStats(chatName?: string): {
+  uniqueWords: number; totalWords: number; avgWordsPerMessage: number; topWords: { word: string; count: number }[]
+} {
+  const d = initDb()
+  try {
+    const chatFilter = chatName ? 'WHERE chat_name = ? AND is_from_me = 1' : 'WHERE is_from_me = 1'
+    const params: string[] = chatName ? [chatName] : []
+    const rows = d.prepare(`SELECT body FROM messages ${chatFilter} LIMIT 100000`).all(...params) as { body: string }[]
+    const STOP = new Set(['the','a','an','and','or','but','in','on','at','to','for','of','with','is','it','i','you','he','she','we','they','this','that','was','are','be','been','have','has','had','do','did','will','would','could','should','may','might','not','no','so','if','as','up','out','about','what','when','where','how','all','my','your','his','her','our','their','me','him','us','them','its','from','by','just','like','get','got','can','go','know','think','say','said','want','see','make','good','one','more','also','then','than','really','yeah','ok','okay','yes','im','dont','thats','youre','were','ive','ill','id','ur','u','r','lol','haha','lmao'])
+    const counts = new Map<string, number>()
+    let totalWords = 0
+    for (const { body } of rows) {
+      const words = body.toLowerCase().match(/\b[a-z]{3,}\b/g) || []
+      totalWords += words.length
+      for (const w of words) if (!STOP.has(w)) counts.set(w, (counts.get(w) || 0) + 1)
+    }
+    const topWords = Array.from(counts.entries()).sort((a, b) => b[1] - a[1]).slice(0, 15).map(([word, count]) => ({ word, count }))
+    return { uniqueWords: counts.size, totalWords, avgWordsPerMessage: rows.length > 0 ? Math.round(totalWords / rows.length) : 0, topWords }
+  } catch { return { uniqueWords: 0, totalWords: 0, avgWordsPerMessage: 0, topWords: [] } }
 }
 
 export function closeDb(): void {

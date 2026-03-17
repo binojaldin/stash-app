@@ -1198,19 +1198,111 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
   )
 
   // ── Conversational Insights Surface ──
+  const [msgQuery, setMsgQuery] = useState('')
+  const [msgResults, setMsgResults] = useState<{ id: number; body: string; chat_name: string; sender_handle: string | null; is_from_me: number; sent_at: string; snippet: string }[] | null>(null)
+  const [msgSearching, setMsgSearching] = useState(false)
+  const [msgIndexStatus, setMsgIndexStatus] = useState<{ total: number; indexed: number } | null>(null)
+  const [vocabStats, setVocabStats] = useState<{ uniqueWords: number; totalWords: number; avgWordsPerMessage: number; topWords: { word: string; count: number }[] } | null>(null)
+
+  useEffect(() => {
+    window.api.getMessageIndexStatus().then(setMsgIndexStatus).catch(() => {})
+    window.api.getVocabStats(scopedPerson || undefined).then(setVocabStats).catch(() => {})
+  }, [scopedPerson])
+
+  const handleMsgSearch = async (): Promise<void> => {
+    if (!msgQuery.trim() || msgSearching) return
+    setMsgSearching(true)
+    try { setMsgResults(await window.api.searchMessages(msgQuery.trim(), scopedPerson || undefined, 30)) }
+    catch { setMsgResults([]) }
+    finally { setMsgSearching(false) }
+  }
+
+  const isIndexed = msgIndexStatus && msgIndexStatus.indexed > 0
+  const indexPct = msgIndexStatus && msgIndexStatus.total > 0 ? Math.round((msgIndexStatus.indexed / msgIndexStatus.total) * 100) : 0
+
   const conversationalSurface = (
-    <div>
-      <div style={{ background: '#1A1A1A', borderRadius: 18, padding: 24, marginBottom: 24 }}>
-        <div style={{ fontSize: 11, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'rgba(180,178,169,0.5)', marginBottom: 10 }}>Conversational insights · V2</div>
-        <div style={{ fontFamily: "'Unbounded', sans-serif", fontWeight: 200, fontSize: 22, color: 'rgba(255,255,255,0.5)', marginBottom: 6 }}>What your conversations actually mean.</div>
-        <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.35)', lineHeight: 1.6 }}>Topics, summaries, recurring jokes, and memory extraction — powered by AI. Coming in V2 when message search is live.</div>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 14 }}>
+      <div style={{ gridColumn: 'span 12', background: '#1A1818', borderRadius: 18, padding: '24px 28px' }}>
+        <div style={{ fontSize: 10, letterSpacing: '0.2em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: 10, fontFamily: "'DM Sans'" }}>Message search</div>
+        <div style={{ fontFamily: "'Unbounded', sans-serif", fontWeight: 200, fontSize: 22, color: '#fff', marginBottom: 6 }}>{isIndexed ? 'Search your messages.' : 'Indexing your messages…'}</div>
+        {!isIndexed && msgIndexStatus && (
+          <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', marginBottom: 12, fontFamily: "'DM Sans'" }}>
+            {msgIndexStatus.indexed.toLocaleString()} of {msgIndexStatus.total.toLocaleString()} indexed · {indexPct}%
+            <div style={{ height: 2, background: 'rgba(255,255,255,0.1)', borderRadius: 1, marginTop: 8, overflow: 'hidden' }}>
+              <div style={{ height: '100%', width: `${indexPct}%`, background: '#2EC4A0', borderRadius: 1, transition: 'width 0.5s' }} />
+            </div>
+          </div>
+        )}
+        {isIndexed && (
+          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+            <input type="text" value={msgQuery} onChange={e => setMsgQuery(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleMsgSearch()}
+              placeholder={scopedPerson ? `Search messages with ${resolveName(scopedPerson, chatNameMap)}…` : 'Search all messages…'}
+              style={{ flex: 1, padding: '11px 16px', borderRadius: 10, background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', color: '#fff', fontSize: 13, outline: 'none', fontFamily: "'DM Sans'" }} />
+            <button onClick={handleMsgSearch} disabled={msgSearching}
+              style={{ padding: '11px 20px', borderRadius: 10, background: '#E8604A', border: 'none', color: '#fff', fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: "'DM Sans'", opacity: msgSearching ? 0.6 : 1 }}>
+              {msgSearching ? '…' : 'Search'}
+            </button>
+          </div>
+        )}
+        {isIndexed && <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', marginTop: 8, fontFamily: "'DM Sans'" }}>{msgIndexStatus!.indexed.toLocaleString()} messages indexed</div>}
       </div>
-      <div style={{ fontSize: 11, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#9a948f', marginBottom: 12 }}>What's coming in V2</div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {['What do we talk about most?', 'What are our recurring jokes?', 'What important moments happened here?', 'Summarize this conversation', 'When are our conversations most positive?'].map(p => (
-          <div key={p} style={{ background: 'rgba(0,0,0,0.03)', border: '1px dashed rgba(0,0,0,0.12)', borderRadius: 10, padding: '10px 14px', fontSize: 13, color: '#6f6a65', opacity: 0.6 }}>{p}</div>
-        ))}
-      </div>
+
+      {msgResults !== null && (
+        <div style={{ gridColumn: 'span 12' }}>
+          {msgResults.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: 24, color: '#9a948f', fontSize: 13, fontFamily: "'DM Sans'" }}>No messages found for "{msgQuery}"</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <div style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#9a948f', marginBottom: 4, fontFamily: "'DM Sans'" }}>{msgResults.length} result{msgResults.length !== 1 ? 's' : ''} for "{msgQuery}"</div>
+              {msgResults.map(r => (
+                <div key={r.id} onClick={() => r.chat_name && onSelectConversation(r.chat_name)}
+                  style={{ padding: '12px 16px', borderRadius: 12, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', cursor: 'pointer' }}
+                  onMouseEnter={e => (e.currentTarget.style.background = '#F8F4F0')} onMouseLeave={e => (e.currentTarget.style.background = '#fff')}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
+                    <span style={{ fontSize: 11, color: r.is_from_me ? '#E8604A' : '#2EC4A0', fontWeight: 500, fontFamily: "'DM Sans'" }}>
+                      {r.is_from_me ? 'You' : (r.sender_handle ? resolveName(r.sender_handle, chatNameMap) : 'Them')} · <span style={{ color: '#9a948f', fontWeight: 400 }}>{resolveName(r.chat_name, chatNameMap)}</span>
+                    </span>
+                    <span style={{ fontSize: 10, color: '#c8c0ba', fontFamily: "'DM Sans'" }}>{new Date(r.sent_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                  </div>
+                  <div style={{ fontSize: 13, color: '#4a4542', lineHeight: 1.5, fontFamily: "'DM Sans'" }}
+                    dangerouslySetInnerHTML={{ __html: r.snippet.replace(/<mark>/g, '<mark style="background:#FFF3CD;color:#1A1A1A;border-radius:2px;padding:0 2px">').replace(/<\/mark>/g, '</mark>') }} />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {isIndexed && !msgResults && vocabStats && vocabStats.uniqueWords > 0 && (
+        <>
+          <PosterCard eyebrow="Your vocabulary" number={vocabStats.uniqueWords.toLocaleString()} unit="unique words"
+            descriptor={vocabStats.avgWordsPerMessage > 15 ? `You average ${vocabStats.avgWordsPerMessage} words per message. Doesn't use 9 words when 47 will do.`
+              : vocabStats.avgWordsPerMessage > 7 ? `${vocabStats.avgWordsPerMessage} words per message on average. Measured, clear, direct.`
+              : `${vocabStats.avgWordsPerMessage} words per message. Every word earns its place.`}
+            accent="#E8604A" bg="#26211d" span={6} />
+          <div style={{ gridColumn: 'span 6', borderRadius: 16, padding: '20px 22px', background: '#fff', border: '1px solid rgba(0,0,0,0.06)', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}>
+            <div style={{ fontSize: 10, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#9a948f', marginBottom: 14, fontFamily: "'DM Sans'" }}>
+              {scopedPerson ? `Your words with ${resolveName(scopedPerson, chatNameMap)}` : 'Your most used words'}
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {vocabStats.topWords.slice(0, 12).map(({ word, count }, i) => {
+                const maxCount = vocabStats.topWords[0]?.count || 1
+                const opacity = 0.4 + (count / maxCount) * 0.6
+                return <span key={word} style={{ fontSize: i < 3 ? 16 : i < 7 ? 13 : 11, color: `rgba(232,96,74,${opacity})`, fontFamily: "'DM Sans'", fontWeight: i < 3 ? 500 : 400 }}>{word}</span>
+              })}
+            </div>
+          </div>
+        </>
+      )}
+
+      {!isIndexed && (
+        <div style={{ gridColumn: 'span 12', display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#9a948f', marginBottom: 4, fontFamily: "'DM Sans'" }}>Available after indexing</div>
+          {['Search any message you\'ve ever sent or received', 'Your vocabulary profile — unique words, avg length', 'Most used words — your personal word fingerprint', 'What do you actually talk about most?'].map(p => (
+            <div key={p} style={{ background: 'rgba(0,0,0,0.03)', border: '1px dashed rgba(0,0,0,0.1)', borderRadius: 10, padding: '10px 14px', fontSize: 13, color: '#9a948f', fontFamily: "'DM Sans'" }}>{p}</div>
+          ))}
+        </div>
+      )}
     </div>
   )
 

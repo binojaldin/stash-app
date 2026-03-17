@@ -2,7 +2,7 @@ import { app, shell, BrowserWindow, ipcMain, dialog, Menu, Tray, nativeImage, po
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import { checkFullDiskAccess } from './messagesReader'
-import { initDb, searchAttachments, getStats, getFastStats, getTodayInHistory, getUsageStats, getMessagingNetwork, getAttachmentById, closeDb, hideChat, getHiddenChats, getConversationStats, updateReactionCounts, invalidateLaughCache } from './db'
+import { initDb, searchAttachments, getStats, getFastStats, getTodayInHistory, getUsageStats, getMessagingNetwork, getAttachmentById, closeDb, hideChat, getHiddenChats, getConversationStats, updateReactionCounts, invalidateLaughCache, searchMessages, getMessageIndexStatus, getVocabStats } from './db'
 import { startIndexing, getIndexingProgress, fetchChatSummaries, saveChatPriorities, getSavedPriorityChats, resetIndexing, recoverAttachment, resolveNamesInBackground } from './indexer'
 import { compileContactsHelper, resolveContact, resolveContactsBatch } from './contacts'
 import { generateWrapped, getAvailableYears } from './wrapped'
@@ -176,6 +176,9 @@ function setupIpc(): void {
   })
   ipcMain.handle('get-today-in-history', () => getTodayInHistory())
   ipcMain.handle('get-usage-stats', (_event, dateFrom?: string, dateTo?: string) => getUsageStats(dateFrom, dateTo))
+  ipcMain.handle('search-messages', (_event, query: string, chatName?: string, limit?: number) => searchMessages(query, chatName, limit))
+  ipcMain.handle('get-message-index-status', () => getMessageIndexStatus())
+  ipcMain.handle('get-vocab-stats', (_event, chatName?: string) => getVocabStats(chatName))
   ipcMain.handle('get-messaging-network', () => getMessagingNetwork())
   ipcMain.handle('get-fast-stats', (_event, chatNameFilter?: string, dateFrom?: string, dateTo?: string) => {
     return { ...getFastStats(chatNameFilter, dateFrom, dateTo), chatNameMap: {} }
