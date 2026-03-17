@@ -2,6 +2,11 @@ import { useState, useEffect } from 'react'
 import { Lock } from 'lucide-react'
 import type { Stats, ChatNameEntry } from '../types'
 
+type MemoryItem = {
+  id: number; filename: string; original_path: string; thumbnail_path: string | null;
+  created_at: string; chat_name: string | null; is_image: number; is_available: number
+}
+
 interface ConversationStats {
   firstMessageDate: string | null; longestStreakDays: number; mostActiveMonth: string | null
   mostActiveDayOfWeek: string | null; avgMessagesPerDay: number; peakHour: number | null
@@ -253,6 +258,58 @@ function BandCard({ title, subtitle, segments, span }: {
   )
 }
 
+function TodayInHistoryCard({ memories, chatNameMap, onSelectConversation }: {
+  memories: MemoryItem[]; chatNameMap: Record<string, string>; onSelectConversation: (rawName: string) => void
+}): JSX.Element | null {
+  const [index, setIndex] = useState(0)
+  const [imgSrc, setImgSrc] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+  const current = memories[index]
+
+  useEffect(() => {
+    if (!current?.thumbnail_path) { setLoading(false); return }
+    setLoading(true); setImgSrc(null)
+    window.api.getFileUrl(current.thumbnail_path).then(url => { setImgSrc(url); setLoading(false) }).catch(() => setLoading(false))
+  }, [current?.thumbnail_path])
+
+  if (!current) return null
+
+  const year = new Date(current.created_at).getFullYear()
+  const yearsAgo = new Date().getFullYear() - year
+  const displayName = current.chat_name
+    ? (chatNameMap[current.chat_name] || current.chat_name).replace(/^#/, '').split(' ').slice(0, 2).join(' ')
+    : 'a conversation'
+  const monthDay = new Date(current.created_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric' })
+
+  return (
+    <div onClick={() => current.chat_name && onSelectConversation(current.chat_name)}
+      style={{ gridColumn: 'span 12', borderRadius: 18, overflow: 'hidden', position: 'relative', cursor: 'pointer', minHeight: 260, background: '#1A1A1A', boxShadow: '0 4px 24px rgba(0,0,0,0.12)' }}>
+      {imgSrc && !loading ? (
+        <img src={imgSrc} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', position: 'absolute', inset: 0, display: 'block' }} />
+      ) : (
+        <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(135deg, #1E2826 0%, #26211d 100%)' }} />
+      )}
+      <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, rgba(0,0,0,0.15) 0%, rgba(0,0,0,0.0) 30%, rgba(0,0,0,0.7) 100%)', pointerEvents: 'none' }} />
+      <div style={{ position: 'absolute', top: 16, left: 16, background: '#E8604A', borderRadius: 8, padding: '4px 10px', fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', color: '#fff', fontFamily: "'DM Sans'" }}>{year}</div>
+      {memories.length > 1 && (
+        <div style={{ position: 'absolute', top: 18, right: 16, display: 'flex', gap: 5, alignItems: 'center' }}>
+          {memories.map((_, i) => (
+            <button key={i} onClick={(e) => { e.stopPropagation(); setIndex(i) }}
+              style={{ width: i === index ? 16 : 6, height: 6, borderRadius: 3, border: 'none', cursor: 'pointer', background: i === index ? '#fff' : 'rgba(255,255,255,0.35)', transition: 'all 0.2s', padding: 0 }} />
+          ))}
+        </div>
+      )}
+      <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '20px 20px 18px', zIndex: 1 }}>
+        <div style={{ fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.55)', marginBottom: 6, fontFamily: "'DM Sans'" }}>On this day</div>
+        <div style={{ fontFamily: "'Unbounded', sans-serif", fontWeight: 200, fontSize: 18, color: '#fff', lineHeight: 1.3, marginBottom: 4 }}>
+          {yearsAgo === 1 ? 'One year ago today.' : `${yearsAgo} years ago today.`}
+        </div>
+        <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.6)', fontFamily: "'DM Sans'" }}>{displayName} · {monthDay}, {year}</div>
+      </div>
+    </div>
+  )
+}
+
 export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange = 'all', scopedPerson, onClearScope, insightSurface = 'relationship', onSurfaceChange, isStatsLoading }: Props): JSX.Element {
   const currentMonth = MONTH_NAMES[new Date().getMonth()]
   const heroText = heroTitle(dateRange)
@@ -268,6 +325,9 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
   const byAttachments = [...chats].sort((a, b) => b.attachmentCount - a.attachmentCount)
   const byInitiation = [...individuals].sort((a, b) => b.initiationCount - a.initiationCount)
   const topGroup = [...groups].sort((a, b) => b.messageCount - a.messageCount)[0]
+
+  const [todayMemories, setTodayMemories] = useState<MemoryItem[]>([])
+  useEffect(() => { window.api.getTodayInHistory().then(setTodayMemories).catch(() => {}) }, [])
 
   const topFunny = byLaughsReceived[0]
   const topChat = byMessages[0]
@@ -818,6 +878,13 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
           </div>
         </div>
       </div>
+
+      {/* Today in History */}
+      {todayMemories.length > 0 && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 14, marginBottom: 14 }}>
+          <TodayInHistoryCard memories={todayMemories} chatNameMap={chatNameMap} onSelectConversation={onSelectConversation} />
+        </div>
+      )}
 
       {/* Global relationship insight grid */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 14 }}>

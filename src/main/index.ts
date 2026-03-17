@@ -2,7 +2,7 @@ import { app, shell, BrowserWindow, ipcMain, dialog, Menu, Tray, nativeImage } f
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import { checkFullDiskAccess } from './messagesReader'
-import { initDb, searchAttachments, getStats, getFastStats, getAttachmentById, closeDb, hideChat, getHiddenChats, getConversationStats, updateReactionCounts, invalidateLaughCache } from './db'
+import { initDb, searchAttachments, getStats, getFastStats, getTodayInHistory, getAttachmentById, closeDb, hideChat, getHiddenChats, getConversationStats, updateReactionCounts, invalidateLaughCache } from './db'
 import { startIndexing, getIndexingProgress, fetchChatSummaries, saveChatPriorities, getSavedPriorityChats, resetIndexing, recoverAttachment, resolveNamesInBackground } from './indexer'
 import { compileContactsHelper, resolveContact, resolveContactsBatch } from './contacts'
 import { generateWrapped, getAvailableYears } from './wrapped'
@@ -174,6 +174,7 @@ function setupIpc(): void {
     }
     return { ...stats, chatNameMap }
   })
+  ipcMain.handle('get-today-in-history', () => getTodayInHistory())
   ipcMain.handle('get-fast-stats', (_event, chatNameFilter?: string, dateFrom?: string, dateTo?: string) => {
     return { ...getFastStats(chatNameFilter, dateFrom, dateTo), chatNameMap: {} }
   })

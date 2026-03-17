@@ -13,6 +13,10 @@ const api = {
     chatNames: { rawName: string; attachmentCount: number; lastMessageDate: string; messageCount: number; sentCount: number; receivedCount: number; initiationCount: number; laughsGenerated: number; laughsReceived: number; isGroup: boolean; lateNightRatio: number; avgReplyMinutes: number }[]
     chatNameMap: Record<string, string>
   }> => ipcRenderer.invoke('get-stats', chatNameFilter, dateFrom, dateTo),
+  getTodayInHistory: (): Promise<{
+    id: number; filename: string; original_path: string; thumbnail_path: string | null;
+    created_at: string; chat_name: string | null; is_image: number; is_available: number
+  }[]> => ipcRenderer.invoke('get-today-in-history'),
   getFastStats: (chatNameFilter?: string, dateFrom?: string, dateTo?: string): Promise<{
     total: number; images: number; videos: number; documents: number; audio: number; unavailable: number
     chatNames: { rawName: string; attachmentCount: number; lastMessageDate: string; messageCount: number; sentCount: number; receivedCount: number; initiationCount: number; laughsGenerated: number; laughsReceived: number; isGroup: boolean; lateNightRatio: number; avgReplyMinutes: number }[]

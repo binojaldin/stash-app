@@ -324,6 +324,27 @@ export interface ChatNameEntry {
   avgReplyMinutes: number
 }
 
+export function getTodayInHistory(): {
+  id: number; filename: string; original_path: string; thumbnail_path: string | null;
+  created_at: string; chat_name: string | null; is_image: number; is_available: number
+}[] {
+  const d = initDb()
+  try {
+    return d.prepare(`
+      SELECT id, filename, original_path, thumbnail_path, created_at, chat_name, is_image, is_available
+      FROM attachments
+      WHERE strftime('%m-%d', created_at) = strftime('%m-%d', 'now', 'localtime')
+        AND strftime('%Y', created_at) < strftime('%Y', 'now', 'localtime')
+        AND is_image = 1
+        AND is_available = 1
+        AND chat_name IS NOT NULL
+        AND thumbnail_path IS NOT NULL
+      ORDER BY RANDOM()
+      LIMIT 5
+    `).all() as { id: number; filename: string; original_path: string; thumbnail_path: string | null; created_at: string; chat_name: string | null; is_image: number; is_available: number }[]
+  } catch { return [] }
+}
+
 export function getFastStats(chatNameFilter?: string, dateFrom?: string, dateTo?: string): {
   total: number; images: number; videos: number; documents: number; audio: number; unavailable: number; chatNames: ChatNameEntry[]
 } {
