@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Sparkles, Image, Video, FileText, Music } from 'lucide-react'
+import { Sparkles } from 'lucide-react'
 import { PermissionScreen } from './components/PermissionScreen'
 import { ChatPriorityScreen } from './components/ChatPriorityScreen'
 import { IndexingOverlay } from './components/IndexingOverlay'
@@ -155,13 +155,6 @@ export default function App(): JSX.Element {
     <ChatPriorityScreen chats={chatSummaries} indexedChats={stats.chatNames} onStart={handleStartWithPriority} onReset={handleResetEverything} onBack={stats.total > 0 ? () => setAppState('main') : undefined} />
   )
 
-  const mediaCards = [
-    { icon: Image, label: 'Images', count: stats.images, bg: '#FFF0ED', color: '#E8604A', type: 'images' },
-    { icon: Video, label: 'Videos', count: stats.videos, bg: '#EAF8F4', color: '#2EC4A0', type: 'videos' },
-    { icon: FileText, label: 'Documents', count: stats.documents, bg: '#F5F0FF', color: '#8B7FD4', type: 'documents' },
-    { icon: Music, label: 'Audio', count: stats.audio, bg: '#FFF8ED', color: '#E8A04A', type: 'audio' }
-  ]
-
   return (
     <div className="flex" style={{ background: '#0A0A0A', height: '100vh', width: '100vw' }}>
       {showWrapped && <WrappedView onClose={() => setShowWrapped(false)} />}
@@ -209,23 +202,6 @@ export default function App(): JSX.Element {
           )}
         </div>
 
-        {/* Media summary cards — global views only */}
-        {!isPersonScope && stats.total > 0 && showInsights && (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, padding: '12px 14px', background: '#F6F3EF', flexShrink: 0 }}>
-            {mediaCards.map(({ icon: Icon, label, count, bg, color, type }) => (
-              <button key={type} onClick={() => { setFilters({ ...filters, type }); setMainView({ kind: 'global-attachments' }) }}
-                style={{ background: '#FFFFFF', border: '1px solid rgba(0,0,0,0.06)', borderRadius: 14, padding: '16px 18px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 14, textAlign: 'left', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
-                <div style={{ width: 48, height: 48, borderRadius: 12, background: bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Icon style={{ width: 22, height: 22, stroke: color }} /></div>
-                <div><div style={{ fontSize: 13, color: '#9a948f', marginBottom: 4, fontFamily: "'DM Sans'" }}>{label}</div><div style={{ fontSize: 32, fontWeight: 500, color, lineHeight: 1, fontFamily: "'DM Sans'" }}>{count.toLocaleString()}</div></div>
-              </button>
-            ))}
-          </div>
-        )}
-
-        {/* Insights label */}
-        {showInsights && !isPersonScope && stats.total > 0 && (
-          <div style={{ padding: '12px 28px 6px', fontSize: 11, letterSpacing: '0.2em', textTransform: 'uppercase', color: '#b8b2ad' }}>Insights · surfaced automatically</div>
-        )}
 
         {/* Main surface */}
         {showInsights ? (

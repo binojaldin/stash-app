@@ -343,7 +343,10 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
     : 2019
 
   const pillBar = !scopedPerson && onSurfaceChange && (
-    <div style={{ display: 'flex', gap: 6, marginBottom: 24, marginTop: 4 }}>
+    <div style={{
+      display: 'flex', gap: 2, marginBottom: 28, marginTop: 4,
+      background: 'rgba(0,0,0,0.05)', borderRadius: 14, padding: 4
+    }}>
       {([
         { id: 'relationship' as const, label: 'Relationship', color: '#2EC4A0', meta: `${individuals.length} contacts` },
         { id: 'personal' as const, label: 'Personal', color: '#E8604A', meta: '8 insights' },
@@ -352,14 +355,20 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
       ]).map(({ id, label, color, meta }) => (
         <button key={id} onClick={() => onSurfaceChange(id)}
           style={{
-            display: 'flex', flexDirection: 'column', padding: '7px 14px',
-            borderRadius: 10, cursor: 'pointer', border: '1px solid',
-            borderColor: insightSurface === id ? 'rgba(0,0,0,0.08)' : 'transparent',
-            background: insightSurface === id ? '#fff' : 'rgba(255,255,255,0.5)',
-            fontFamily: "'DM Sans'"
+            flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
+            padding: '10px 14px', borderRadius: 10, cursor: 'pointer', border: 'none',
+            background: insightSurface === id ? '#fff' : 'transparent',
+            boxShadow: insightSurface === id ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+            transition: 'all 0.15s', fontFamily: "'DM Sans'"
           }}>
-          <span style={{ fontSize: 12, fontWeight: 500, color: insightSurface === id ? color : '#6f6a65' }}>{label}</span>
-          <span style={{ fontSize: 10, color: '#9a948f', marginTop: 1 }}>{meta}</span>
+          <span style={{
+            fontSize: 13, fontWeight: 500, lineHeight: 1.3,
+            color: insightSurface === id ? color : '#8a8480'
+          }}>{label}</span>
+          <span style={{
+            fontSize: 10, color: insightSurface === id ? '#9a948f' : '#b8b2ad',
+            marginTop: 2
+          }}>{meta}</span>
         </button>
       ))}
     </div>
@@ -454,7 +463,7 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
         <div style={{ fontFamily: "'Unbounded', sans-serif", fontWeight: 200, fontSize: 22, color: 'white', marginBottom: 6 }}>Your messaging, by the numbers.</div>
         <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.65)', lineHeight: 1.6 }}>The full picture of your iMessage activity — volume, attachments, and patterns across time.</div>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 24 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 16 }}>
         <div style={{ ...tileBase, gridColumn: 'span 4' }}><TileLabel text="Total indexed" /><Metric value={stats.total.toLocaleString()} sub="attachments in your archive" /></div>
         <div style={{ ...tileBase, gridColumn: 'span 4' }}><TileLabel text="Active conversations" /><Metric value={chats.length.toLocaleString()} sub="conversations with indexed content" /></div>
         <div style={{ ...tileBase, gridColumn: 'span 4' }}><TileLabel text="Group chats" /><Metric value={groups.length.toLocaleString()} sub={`of ${chats.length} total conversations`} /></div>
