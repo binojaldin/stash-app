@@ -14,10 +14,13 @@ interface ConversationStats {
 
 const arcEmoji: Record<string, string> = { new: '✨', growing: '📈', fading: '📉', rekindled: '🔄', steady: '⚖️' }
 const arcLabel: Record<string, string> = { new: 'New connection', growing: 'Growing stronger', fading: 'Fading', rekindled: 'Rekindled', steady: 'Rock solid' }
-function arcSentence(arc: string, name: string): string {
-  const m: Record<string, string> = { new: `${name} is a new presence in your messages.`, growing: `You and ${name} have been talking more than ever.`, fading: `You and ${name} have been less connected lately.`, rekindled: `You and ${name} found your way back.`, steady: 'Consistent, reliable, always there.' }
-  return m[arc] || ''
-}
+const arcSentence = (arc: string, name: string): string => ({
+  new: `${name} is new to your world. Early days.`,
+  growing: `You and ${name} have been talking more than ever. Something's building.`,
+  fading: `Less and less. You two used to talk more.`,
+  rekindled: `You found your way back to each other.`,
+  steady: `Consistent. Always there. The quiet ones are the keepers.`
+}[arc] || '')
 function formatHour(h: number): string { return `${h % 12 || 12}:00 ${h >= 12 ? 'PM' : 'AM'}` }
 
 type InsightSurface = 'relationship' | 'personal' | 'usage' | 'conversational'
@@ -258,15 +261,15 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
                 <RelCard emoji="🎭" title="Comedy Advantage" span={4}
                   metric={pd.laughsReceived > pd.laughsGenerated ? 'You win' : `${firstName} wins`}
                   sentence={`You got ${pd.laughsGenerated.toLocaleString()} laughs out of them.`}
-                  flavor="They're your best audience." />
+                  flavor={pd.laughsReceived > pd.laughsGenerated ? 'You win. They have no defense against you.' : "They get you every time. Keep them close."} />
                 <RelCard emoji="😂" title="Your Comedian" span={4}
                   metric={pd.laughsReceived.toLocaleString()}
                   sentence={`${firstName} made you laugh ${pd.laughsReceived.toLocaleString()} times.`}
-                  flavor="Certified funny." />
+                  flavor={pd.laughsReceived > 500 ? `${pd.laughsReceived.toLocaleString()} times. That's not funny, that's a gift.` : 'They know exactly how to get you.'} />
                 <RelCard emoji="⚡" title="Conversation Instigator" span={4}
                   metric={`${initPct}%`}
                   sentence={`You started ${initPct}% of threads.`}
-                  flavor={initPct > 50 ? 'You keep this thing alive.' : 'They reach out more.'} />
+                  flavor={initPct > 70 ? 'You carry this. They show up when you call.' : initPct > 50 ? 'You keep this thing alive.' : initPct < 30 ? "They want this more than you do. Or they're just keen." : 'You both reach out. Rarer than you think.'} />
                 <RelCard emoji="💬" title="Message Balance" span={6}
                   metric={`${sentPct}/${100 - sentPct}`}
                   sentence={`You sent ${sentPct}% of the words.`}
@@ -287,7 +290,7 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
                 <RelCard emoji="🔥" title="Longest Streak" span={4}
                   metric={`${convStats.longestStreakDays} days`}
                   sentence="Your longest run of consecutive daily messages."
-                  flavor={convStats.longestStreakDays > 30 ? "That's serious dedication." : ''} />
+                  flavor={convStats.longestStreakDays > 60 ? `${convStats.longestStreakDays} days straight. What were you two even talking about?` : convStats.longestStreakDays > 14 ? 'A proper run. Something was happening that month.' : ''} />
               )}
               {convStats?.peakHour !== null && convStats?.peakHour !== undefined && (
                 <RelCard emoji="🕐" title="Your Peak Hour" span={4}
@@ -295,17 +298,18 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
                   sentence="When most of your messages happen."
                   flavor="" />
               )}
-              {convStats?.firstMessageDate && (
-                <RelCard emoji="📅" title="Since" span={4}
-                  metric={new Date(convStats.firstMessageDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+              {convStats?.firstMessageDate && (() => {
+                const years = Math.floor((Date.now() - new Date(convStats.firstMessageDate!).getTime()) / (86400000 * 365))
+                return <RelCard emoji="📅" title="Since" span={4}
+                  metric={new Date(convStats.firstMessageDate!).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                   sentence={`Your first message with ${firstName}.`}
-                  flavor={((Date.now() - new Date(convStats.firstMessageDate).getTime()) / 86400000) > 365 ? 'A long-standing relationship.' : ''} />
-              )}
+                  flavor={years >= 5 ? `${years} years. That's not a contact, that's a constant.` : years >= 2 ? `${years} years and counting.` : 'Still early days.'} />
+              })()}
               {convStats?.avgResponseTimeMinutes !== null && convStats?.avgResponseTimeMinutes !== undefined && (
                 <RelCard emoji="⏱" title="Reply Speed" span={4}
                   metric={`${convStats.avgResponseTimeMinutes}m`}
-                  sentence="Your average reply time."
-                  flavor={convStats.avgResponseTimeMinutes < 5 ? 'Lightning fast.' : convStats.avgResponseTimeMinutes > 60 ? 'You take your time.' : ''} />
+                  sentence={convStats.avgResponseTimeMinutes < 2 ? "You're basically always there." : convStats.avgResponseTimeMinutes < 10 ? "Quick. They know you're paying attention." : convStats.avgResponseTimeMinutes < 60 ? "Unhurried. You reply when you're ready." : 'You make them wait for it.'}
+                  flavor="" />
               )}
               {pd && pd.lateNightRatio > 0 ? (
                 <RelCard emoji="🌙" title="Night Owls" span={4}
@@ -313,6 +317,18 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
                   sentence={`${pd.lateNightRatio}% of your messages happen after 11pm.`}
                   flavor={pd.lateNightRatio > 40 ? 'This is a late-night relationship.' : 'Mostly daytime people.'} />
               ) : <SoonCard emoji="🌙" title="Night Owls" span={4} />}
+              {convStats?.sharedGroupCount !== undefined && convStats.sharedGroupCount > 0 && (
+                <RelCard emoji="👥" title="In common" span={4}
+                  metric={`${convStats.sharedGroupCount} group${convStats.sharedGroupCount > 1 ? 's' : ''}`}
+                  sentence={`You share ${convStats.sharedGroupCount} group chat${convStats.sharedGroupCount > 1 ? 's' : ''} with ${firstName}.`}
+                  flavor={convStats.sharedGroupCount > 3 ? "You're everywhere together." : 'You have shared turf.'} />
+              )}
+              {convStats?.mostActiveMonth && (
+                <RelCard emoji="📆" title="Peak month" span={4}
+                  metric={convStats.mostActiveMonth}
+                  sentence="Your most active month together."
+                  flavor="Something was happening." />
+              )}
             </div>
           )}
         </div>
