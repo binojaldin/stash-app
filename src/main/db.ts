@@ -406,10 +406,14 @@ export function getStats(chatNameFilter?: string, dateFrom?: string, dateTo?: st
       // Participant counts to identify group chats
       try {
         const partRows = chatDb.prepare(`
-          SELECT c.chat_identifier as chat_name, COUNT(DISTINCT chj.handle_id) as participant_count
+          SELECT c.chat_identifier as chat_name, COUNT(DISTINCT chj.handle_id) as participant_count, c.style as chat_style
           FROM chat c LEFT JOIN chat_handle_join chj ON c.ROWID = chj.chat_id GROUP BY c.chat_identifier
-        `).all() as { chat_name: string; participant_count: number }[]
-        for (const r of partRows) participantMap.set(r.chat_name, r.participant_count)
+        `).all() as { chat_name: string; participant_count: number; chat_style: number }[]
+        for (const r of partRows) {
+          // chat.style: 43 = direct message, 45 = group chat
+          const isGroup = r.chat_style === 45 || r.participant_count > 1
+          participantMap.set(r.chat_name, isGroup ? 2 : 1)
+        }
       } catch { /* fallback to heuristic */ }
 
       // Laugh detection — cached per session (expensive full-table scan)
