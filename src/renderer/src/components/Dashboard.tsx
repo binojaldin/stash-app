@@ -549,6 +549,11 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
         <div style={{ fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase', color: 'rgba(232,96,74,0.65)', marginBottom: 12, fontFamily: "'DM Sans'" }}>Personal insights</div>
         <div style={{ fontFamily: "'Unbounded', sans-serif", fontWeight: 200, fontSize: 24, color: '#fff', marginBottom: 8, lineHeight: 1.3 }}>What your habits say about you.</div>
         <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', lineHeight: 1.65, maxWidth: 420, fontFamily: "'DM Sans'" }}>Patterns in how, when, and who you communicate with — without reading a single message.</div>
+        {dateRange !== 'all' && (
+          <div style={{ fontSize: 11, color: 'rgba(232,96,74,0.45)', marginTop: 8, fontFamily: "'DM Sans'", letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+            {dateRange === 'month' ? currentMonth : dateRange === 'year' ? String(new Date().getFullYear()) : dateRange === '30days' ? 'Last 30 days' : 'Last 7 days'}
+          </div>
+        )}
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 14 }}>
@@ -652,6 +657,11 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
         <div style={{ fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase', color: 'rgba(127,119,221,0.65)', marginBottom: 12, fontFamily: "'DM Sans'" }}>Usage insights</div>
         <div style={{ fontFamily: "'Unbounded', sans-serif", fontWeight: 200, fontSize: 24, color: '#fff', marginBottom: 8, lineHeight: 1.3 }}>Your messaging, by the numbers.</div>
         <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', lineHeight: 1.65, maxWidth: 420, fontFamily: "'DM Sans'" }}>The full picture of your iMessage activity — volume, attachments, and patterns across time.</div>
+        {dateRange !== 'all' && (
+          <div style={{ fontSize: 11, color: 'rgba(127,119,221,0.45)', marginTop: 8, fontFamily: "'DM Sans'", letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+            {dateRange === 'month' ? currentMonth : dateRange === 'year' ? String(new Date().getFullYear()) : dateRange === '30days' ? 'Last 30 days' : 'Last 7 days'}
+          </div>
+        )}
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 14 }}>
@@ -727,7 +737,7 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
       {/* Topbar */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 44, marginBottom: 8 }}>
         <span style={{ fontSize: 12, letterSpacing: '0.22em', textTransform: 'uppercase', color: '#8a8480' }}>
-          {currentMonth} Wrap · surfaced automatically
+          {dateRange === 'all' ? 'All time' : dateRange === 'month' ? `${currentMonth}` : dateRange === 'year' ? `${new Date().getFullYear()}` : dateRange === '30days' ? 'Last 30 days' : 'Last 7 days'} · surfaced automatically
         </span>
         <span style={{ color: '#9a948f', letterSpacing: '0.2em', fontSize: 20 }}>•••</span>
       </div>
