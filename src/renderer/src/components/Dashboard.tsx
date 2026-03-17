@@ -622,6 +622,52 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
     } else setConvStats(null)
   }, [scopedPerson])
 
+  // ── Conversational surface state (must be before early returns) ──
+  const [msgQuery, setMsgQuery] = useState('')
+  const [msgResults, setMsgResults] = useState<{ id: number; body: string; chat_name: string; sender_handle: string | null; is_from_me: number; sent_at: string; snippet: string }[] | null>(null)
+  const [msgSearching, setMsgSearching] = useState(false)
+  const [msgIndexStatus, setMsgIndexStatus] = useState<{ total: number; indexed: number } | null>(null)
+  const [vocabStats, setVocabStats] = useState<{ uniqueWords: number; totalWords: number; avgWordsPerMessage: number; theirAvgWordsPerMessage: number; topWords: { word: string; count: number }[] } | null>(null)
+  const [wordOrigins, setWordOrigins] = useState<{ word: string; firstUsed: string; chatName: string; totalUses: number; firstMessage: string | null }[]>([])
+
+  useEffect(() => {
+    window.api.getMessageIndexStatus().then(setMsgIndexStatus).catch(() => {})
+    window.api.getVocabStats(scopedPerson || undefined).then(setVocabStats).catch(() => {})
+    window.api.getWordOrigins(scopedPerson || undefined).then(setWordOrigins).catch(() => {})
+  }, [scopedPerson])
+
+  const generateShareCard = async (title: string, bigNumber: string, unit: string, copy: string, personName?: string): Promise<void> => {
+    const canvas = document.createElement('canvas')
+    canvas.width = 1200; canvas.height = 1200
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    ctx.fillStyle = '#0F0F0F'; ctx.fillRect(0, 0, 1200, 1200)
+    ctx.fillStyle = 'rgba(232,96,74,0.5)'; ctx.font = '14px DM Sans'; ctx.letterSpacing = '3px'; ctx.fillText(`STASH · ${title.toUpperCase()}`, 80, 120)
+    ctx.fillStyle = '#E8604A'; ctx.font = '200 120px system-ui'; ctx.fillText(bigNumber, 80, 300)
+    ctx.fillStyle = 'rgba(232,96,74,0.6)'; ctx.font = '200 32px system-ui'; ctx.fillText(unit, 80, 360)
+    ctx.fillStyle = 'rgba(255,255,255,0.75)'; ctx.font = '28px DM Sans'
+    const words = copy.split(' '); let line = '', y = 460
+    for (const w of words) { if (ctx.measureText(line + w).width > 900) { ctx.fillText(line.trim(), 80, y); y += 42; line = '' } line += w + ' ' }
+    if (line.trim()) ctx.fillText(line.trim(), 80, y)
+    if (personName) { ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.font = '22px DM Sans'; ctx.fillText(personName, 80, y + 60) }
+    ctx.fillStyle = 'rgba(255,255,255,0.2)'; ctx.font = '18px DM Sans'; ctx.fillText('stashapp.co', 80, 1140)
+    ctx.fillStyle = 'rgba(255,255,255,0.3)'; ctx.font = '18px DM Sans'; ctx.fillText('STASH', 1040, 1140)
+    const dataUrl = canvas.toDataURL('image/png')
+    const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-')
+    await window.api.saveShareCard(dataUrl, `stash-${slug}.png`)
+  }
+
+  const handleMsgSearch = async (): Promise<void> => {
+    if (!msgQuery.trim() || msgSearching) return
+    setMsgSearching(true)
+    try { setMsgResults(await window.api.searchMessages(msgQuery.trim(), scopedPerson || undefined, 30)) }
+    catch { setMsgResults([]) }
+    finally { setMsgSearching(false) }
+  }
+
+  const isIndexed = msgIndexStatus && msgIndexStatus.indexed > 0
+  const indexPct = msgIndexStatus && msgIndexStatus.total > 0 ? Math.round((msgIndexStatus.indexed / msgIndexStatus.total) * 100) : 0
+
   // ── Relationship view ──
   if (scopedPerson) {
     const pn = resolveName(scopedPerson, chatNameMap)
@@ -1255,52 +1301,6 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
       </div>
     </div>
   )
-
-  // ── Conversational Insights Surface ──
-  const [msgQuery, setMsgQuery] = useState('')
-  const [msgResults, setMsgResults] = useState<{ id: number; body: string; chat_name: string; sender_handle: string | null; is_from_me: number; sent_at: string; snippet: string }[] | null>(null)
-  const [msgSearching, setMsgSearching] = useState(false)
-  const [msgIndexStatus, setMsgIndexStatus] = useState<{ total: number; indexed: number } | null>(null)
-  const [vocabStats, setVocabStats] = useState<{ uniqueWords: number; totalWords: number; avgWordsPerMessage: number; theirAvgWordsPerMessage: number; topWords: { word: string; count: number }[] } | null>(null)
-  const [wordOrigins, setWordOrigins] = useState<{ word: string; firstUsed: string; chatName: string; totalUses: number; firstMessage: string | null }[]>([])
-
-  useEffect(() => {
-    window.api.getMessageIndexStatus().then(setMsgIndexStatus).catch(() => {})
-    window.api.getVocabStats(scopedPerson || undefined).then(setVocabStats).catch(() => {})
-    window.api.getWordOrigins(scopedPerson || undefined).then(setWordOrigins).catch(() => {})
-  }, [scopedPerson])
-
-  const generateShareCard = async (title: string, bigNumber: string, unit: string, copy: string, personName?: string): Promise<void> => {
-    const canvas = document.createElement('canvas')
-    canvas.width = 1200; canvas.height = 1200
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
-    ctx.fillStyle = '#0F0F0F'; ctx.fillRect(0, 0, 1200, 1200)
-    ctx.fillStyle = 'rgba(232,96,74,0.5)'; ctx.font = '14px DM Sans'; ctx.letterSpacing = '3px'; ctx.fillText(`STASH · ${title.toUpperCase()}`, 80, 120)
-    ctx.fillStyle = '#E8604A'; ctx.font = '200 120px system-ui'; ctx.fillText(bigNumber, 80, 300)
-    ctx.fillStyle = 'rgba(232,96,74,0.6)'; ctx.font = '200 32px system-ui'; ctx.fillText(unit, 80, 360)
-    ctx.fillStyle = 'rgba(255,255,255,0.75)'; ctx.font = '28px DM Sans'
-    const words = copy.split(' '); let line = '', y = 460
-    for (const w of words) { if (ctx.measureText(line + w).width > 900) { ctx.fillText(line.trim(), 80, y); y += 42; line = '' } line += w + ' ' }
-    if (line.trim()) ctx.fillText(line.trim(), 80, y)
-    if (personName) { ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.font = '22px DM Sans'; ctx.fillText(personName, 80, y + 60) }
-    ctx.fillStyle = 'rgba(255,255,255,0.2)'; ctx.font = '18px DM Sans'; ctx.fillText('stashapp.co', 80, 1140)
-    ctx.fillStyle = 'rgba(255,255,255,0.3)'; ctx.font = '18px DM Sans'; ctx.fillText('STASH', 1040, 1140)
-    const dataUrl = canvas.toDataURL('image/png')
-    const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-')
-    await window.api.saveShareCard(dataUrl, `stash-${slug}.png`)
-  }
-
-  const handleMsgSearch = async (): Promise<void> => {
-    if (!msgQuery.trim() || msgSearching) return
-    setMsgSearching(true)
-    try { setMsgResults(await window.api.searchMessages(msgQuery.trim(), scopedPerson || undefined, 30)) }
-    catch { setMsgResults([]) }
-    finally { setMsgSearching(false) }
-  }
-
-  const isIndexed = msgIndexStatus && msgIndexStatus.indexed > 0
-  const indexPct = msgIndexStatus && msgIndexStatus.total > 0 ? Math.round((msgIndexStatus.indexed / msgIndexStatus.total) * 100) : 0
 
   const conversationalSurface = (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 14 }}>
