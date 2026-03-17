@@ -1005,6 +1005,73 @@ export function getConversationStats(chatIdentifier: string, isGroup: boolean): 
   return result
 }
 
+export interface TimelineEvent {
+  timestamp: string
+  type: string
+  description: string
+  metric?: number
+}
+
+export function getRelationshipTimeline(chatIdentifier: string): { events: TimelineEvent[] } {
+  const events: TimelineEvent[] = []
+  try {
+    const { homedir } = require('os')
+    const { join } = require('path')
+    const fs = require('fs')
+    const chatDbPath = join(homedir(), 'Library/Messages/chat.db')
+    if (!fs.existsSync(chatDbPath)) return { events }
+
+    const chatDb = new Database(chatDbPath, { readonly: true })
+    const APPLE_EPOCH = 978307200
+    const NS = 1000000000
+
+    const chatIds = chatDb.prepare('SELECT ROWID FROM chat WHERE chat_identifier = ?').all(chatIdentifier) as { ROWID: number }[]
+    if (chatIds.length === 0) { chatDb.close(); return { events } }
+    const idList = chatIds.map(r => r.ROWID).join(',')
+
+    // First message
+    const first = chatDb.prepare(`SELECT MIN(datetime(m.date/${NS} + ${APPLE_EPOCH}, 'unixepoch', 'localtime')) as d FROM message m JOIN chat_message_join cmj ON m.ROWID = cmj.message_id WHERE cmj.chat_id IN (${idList})`).get() as { d: string | null } | undefined
+    if (first?.d) events.push({ timestamp: first.d.slice(0, 10), type: 'first_message', description: 'First message.' })
+
+    // Busiest month (year-month)
+    const busiestMonth = chatDb.prepare(`SELECT strftime('%Y-%m', datetime(m.date/${NS} + ${APPLE_EPOCH}, 'unixepoch', 'localtime')) as ym, COUNT(*) as c FROM message m JOIN chat_message_join cmj ON m.ROWID = cmj.message_id WHERE cmj.chat_id IN (${idList}) GROUP BY ym ORDER BY c DESC LIMIT 1`).get() as { ym: string; c: number } | undefined
+    if (busiestMonth) {
+      const [y, mo] = busiestMonth.ym.split('-').map(Number)
+      events.push({ timestamp: `${y}-${String(mo).padStart(2, '0')}-15`, type: 'busiest_month', description: `Your busiest month together. ${busiestMonth.c.toLocaleString()} messages.`, metric: busiestMonth.c })
+    }
+
+    // Busiest day
+    const busiestDay = chatDb.prepare(`SELECT date(datetime(m.date/${NS} + ${APPLE_EPOCH}, 'unixepoch', 'localtime')) as d, COUNT(*) as c FROM message m JOIN chat_message_join cmj ON m.ROWID = cmj.message_id WHERE cmj.chat_id IN (${idList}) GROUP BY d ORDER BY c DESC LIMIT 1`).get() as { d: string; c: number } | undefined
+    if (busiestDay) events.push({ timestamp: busiestDay.d, type: 'busiest_day', description: `${busiestDay.c} messages exchanged in one day.`, metric: busiestDay.c })
+
+    // Longest streak (with start date)
+    const dates = chatDb.prepare(`SELECT DISTINCT date(datetime(m.date/${NS} + ${APPLE_EPOCH}, 'unixepoch', 'localtime')) as d FROM message m JOIN chat_message_join cmj ON m.ROWID = cmj.message_id WHERE cmj.chat_id IN (${idList}) ORDER BY d`).all() as { d: string }[]
+    if (dates.length > 1) {
+      let maxStreak = 1, cur = 1, maxStart = 0, curStart = 0
+      for (let i = 1; i < dates.length; i++) {
+        const diff = (new Date(dates[i].d).getTime() - new Date(dates[i - 1].d).getTime()) / 86400000
+        if (diff === 1) { cur++; if (cur > maxStreak) { maxStreak = cur; maxStart = curStart } } else { cur = 1; curStart = i }
+      }
+      if (maxStreak >= 3) {
+        events.push({ timestamp: dates[maxStart].d, type: 'longest_streak', description: `Longest streak: ${maxStreak} days straight.`, metric: maxStreak })
+      }
+    }
+
+    // Peak year
+    const peakYear = chatDb.prepare(`SELECT CAST(strftime('%Y', datetime(m.date/${NS} + ${APPLE_EPOCH}, 'unixepoch', 'localtime')) AS INTEGER) as year, COUNT(*) as c FROM message m JOIN chat_message_join cmj ON m.ROWID = cmj.message_id WHERE cmj.chat_id IN (${idList}) GROUP BY year ORDER BY c DESC LIMIT 1`).get() as { year: number; c: number } | undefined
+    if (peakYear) events.push({ timestamp: `${peakYear.year}-06-15`, type: 'peak_year', description: `Peak year. ${peakYear.c.toLocaleString()} messages.`, metric: peakYear.c })
+
+    // Total messages (recent activity)
+    const total = (chatDb.prepare(`SELECT COUNT(*) as c FROM message m JOIN chat_message_join cmj ON m.ROWID = cmj.message_id WHERE cmj.chat_id IN (${idList})`).get() as { c: number }).c
+    if (total > 0) events.push({ timestamp: new Date().toISOString().slice(0, 10), type: 'recent_activity', description: `${total.toLocaleString()} messages exchanged.`, metric: total })
+
+    chatDb.close()
+  } catch { /* fallback */ }
+
+  events.sort((a, b) => a.timestamp.localeCompare(b.timestamp))
+  return { events }
+}
+
 export function invalidateLaughCache(): void {
   laughCacheValid = false
   laughCache.clear()

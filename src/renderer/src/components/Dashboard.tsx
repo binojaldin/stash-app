@@ -435,6 +435,57 @@ function LoquaciousnessCard({ myAvg, theirAvg, theirName, onShare, span }: {
   )
 }
 
+type TimelineEvent = { timestamp: string; type: string; description: string; metric?: number }
+
+function RelationshipTimelineCard({ events, firstName }: { events: TimelineEvent[]; firstName: string }): JSX.Element | null {
+  if (events.length < 2) return null
+
+  const formatDate = (ts: string, type: string): string => {
+    const d = new Date(ts + 'T12:00:00')
+    if (type === 'recent_activity') return 'Today'
+    if (type === 'peak_year') return String(d.getFullYear())
+    if (type === 'busiest_month') return d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+    return d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+  }
+
+  return (
+    <div style={{ gridColumn: 'span 12', borderRadius: 18, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', padding: '24px 28px', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}>
+      <div style={{ fontSize: 10, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#2EC4A0', marginBottom: 4, fontFamily: "'DM Sans'", fontWeight: 600 }}>Relationship timeline</div>
+      <div style={{ fontSize: 13, color: '#9a948f', marginBottom: 20, fontFamily: "'DM Sans'" }}>Key moments with {firstName}.</div>
+      <div style={{ position: 'relative', paddingLeft: 28 }}>
+        {/* Vertical line */}
+        <div style={{ position: 'absolute', left: 5, top: 6, bottom: 6, width: 1, background: 'rgba(46,196,160,0.15)' }} />
+        {events.map((ev, i) => {
+          const isLast = i === events.length - 1
+          const isFirst = i === 0
+          return (
+            <div key={i} style={{ position: 'relative', paddingBottom: isLast ? 0 : 22 }}>
+              {/* Node dot */}
+              <div style={{
+                position: 'absolute', left: -28, top: 2,
+                width: (isFirst || isLast) ? 11 : 9,
+                height: (isFirst || isLast) ? 11 : 9,
+                borderRadius: '50%',
+                background: (isFirst || isLast) ? '#2EC4A0' : 'rgba(46,196,160,0.25)',
+                border: (isFirst || isLast) ? '2px solid rgba(46,196,160,0.2)' : 'none',
+                marginLeft: (isFirst || isLast) ? -1 : 0,
+              }} />
+              {/* Date label */}
+              <div style={{ fontFamily: "'Unbounded', sans-serif", fontWeight: 200, fontSize: 15, color: '#1A1A1A', lineHeight: 1.3, marginBottom: 3 }}>
+                {formatDate(ev.timestamp, ev.type)}
+              </div>
+              {/* Description */}
+              <div style={{ fontSize: 13, color: '#6f6a65', lineHeight: 1.5, fontFamily: "'DM Sans'" }}>
+                {ev.description}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 function ConstellationCard({ network, chatNameMap, onSelectConversation }: {
   network: NetworkData; chatNameMap: Record<string, string>; onSelectConversation: (rawName: string) => void
 }): JSX.Element | null {
@@ -802,6 +853,13 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
     } else setConvStats(null)
   }, [scopedPerson])
 
+  const [timelineEvents, setTimelineEvents] = useState<TimelineEvent[]>([])
+  useEffect(() => {
+    if (scopedPerson) {
+      window.api.getRelationshipTimeline(scopedPerson).then(r => setTimelineEvents(r.events)).catch(() => setTimelineEvents([]))
+    } else setTimelineEvents([])
+  }, [scopedPerson])
+
   // ── Conversational surface state (must be before early returns) ──
   const [msgQuery, setMsgQuery] = useState('')
   const [msgResults, setMsgResults] = useState<{ id: number; body: string; chat_name: string; sender_handle: string | null; is_from_me: number; sent_at: string; snippet: string }[] | null>(null)
@@ -1022,6 +1080,9 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
             </div>
           ) : (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 14 }}>
+              {timelineEvents.length >= 2 && (
+                <RelationshipTimelineCard events={timelineEvents} firstName={firstName} />
+              )}
               {pd && <>
                 <div style={{ gridColumn: 'span 4', cursor: 'pointer', position: 'relative' }}
                   onClick={() => onDrillThrough?.(`${firstName}'s comedy record`, `${firstName} · all time`, [

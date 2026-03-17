@@ -106,6 +106,9 @@ const api = {
     ipcRenderer.invoke('search-conversations-ai', description, conversations),
   setAnthropicKey: (key: string): Promise<void> => ipcRenderer.invoke('set-anthropic-key', key),
   getConversationStats: (chatIdentifier: string, isGroup: boolean): Promise<unknown> => ipcRenderer.invoke('get-conversation-stats', chatIdentifier, isGroup),
+  getRelationshipTimeline: (chatIdentifier: string): Promise<{
+    events: { timestamp: string; type: string; description: string; metric?: number }[]
+  }> => ipcRenderer.invoke('get-relationship-timeline', chatIdentifier),
   refreshReactions: (): Promise<void> => ipcRenderer.invoke('refresh-reactions'),
   getHiddenChats: (): Promise<string[]> => ipcRenderer.invoke('get-hidden-chats'),
   generateWrapped: (year: number): Promise<unknown> => ipcRenderer.invoke('generate-wrapped', year),
