@@ -109,6 +109,9 @@ const api = {
   getRelationshipTimeline: (chatIdentifier: string): Promise<{
     events: { timestamp: string; type: string; description: string; metric?: number }[]
   }> => ipcRenderer.invoke('get-relationship-timeline', chatIdentifier),
+  getSocialGravity: (): Promise<{
+    years: { year: number; dominant: { name: string; count: number; pct: number }; top5: { name: string; count: number; pct: number }[]; clusterContacts: string[]; clusterLabel: string | null }[]
+  }> => ipcRenderer.invoke('get-social-gravity'),
   refreshReactions: (): Promise<void> => ipcRenderer.invoke('refresh-reactions'),
   getHiddenChats: (): Promise<string[]> => ipcRenderer.invoke('get-hidden-chats'),
   generateWrapped: (year: number): Promise<unknown> => ipcRenderer.invoke('generate-wrapped', year),

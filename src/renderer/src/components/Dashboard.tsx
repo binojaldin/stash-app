@@ -436,6 +436,88 @@ function LoquaciousnessCard({ myAvg, theirAvg, theirName, onShare, span }: {
 }
 
 type TimelineEvent = { timestamp: string; type: string; description: string; metric?: number }
+type GravityYear = { year: number; dominant: { name: string; count: number; pct: number }; top5: { name: string; count: number; pct: number }[]; clusterContacts: string[]; clusterLabel: string | null }
+
+function SocialGravityCard({ years, chatNameMap, onSelectYear }: {
+  years: GravityYear[]; chatNameMap: Record<string, string>; onSelectYear?: (year: string) => void
+}): JSX.Element | null {
+  const [hoveredYear, setHoveredYear] = useState<number | null>(null)
+  if (years.length < 2) return null
+
+  const getName = (raw: string) => {
+    const n = (chatNameMap[raw] || raw).replace(/^#/, '').replace(/^\+/, '')
+    const first = n.split(' ')[0]
+    return first.length > 10 ? first.slice(0, 9) + '\u2026' : first
+  }
+  const getFullName = (raw: string) => (chatNameMap[raw] || raw).replace(/^#/, '')
+  const maxPct = Math.max(...years.map(y => y.dominant.pct))
+
+  return (
+    <div style={{ gridColumn: 'span 12', borderRadius: 18, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', padding: '22px 24px 18px', boxShadow: '0 2px 12px rgba(0,0,0,0.04)', position: 'relative' }}>
+      <div style={{ fontSize: 10, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#E8604A', marginBottom: 4, fontFamily: "'DM Sans'", fontWeight: 600 }}>Social gravity</div>
+      <div style={{ fontSize: 13, color: '#9a948f', marginBottom: 18, fontFamily: "'DM Sans'" }}>Who dominated your attention, year by year.</div>
+
+      {/* Timeline */}
+      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 0, position: 'relative' }}>
+        {/* Baseline */}
+        <div style={{ position: 'absolute', bottom: 28, left: 0, right: 0, height: 1, background: '#EAE5DF' }} />
+
+        {years.map((y, i) => {
+          const barH = Math.max(8, Math.round((y.dominant.pct / Math.max(maxPct, 1)) * 48))
+          const isHov = hoveredYear === y.year
+          return (
+            <div key={y.year} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', position: 'relative', cursor: 'pointer', minWidth: 0 }}
+              onMouseEnter={() => setHoveredYear(y.year)} onMouseLeave={() => setHoveredYear(null)}
+              onClick={() => onSelectYear?.(String(y.year))}>
+              {/* Name */}
+              <div style={{ fontSize: 9, color: isHov ? '#E8604A' : '#6f6a65', fontFamily: "'DM Sans'", fontWeight: isHov ? 600 : 400, marginBottom: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%', textAlign: 'center', transition: 'color 0.15s' }}>
+                {getName(y.dominant.name)}
+              </div>
+              {/* Pct */}
+              <div style={{ fontFamily: "'Unbounded', sans-serif", fontWeight: 200, fontSize: 11, color: isHov ? '#E8604A' : '#c8c0ba', marginBottom: 4, transition: 'color 0.15s' }}>
+                {y.dominant.pct}%
+              </div>
+              {/* Bar */}
+              <div style={{ width: 6, height: barH, borderRadius: 3, background: isHov ? '#E8604A' : '#EAE5DF', transition: 'background 0.15s, height 0.2s', marginBottom: 4 }} />
+              {/* Dot */}
+              <div style={{ width: isHov ? 8 : 6, height: isHov ? 8 : 6, borderRadius: '50%', background: isHov ? '#E8604A' : '#c8c0ba', transition: 'all 0.15s', marginBottom: 4, flexShrink: 0 }} />
+              {/* Year label */}
+              <div style={{ fontSize: 9, color: isHov ? '#1A1A1A' : '#b8b2ad', fontFamily: "'DM Sans'", fontWeight: isHov ? 600 : 400, transition: 'color 0.15s' }}>
+                {String(y.year).slice(2)}
+              </div>
+
+              {/* Tooltip */}
+              {isHov && (
+                <div style={{
+                  position: 'absolute', bottom: '100%', left: '50%', transform: 'translateX(-50%)',
+                  marginBottom: 8, background: 'rgba(0,0,0,0.92)', borderRadius: 10, padding: '12px 14px',
+                  width: 190, zIndex: 10, pointerEvents: 'none',
+                  boxShadow: '0 8px 24px rgba(0,0,0,0.3)'
+                }}>
+                  <div style={{ fontSize: 12, color: '#fff', fontWeight: 600, marginBottom: 8, fontFamily: "'DM Sans'" }}>{y.year}</div>
+                  {y.top5.map((c, j) => (
+                    <div key={j} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '2px 0' }}>
+                      <span style={{ fontSize: 11, color: j === 0 ? '#E8604A' : 'rgba(255,255,255,0.7)', fontFamily: "'DM Sans'", fontWeight: j === 0 ? 500 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginRight: 8 }}>{getFullName(c.name)}</span>
+                      <span style={{ fontSize: 10, color: j === 0 ? '#E8604A' : 'rgba(255,255,255,0.4)', fontFamily: "'DM Sans'", flexShrink: 0 }}>{c.pct}%</span>
+                    </div>
+                  ))}
+                  {(y.clusterLabel || y.clusterContacts.length > 0) && (
+                    <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', marginTop: 8, paddingTop: 8 }}>
+                      <div style={{ fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.35)', marginBottom: 4, fontFamily: "'DM Sans'" }}>Cluster</div>
+                      <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', fontFamily: "'DM Sans'" }}>
+                        {y.clusterLabel || y.clusterContacts.map(c => getName(c)).join(', ')}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
 
 function RelationshipTimelineCard({ events, firstName }: { events: TimelineEvent[]; firstName: string }): JSX.Element | null {
   if (events.length < 2) return null
@@ -833,6 +915,8 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
   }, [dateRange])
   useEffect(() => { window.api.getTodayInHistory().then(setTodayMemories).catch(() => {}) }, [])
   useEffect(() => { window.api.getMessagingNetwork().then(setNetworkData).catch(() => {}) }, [])
+  const [gravityData, setGravityData] = useState<GravityYear[] | null>(null)
+  useEffect(() => { window.api.getSocialGravity().then(r => setGravityData(r.years)).catch(() => {}) }, [])
 
   const topFunny = byLaughsReceived[0]
   const topChat = byMessages[0]
@@ -1345,6 +1429,11 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
             </>
           )
         })()}
+
+        {/* ── TIER 1.5: SOCIAL GRAVITY ── */}
+        {gravityData && gravityData.length >= 2 && (
+          <SocialGravityCard years={gravityData} chatNameMap={chatNameMap} onSelectYear={(y) => onSurfaceChange?.('relationship')} />
+        )}
 
         {/* ── TIER 2: IDENTITY SPECTRUMS ── */}
         {(() => {
