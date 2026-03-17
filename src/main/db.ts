@@ -584,7 +584,14 @@ export function getStats(chatNameFilter?: string, dateFrom?: string, dateTo?: st
               LAG(m.date) OVER (PARTITION BY cmj.chat_id ORDER BY m.date) as prev_date,
               LAG(m.is_from_me) OVER (PARTITION BY cmj.chat_id ORDER BY m.date) as prev_is_from_me
             FROM message m JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
-            JOIN chat c ON cmj.chat_id = c.ROWID WHERE m.text IS NOT NULL
+            JOIN chat c ON cmj.chat_id = c.ROWID
+            WHERE m.text IS NOT NULL
+              AND (
+                m.text LIKE '%lol%' OR m.text LIKE '%lmao%' OR m.text LIKE '%haha%'
+                OR m.text LIKE '%hehe%' OR m.text LIKE '%rofl%' OR m.text LIKE '%lmfao%'
+                OR m.text LIKE '%im dead%' OR m.text LIKE '%i cant%'
+                OR m.text LIKE '%😂%' OR m.text LIKE '%🤣%' OR m.text LIKE '%💀%'
+              )
           `).all() as { chat_name: string; is_from_me: number; text: string; date: number; prev_date: number | null; prev_is_from_me: number | null }[]
 
           laughCache.clear()
@@ -636,33 +643,37 @@ export function getStats(chatNameFilter?: string, dateFrom?: string, dateTo?: st
         } catch (err) { console.error('[LateNight] Error:', err) }
       }
 
-      // Reply latency — cached per session
+      // Reply latency — cached per session (single SQL query with window functions)
       if (!replyLatencyCacheValid) {
         try {
-          const chatIds = chatDb.prepare(`SELECT ROWID as chat_id, chat_identifier as chat_name FROM chat`).all() as { chat_id: number; chat_name: string }[]
-
-          replyLatencyCache.clear()
-          for (const chat of chatIds.slice(0, 50)) {
-            const msgs = chatDb.prepare(`
-              SELECT m.date, m.is_from_me
+          const latencyRows = chatDb.prepare(`
+            WITH ordered AS (
+              SELECT
+                c.chat_identifier as chat_name,
+                m.date,
+                m.is_from_me,
+                LAG(m.date) OVER (PARTITION BY cmj.chat_id ORDER BY m.date) as prev_date,
+                LAG(m.is_from_me) OVER (PARTITION BY cmj.chat_id ORDER BY m.date) as prev_from_me
               FROM message m
               JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
-              WHERE cmj.chat_id = ?
-                AND (m.text IS NOT NULL OR m.cache_has_attachments = 1)${dateCond}
-              ORDER BY m.date DESC
-              LIMIT 200
-            `).all(chat.chat_id) as { date: number; is_from_me: number }[]
+              JOIN chat c ON cmj.chat_id = c.ROWID
+              WHERE m.is_from_me IN (0, 1) AND m.date > 0
+            )
+            SELECT
+              chat_name,
+              AVG(CAST(date - prev_date AS REAL) / 1000000000.0 / 60.0) as avg_minutes
+            FROM ordered
+            WHERE is_from_me = 1
+              AND prev_from_me = 0
+              AND (date - prev_date) > 0
+              AND (date - prev_date) < 86400000000000
+            GROUP BY chat_name
+            HAVING COUNT(*) >= 3
+          `).all() as { chat_name: string; avg_minutes: number }[]
 
-            const responseTimes: number[] = []
-            for (let i = msgs.length - 1; i > 0; i--) {
-              if (msgs[i].is_from_me === 0 && msgs[i - 1].is_from_me === 1) {
-                const diffMinutes = (msgs[i - 1].date - msgs[i].date) / 1000000000 / 60
-                if (diffMinutes > 0 && diffMinutes < 1440) responseTimes.push(diffMinutes)
-              }
-            }
-            if (responseTimes.length > 0) {
-              replyLatencyCache.set(chat.chat_name, Math.round(responseTimes.reduce((a, b) => a + b, 0) / responseTimes.length))
-            }
+          replyLatencyCache.clear()
+          for (const row of latencyRows) {
+            replyLatencyCache.set(row.chat_name, Math.round(row.avg_minutes))
           }
           if (replyLatencyCache.size > 0) {
             replyLatencyCacheValid = true
