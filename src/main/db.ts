@@ -405,40 +405,48 @@ export function getStats(chatNameFilter?: string, dateFrom?: string, dateTo?: st
 
       // Participant counts to identify group chats
       try {
-        // Classify each chat row individually, then roll up to identifier
-        const perRowRows = chatDb.prepare(`
+        type PartRow = {
+          chat_id: number
+          chat_name: string
+          chat_style: number | null
+          participant_count: number
+        }
+
+        const partRows = chatDb.prepare(`
           SELECT
-            c.ROWID as chat_rowid,
+            c.ROWID as chat_id,
             c.chat_identifier as chat_name,
             c.style as chat_style,
             COUNT(DISTINCT chj.handle_id) as participant_count
           FROM chat c
           LEFT JOIN chat_handle_join chj ON c.ROWID = chj.chat_id
-          GROUP BY c.ROWID
-        `).all() as { chat_rowid: number; chat_name: string; chat_style: number; participant_count: number }[]
+          GROUP BY c.ROWID, c.chat_identifier, c.style
+        `).all() as PartRow[]
 
-        // Roll up: if ANY row for this identifier is definitively direct (style=43), it's direct
-        // Only mark as group if style=45 explicitly, with no style=43 row for same identifier
-        const directSet = new Set<string>()
-        const groupSet = new Set<string>()
-
-        for (const r of perRowRows) {
-          if (r.chat_style === 43) {
-            directSet.add(r.chat_name)
-          } else if (r.chat_style === 45) {
-            groupSet.add(r.chat_name)
-          } else if (r.participant_count > 1) {
-            groupSet.add(r.chat_name)
-          }
+        const grouped = new Map<string, PartRow[]>()
+        for (const row of partRows) {
+          if (!grouped.has(row.chat_name)) grouped.set(row.chat_name, [])
+          grouped.get(row.chat_name)!.push(row)
         }
 
-        // Direct wins over group if both present (SMS+iMessage duplicate scenario)
-        const allIdentifiers = new Set([...directSet, ...groupSet])
-        for (const id of allIdentifiers) {
-          const isGroup = groupSet.has(id) && !directSet.has(id)
-          participantMap.set(id, isGroup ? 2 : 1)
+        participantMap.clear()
+        for (const [chatName, rows] of grouped) {
+          const hasGroupStyle = rows.some(r => r.chat_style === 45)
+          const hasDirectStyle = rows.some(r => r.chat_style === 43)
+          const maxParticipants = Math.max(...rows.map(r => r.participant_count || 0))
+
+          const isGroup =
+            hasGroupStyle ? true :
+            hasDirectStyle ? false :
+            maxParticipants > 1
+
+          participantMap.set(chatName, isGroup ? 2 : 1)
         }
-      } catch { /* fallback */ }
+
+        console.log('[GroupDetection] sample', [...participantMap.entries()].slice(0, 10))
+      } catch (err) {
+        console.error('[GroupDetection] failed', err)
+      }
 
       // Laugh detection — cached per session (expensive full-table scan)
       if (!laughCacheValid) {
