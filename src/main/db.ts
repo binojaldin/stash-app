@@ -324,6 +324,46 @@ export interface ChatNameEntry {
   avgReplyMinutes: number
 }
 
+export function getFastStats(chatNameFilter?: string, dateFrom?: string, dateTo?: string): {
+  total: number; images: number; videos: number; documents: number; audio: number; unavailable: number; chatNames: ChatNameEntry[]
+} {
+  const d = initDb()
+  const dateParts: string[] = []
+  if (dateFrom) dateParts.push(`created_at >= '${dateFrom}'`)
+  if (dateTo) dateParts.push(`created_at <= '${dateTo} 23:59:59'`)
+  const dateWhere = dateParts.length ? ' AND ' + dateParts.join(' AND ') : ''
+  const chatCond = chatNameFilter ? ' AND chat_name = ?' : ''
+  const params = chatNameFilter ? [chatNameFilter] : []
+
+  const total = (d.prepare(`SELECT COUNT(*) as c FROM attachments WHERE 1=1${chatCond}${dateWhere}`).get(...params) as { c: number }).c
+  const images = (d.prepare(`SELECT COUNT(*) as c FROM attachments WHERE is_image = 1${chatCond}${dateWhere}`).get(...params) as { c: number }).c
+  const videos = (d.prepare(`SELECT COUNT(*) as c FROM attachments WHERE is_video = 1${chatCond}${dateWhere}`).get(...params) as { c: number }).c
+  const documents = (d.prepare(`SELECT COUNT(*) as c FROM attachments WHERE is_document = 1${chatCond}${dateWhere}`).get(...params) as { c: number }).c
+  const audio = (d.prepare(`SELECT COUNT(*) as c FROM attachments WHERE mime_type LIKE 'audio/%'${chatCond}${dateWhere}`).get(...params) as { c: number }).c
+  const unavailable = (d.prepare(`SELECT COUNT(*) as c FROM attachments WHERE is_available = 0${chatCond}${dateWhere}`).get(...params) as { c: number }).c
+
+  const hidden = new Set(getHiddenChats())
+  let chatSql = 'SELECT chat_name, COUNT(*) as attachment_count, MAX(created_at) as last_message_date FROM attachments WHERE chat_name IS NOT NULL'
+  const chatParams: string[] = []
+  if (dateFrom) { chatSql += ' AND created_at >= ?'; chatParams.push(dateFrom) }
+  if (dateTo) { chatSql += ' AND created_at <= ?'; chatParams.push(dateTo) }
+  chatSql += ' GROUP BY chat_name ORDER BY last_message_date DESC'
+
+  const chatDetails = (d.prepare(chatSql).all(...chatParams) as { chat_name: string; attachment_count: number; last_message_date: string }[])
+    .filter(r => !hidden.has(r.chat_name))
+
+  const chatNames: ChatNameEntry[] = chatDetails.map(r => ({
+    rawName: r.chat_name,
+    attachmentCount: r.attachment_count,
+    lastMessageDate: r.last_message_date || '',
+    messageCount: 0, sentCount: 0, receivedCount: 0, initiationCount: 0,
+    laughsGenerated: 0, laughsReceived: 0, isGroup: false,
+    lateNightRatio: 0, avgReplyMinutes: 0
+  }))
+
+  return { total, images, videos, documents, audio, unavailable, chatNames }
+}
+
 export function getStats(chatNameFilter?: string, dateFrom?: string, dateTo?: string): {
   total: number; images: number; videos: number; documents: number; audio: number; unavailable: number; chatNames: ChatNameEntry[]
 } {

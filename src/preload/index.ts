@@ -10,9 +10,14 @@ const api = {
   ): Promise<unknown[]> => ipcRenderer.invoke('get-attachments', filters, page ?? 0, limit ?? 50, sortOrder),
   getStats: (chatNameFilter?: string, dateFrom?: string, dateTo?: string): Promise<{
     total: number; images: number; videos: number; documents: number; audio: number; unavailable: number
-    chatNames: { rawName: string; attachmentCount: number; lastMessageDate: string; messageCount: number; sentCount: number; receivedCount: number; initiationCount: number; laughsGenerated: number; laughsReceived: number; isGroup: boolean }[]
+    chatNames: { rawName: string; attachmentCount: number; lastMessageDate: string; messageCount: number; sentCount: number; receivedCount: number; initiationCount: number; laughsGenerated: number; laughsReceived: number; isGroup: boolean; lateNightRatio: number; avgReplyMinutes: number }[]
     chatNameMap: Record<string, string>
   }> => ipcRenderer.invoke('get-stats', chatNameFilter, dateFrom, dateTo),
+  getFastStats: (chatNameFilter?: string, dateFrom?: string, dateTo?: string): Promise<{
+    total: number; images: number; videos: number; documents: number; audio: number; unavailable: number
+    chatNames: { rawName: string; attachmentCount: number; lastMessageDate: string; messageCount: number; sentCount: number; receivedCount: number; initiationCount: number; laughsGenerated: number; laughsReceived: number; isGroup: boolean; lateNightRatio: number; avgReplyMinutes: number }[]
+    chatNameMap: Record<string, string>
+  }> => ipcRenderer.invoke('get-fast-stats', chatNameFilter, dateFrom, dateTo),
   getAttachment: (id: number): Promise<unknown> => ipcRenderer.invoke('get-attachment', id),
   openInFinder: (path: string): Promise<boolean> => ipcRenderer.invoke('open-in-finder', path),
   exportFile: (id: number): Promise<boolean> => ipcRenderer.invoke('export-file', id),

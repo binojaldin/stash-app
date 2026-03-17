@@ -68,10 +68,12 @@ export default function App(): JSX.Element {
   const showAttachments = mainView.kind === 'global-attachments' || mainView.kind === 'person-attachments'
   const isPersonScope = scopedPerson !== null
 
+  const startupComplete = useRef(false)
+
   // ── Effects ──
   useEffect(() => { const t = setTimeout(() => setWordmarkReady(true), 300); return () => clearTimeout(t) }, [])
 
-  // Startup
+  // Startup — two-phase: fast stats (stash.db only, ~100ms) then full enrichment (chat.db, ~2min cold)
   useEffect(() => {
     let cancelled = false
     const startup = async (): Promise<void> => {
@@ -79,21 +81,34 @@ export default function App(): JSX.Element {
       if (cancelled) return
       if (!access) {
         setAppState('no-access')
-        const interval = setInterval(async () => { const ok = await window.api.checkDiskAccess(); if (ok) { clearInterval(interval); if (!cancelled) startup() } }, 2000)
+        const interval = setInterval(async () => {
+          const ok = await window.api.checkDiskAccess()
+          if (ok) { clearInterval(interval); if (!cancelled) startup() }
+        }, 2000)
         return
       }
       setAppState('loading')
       try {
-        const s = await window.api.getStats()
+        // Phase 1: Fast stats — stash.db only
+        const fast = await window.api.getFastStats()
         if (cancelled) return
-        if (s.total > 0) { setStats(s); setAppState('main') }
-        else {
+
+        if (fast.total > 0) {
+          setStats(fast)
+          setAppState('main')
+          startupComplete.current = true
+          // Phase 2: Full enrichment in background
+          setIsStatsLoading(true)
+          window.api.getStats().then(full => {
+            if (!cancelled) { setStats(full); setIsStatsLoading(false) }
+          }).catch(() => { if (!cancelled) setIsStatsLoading(false) })
+        } else {
           const summaries = await window.api.getChatSummaries()
           if (cancelled) return
           if (summaries.length > 0) { setChatSummaries(summaries); setAppState('priority'); window.api.resolveChatNames() }
-          else setAppState('main')
+          else { setAppState('main'); startupComplete.current = true }
         }
-      } catch { setAppState('main') }
+      } catch { setAppState('main'); startupComplete.current = true }
     }
     startup()
     return () => { cancelled = true }
@@ -156,7 +171,8 @@ export default function App(): JSX.Element {
     } finally { setIsStatsLoading(false) }
   }, [dateRange])
 
-  useEffect(() => { if (appState === 'main') loadStats() }, [dateRange, appState])
+  useEffect(() => { if (appState === 'main' && startupComplete.current) loadStats() }, [dateRange])
+  useEffect(() => { if (appState === 'main') loadStats() }, [appState])
   useEffect(() => { if (!isIndexing && appState === 'main') loadStats() }, [isIndexing])
 
   useEffect(() => { setInsightSurface('relationship') }, [scopedPerson])
