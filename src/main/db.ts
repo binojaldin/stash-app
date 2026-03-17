@@ -545,7 +545,7 @@ export function getStats(chatNameFilter?: string, dateFrom?: string, dateTo?: st
       initiationCount: ms?.initiationCount || 0,
       laughsGenerated: ms?.laughsGenerated || 0,
       laughsReceived: ms?.laughsReceived || 0,
-      isGroup: (participantMap.get(r.chat_name) ?? participantMap.get(displayToIdentifier.get(r.chat_name) || '') ?? 0) > 1 || /^chat\d+/i.test(r.chat_name || ''),
+      isGroup: (participantMap.get(r.chat_name) ?? participantMap.get(displayToIdentifier.get(r.chat_name) || '') ?? 0) > 1,
       lateNightRatio: ms?.lateNightRatio || 0,
       avgReplyMinutes: ms?.avgReplyMinutes || 0
     }
