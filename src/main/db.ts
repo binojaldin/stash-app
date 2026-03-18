@@ -1424,215 +1424,234 @@ export function getTopicEras(): { chapters: TopicChapter[] } {
 
     const currentYear = new Date().getFullYear()
 
-    // ── Build contact name set for filtering ──
-    const contactNames = new Set<string>()
+    // ── Build comprehensive name set ──
+    const nameTokens = new Set<string>()
     try {
-      const chatNames = d.prepare(`SELECT DISTINCT chat_name FROM messages WHERE chat_name IS NOT NULL`).all() as { chat_name: string }[]
-      for (const r of chatNames) {
-        const parts = r.chat_name.replace(/[^a-zA-Z\s]/g, ' ').toLowerCase().split(/\s+/)
-        for (const p of parts) if (p.length >= 3) contactNames.add(p)
+      for (const table of ['messages', 'attachments']) {
+        try {
+          const rows = d.prepare(`SELECT DISTINCT chat_name FROM ${table} WHERE chat_name IS NOT NULL`).all() as { chat_name: string }[]
+          for (const r of rows) for (const p of r.chat_name.replace(/[^a-zA-Z\s]/g, ' ').toLowerCase().split(/\s+/)) if (p.length >= 2) nameTokens.add(p)
+        } catch { /* table may not exist */ }
       }
       const handles = d.prepare(`SELECT DISTINCT sender_handle FROM messages WHERE sender_handle IS NOT NULL`).all() as { sender_handle: string }[]
-      for (const r of handles) {
-        const parts = r.sender_handle.replace(/[^a-zA-Z\s]/g, ' ').toLowerCase().split(/\s+/)
-        for (const p of parts) if (p.length >= 3) contactNames.add(p)
-      }
-      // Also resolve via chatNameMap if available (from attachments)
-      const attNames = d.prepare(`SELECT DISTINCT chat_name FROM attachments WHERE chat_name IS NOT NULL`).all() as { chat_name: string }[]
-      for (const r of attNames) {
-        const parts = r.chat_name.replace(/[^a-zA-Z\s]/g, ' ').toLowerCase().split(/\s+/)
-        for (const p of parts) if (p.length >= 3) contactNames.add(p)
-      }
+      for (const r of handles) for (const p of r.sender_handle.replace(/[^a-zA-Z\s]/g, ' ').toLowerCase().split(/\s+/)) if (p.length >= 2) nameTokens.add(p)
+      // Resolve contact names via Swift helper if available
+      try {
+        const { compileContactsHelper, resolveContactsBatch } = require('./contacts')
+        compileContactsHelper()
+        const allHandleIds = [...new Set(handles.map(h => h.sender_handle))]
+        const resolved = resolveContactsBatch(allHandleIds) as Record<string, string>
+        for (const name of Object.values(resolved)) {
+          for (const p of name.replace(/[^a-zA-Z\s]/g, ' ').toLowerCase().split(/\s+/)) if (p.length >= 2) nameTokens.add(p)
+        }
+      } catch { /* contacts helper may not be available */ }
     } catch { /* ignore */ }
 
-    const isName = (w: string): boolean => contactNames.has(w)
+    // ── Synonym map: normalize variants to canonical form ──
+    const SYNONYMS: Record<string, string> = {}
+    for (const [label, kws] of CONCEPT_MAP) {
+      const canonical = kws[0]
+      for (const kw of kws) if (kw !== canonical && !kw.includes(' ')) SYNONYMS[kw] = canonical
+    }
+    // Common plural/verb forms
+    const simpleStem = (w: string): string => {
+      if (w.endsWith('ing') && w.length > 5) { const base = w.slice(0, -3); if (SYNONYMS[base]) return SYNONYMS[base]; return base }
+      if (w.endsWith('ies') && w.length > 4) return w.slice(0, -3) + 'y'
+      if (w.endsWith('es') && w.length > 4 && !w.endsWith('ses')) return w.slice(0, -2)
+      if (w.endsWith('s') && w.length > 4 && !w.endsWith('ss') && !w.endsWith('us')) return w.slice(0, -1)
+      return w
+    }
+    const normalize = (w: string): string => {
+      if (SYNONYMS[w]) return SYNONYMS[w]
+      const stemmed = simpleStem(w)
+      if (SYNONYMS[stemmed]) return SYNONYMS[stemmed]
+      return stemmed
+    }
+
+    // ── Token validation ──
+    const SYSTEM_PATTERNS = [
+      /^img[_-]?\d/i, /^dsc[_-]?\d/i, /^screenshot/i, /^fullsizerender/i,
+      /^image\d/i, /^photo\d/i, /^video\d/i, /^file\d/i, /^attachment/i,
+      /^[a-f0-9]{8,}$/i, /^[a-z]{1,2}\d{3,}/i, /^tmp/i, /^temp/i,
+      /^screen\s?shot/i, /^img$/i, /^mov$/i, /^jpeg$/i, /^heic$/i, /^png$/i,
+      /^\w*\d{4,}\w*$/, // tokens with 4+ consecutive digits
+    ]
     const isGarbage = (w: string): boolean => {
-      if (w.length < 3 || w.length > 25) return true
-      if (/^\d+$/.test(w)) return true
-      if (/^[^aeiou]{4,}$/i.test(w)) return true // no vowels = garbage
-      if (/(.)\1{2,}/.test(w)) return true // repeated chars like "ahhh", "oooo"
-      if (/^[A-Z]{2,}$/.test(w)) return true // all caps abbreviations
+      if (w.length < 3 || w.length > 22) return true
+      if (/\d/.test(w)) return true // contains any digit
+      if (!/[aeiou]/i.test(w) && w.length > 3) return true // no vowels
+      if (/(.)\1{2,}/.test(w)) return true // repeated chars
+      if (/[A-Z]/.test(w) && /[a-z]/.test(w) && w !== w.toLowerCase()) return true // camelCase before lowering
+      for (const pat of SYSTEM_PATTERNS) if (pat.test(w)) return true
       return false
     }
-    const isValidToken = (w: string): boolean => {
+    const isValid = (w: string): boolean => {
+      if (w.length < 3) return false
       if (TOPIC_STOPS.has(w)) return false
-      if (isGarbage(w)) return false
-      if (isName(w)) return false
+      if (nameTokens.has(w)) return false
       return true
     }
 
-    // ── Signal 1: Message text per year with cross-chat tracking ──
+    // ── Collect signals per year with cross-chat + month tracking ──
     type Signal = { count: number; chats: Set<string>; months: Set<string> }
     const yearSignals = new Map<number, Map<string, Signal>>()
-
-    const ensureSignal = (year: number, term: string, chat: string, month: string) => {
+    const addSig = (year: number, term: string, chat: string, month: string) => {
       if (!yearSignals.has(year)) yearSignals.set(year, new Map())
-      const ym = yearSignals.get(year)!
-      if (!ym.has(term)) ym.set(term, { count: 0, chats: new Set(), months: new Set() })
-      const s = ym.get(term)!
-      s.count++
-      s.chats.add(chat)
-      s.months.add(month)
+      const m = yearSignals.get(year)!
+      if (!m.has(term)) m.set(term, { count: 0, chats: new Set(), months: new Set() })
+      const s = m.get(term)!
+      s.count++; s.chats.add(chat); s.months.add(month)
     }
 
+    // ── Signal 1: Message text ──
     const msgRows = d.prepare(`
       SELECT CAST(strftime('%Y', sent_at) AS INTEGER) as year,
-             strftime('%Y-%m', sent_at) as month,
-             chat_name, body
+             strftime('%Y-%m', sent_at) as month, chat_name, body
       FROM messages WHERE body IS NOT NULL AND length(body) > 3
     `).all() as { year: number; month: string; chat_name: string; body: string }[]
 
     for (const r of msgRows) {
       if (r.year < 2006 || r.year > currentYear) continue
       const chat = r.chat_name || '__unknown'
-      const text = r.body.toLowerCase().replace(/[^a-z\s'-]/g, ' ')
-      const words = text.split(/\s+/).filter(w => w.length >= 3 && w.length <= 25)
+      const raw = r.body.toLowerCase()
+      const text = raw.replace(/[^a-z\s'-]/g, ' ')
+      const words = text.split(/\s+/).filter(w => w.length >= 3 && w.length <= 22 && !/\d/.test(w))
 
-      // Unigrams
       for (const w of words) {
-        if (isValidToken(w)) ensureSignal(r.year, w, chat, r.month)
+        if (!isValid(w)) continue
+        const norm = normalize(w)
+        if (norm.length >= 3 && isValid(norm)) addSig(r.year, norm, chat, r.month)
       }
-      // Bigrams (phrase detection)
+      // Bigrams
       for (let j = 0; j < words.length - 1; j++) {
-        const bigram = `${words[j]} ${words[j + 1]}`
-        if (words[j].length >= 3 && words[j + 1].length >= 3 && !TOPIC_STOPS.has(words[j]) && !TOPIC_STOPS.has(words[j + 1]) && !isName(words[j]) && !isName(words[j + 1])) {
-          ensureSignal(r.year, bigram, chat, r.month)
-        }
+        if (!isValid(words[j]) || !isValid(words[j + 1])) continue
+        addSig(r.year, `${normalize(words[j])} ${normalize(words[j + 1])}`, chat, r.month)
       }
-
-      // Link domain extraction
-      const urls = r.body.match(/https?:\/\/[^\s]+/gi) || []
+      // Link domains
+      const urls = raw.match(/https?:\/\/[^\s]+/gi) || []
       for (const url of urls) {
         try {
           const domain = url.replace(/^https?:\/\//, '').split('/')[0].replace(/^www\./, '')
-          for (const [d, topics] of Object.entries(DOMAIN_TOPICS)) {
-            if (domain.includes(d.split('.')[0])) {
-              for (const t of topics) ensureSignal(r.year, t, chat, r.month)
-            }
+          for (const [dom, topics] of Object.entries(DOMAIN_TOPICS)) {
+            if (domain.includes(dom.split('.')[0])) for (const t of topics) addSig(r.year, t, chat, r.month)
           }
-        } catch { /* ignore bad urls */ }
+        } catch { /* skip */ }
       }
     }
 
-    // ── Signal 2: Attachment filenames and MIME types ──
+    // ── Signal 2: Attachment filenames ──
     try {
       const attRows = d.prepare(`
         SELECT CAST(strftime('%Y', created_at) AS INTEGER) as year,
-               strftime('%Y-%m', created_at) as month,
-               chat_name, filename, mime_type
+               strftime('%Y-%m', created_at) as month, chat_name, filename
         FROM attachments WHERE filename IS NOT NULL
-      `).all() as { year: number; month: string; chat_name: string | null; filename: string; mime_type: string | null }[]
-
+      `).all() as { year: number; month: string; chat_name: string | null; filename: string }[]
       for (const r of attRows) {
         if (r.year < 2006 || r.year > currentYear) continue
         const chat = r.chat_name || '__unknown'
-        // Extract meaningful words from filename
-        const fnWords = r.filename.replace(/\.[^.]+$/, '').replace(/[^a-zA-Z]/g, ' ').toLowerCase().split(/\s+/)
+        const base = r.filename.replace(/\.[^.]+$/, '').toLowerCase()
+        if (isGarbage(base)) continue
+        const fnWords = base.replace(/[^a-z]/g, ' ').split(/\s+/)
         for (const w of fnWords) {
-          if (w.length >= 4 && isValidToken(w)) ensureSignal(r.year, w, chat, r.month)
+          if (w.length >= 4 && isValid(w) && !isGarbage(w)) addSig(r.year, normalize(w), chat, r.month)
         }
       }
     } catch { /* ignore */ }
 
-    // ── Score and rank signals per year ──
-    const yearTopics = new Map<number, { term: string; score: number }[]>()
-
-    // Pre-compute global term presence for IDF
-    const globalTermYears = new Map<string, number>()
-    for (const sigs of yearSignals.values()) {
-      for (const term of sigs.keys()) globalTermYears.set(term, (globalTermYears.get(term) || 0) + 1)
+    // ── Filter: require multi-chat presence + minimum count ──
+    for (const [, sigs] of yearSignals) {
+      for (const [term, sig] of [...sigs.entries()]) {
+        if (sig.count < 5 || sig.chats.size < 2 || sig.months.size < 2) sigs.delete(term)
+      }
     }
+
+    // ── Score per year ──
+    const globalTermYears = new Map<string, number>()
+    for (const sigs of yearSignals.values()) for (const term of sigs.keys()) globalTermYears.set(term, (globalTermYears.get(term) || 0) + 1)
     const totalYearCount = yearSignals.size
 
+    const yearTopics = new Map<number, { term: string; score: number }[]>()
     for (const [year, sigs] of [...yearSignals.entries()].sort((a, b) => a[0] - b[0])) {
       const scored: { term: string; score: number }[] = []
       for (const [term, sig] of sigs) {
-        if (sig.count < 4) continue
-        // Cross-chat bonus: terms in 2+ chats are more meaningful
-        const chatBonus = Math.min(sig.chats.size, 5)
-        // Temporal persistence: appears in multiple months
-        const monthBonus = Math.min(sig.months.size, 6) / 3
-        // IDF: rare across years = more distinctive
-        const termYears = globalTermYears.get(term) || 1
-        const idf = Math.log((totalYearCount + 1) / termYears)
-        // Bigram bonus
-        const phraseBonus = term.includes(' ') ? 2.5 : 1
-        // Concept match bonus
-        let conceptBonus = 1
-        for (const [, keywords] of CONCEPT_MAP) {
-          if (keywords.includes(term)) { conceptBonus = 3; break }
-        }
-        scored.push({ term, score: sig.count * chatBonus * monthBonus * idf * phraseBonus * conceptBonus })
+        const chatW = Math.min(sig.chats.size, 5)
+        const monthW = Math.min(sig.months.size, 8) / 3
+        const termYrs = globalTermYears.get(term) || 1
+        const idf = Math.log((totalYearCount + 1) / termYrs)
+        const phraseW = term.includes(' ') ? 2.5 : 1
+        let conceptW = 1
+        for (const [, kws] of CONCEPT_MAP) { if (kws.includes(term)) { conceptW = 3; break } }
+        scored.push({ term, score: sig.count * chatW * monthW * idf * phraseW * conceptW })
       }
       scored.sort((a, b) => b.score - a.score)
-      if (scored.length > 0) yearTopics.set(year, scored.slice(0, 20))
+      if (scored.length >= 3) yearTopics.set(year, scored.slice(0, 15))
     }
 
-    // ── Map keywords to concept labels ──
-    const labelForKeywords = (keywords: string[]): string => {
-      // Score each concept by how many of its keywords appear
-      let bestLabel = ''
-      let bestScore = 0
+    // ── Label from keywords ──
+    const labelFor = (keywords: string[]): string | null => {
+      let bestLabel = '', bestScore = 0
       for (const [label, conceptKws] of CONCEPT_MAP) {
         let score = 0
         for (const kw of keywords) {
           if (conceptKws.includes(kw)) score += 3
-          // Partial match: concept keyword is substring of our keyword or vice versa
-          for (const ck of conceptKws) {
-            if (kw.includes(ck) || ck.includes(kw)) score += 1
-          }
+          for (const ck of conceptKws) { if (kw.length >= 4 && ck.length >= 4 && (kw.includes(ck) || ck.includes(kw))) score += 1 }
         }
         if (score > bestScore) { bestScore = score; bestLabel = label }
       }
-      if (bestScore >= 3) return bestLabel
-      // Fallback: capitalize the top keyword if it looks reasonable
+      if (bestScore >= 4) return bestLabel
+      // Strict fallback: only if top keyword is clean and long enough
       const top = keywords[0]
-      if (top && top.length >= 4 && !top.includes(' ')) return top.charAt(0).toUpperCase() + top.slice(1)
-      return 'Conversation Shift'
+      if (top && top.length >= 5 && !top.includes(' ') && !TOPIC_STOPS.has(top) && !nameTokens.has(top) && /^[a-z]+$/.test(top)) {
+        return top.charAt(0).toUpperCase() + top.slice(1)
+      }
+      return null // signal too weak — skip era
     }
 
-    // ── Group into eras ──
+    // ── Build eras with stricter splitting ──
     const sortedYears = [...yearTopics.keys()].sort((a, b) => a - b)
     if (sortedYears.length === 0) return { chapters }
 
-    const getTopTerms = (year: number) => new Set(yearTopics.get(year)!.slice(0, 10).map(t => t.term))
+    const topTermSet = (year: number) => new Set(yearTopics.get(year)!.slice(0, 6).map(t => t.term))
 
-    let cur = { startYear: sortedYears[0], endYear: sortedYears[0], terms: getTopTerms(sortedYears[0]), allScored: [...yearTopics.get(sortedYears[0])!.slice(0, 10)] }
+    let cur = { start: sortedYears[0], end: sortedYears[0], terms: topTermSet(sortedYears[0]), scored: [...yearTopics.get(sortedYears[0])!.slice(0, 8)] }
 
-    const finalize = () => {
-      const keywords = cur.allScored.sort((a, b) => b.score - a.score).slice(0, 8).map(t => t.term)
-      if (keywords.length < 2) return
-      const label = labelForKeywords(keywords)
-      const strength = cur.allScored.slice(0, 5).reduce((s, t) => s + t.score, 0)
-      if (strength < 20) return // minimum quality threshold
-      // Show top 4-6 keywords, prefer phrases, deduplicate
-      const displayKw: string[] = []
-      for (const kw of keywords) {
-        if (displayKw.length >= 6) break
-        // Skip if a phrase already contains this unigram
-        if (!kw.includes(' ') && displayKw.some(dk => dk.includes(kw))) continue
-        displayKw.push(kw)
+    const flush = () => {
+      const kws = cur.scored.sort((a, b) => b.score - a.score).slice(0, 8).map(t => t.term)
+      if (kws.length < 3) return
+      const label = labelFor(kws)
+      if (!label) return
+      const strength = cur.scored.slice(0, 5).reduce((s, t) => s + t.score, 0)
+      if (strength < 50) return
+      // Deduplicate display keywords
+      const display: string[] = []
+      for (const kw of kws) {
+        if (display.length >= 5) break
+        if (!kw.includes(' ') && display.some(dk => dk.includes(kw))) continue
+        display.push(kw)
       }
-      chapters.push({ startYear: cur.startYear, endYear: cur.endYear, topicLabel: label, keywords: displayKw, strengthScore: Math.round(strength) })
+      if (display.length < 2) return
+      chapters.push({ startYear: cur.start, endYear: cur.end, topicLabel: label, keywords: display, strengthScore: Math.round(strength) })
     }
 
     for (let i = 1; i < sortedYears.length; i++) {
       const year = sortedYears[i]
-      const terms = getTopTerms(year)
+      const terms = topTermSet(year)
+      // Stricter: need 3+ overlap from top 6 to merge
       const overlap = [...terms].filter(t => cur.terms.has(t)).length
-      if (overlap >= 2) {
-        cur.endYear = year
+      if (overlap >= 3) {
+        cur.end = year
         for (const t of terms) cur.terms.add(t)
-        cur.allScored.push(...yearTopics.get(year)!.slice(0, 10))
+        cur.scored.push(...yearTopics.get(year)!.slice(0, 8))
       } else {
-        finalize()
-        cur = { startYear: year, endYear: year, terms: getTopTerms(year), allScored: [...yearTopics.get(year)!.slice(0, 10)] }
+        flush()
+        cur = { start: year, end: year, terms: topTermSet(year), scored: [...yearTopics.get(year)!.slice(0, 8)] }
       }
     }
-    finalize()
+    flush()
 
-    // Sort by strength descending, take top meaningful eras
-    chapters.sort((a, b) => b.strengthScore - a.strengthScore)
+    // Chronological order, cap at 8 eras max
+    chapters.sort((a, b) => a.startYear - b.startYear)
+    if (chapters.length > 8) chapters.splice(8)
   } catch { /* fallback */ }
   return { chapters }
 }
