@@ -1080,14 +1080,15 @@ export interface SocialGravityYear {
   clusterLabel: string | null
 }
 
-export function getSocialGravity(): { years: SocialGravityYear[] } {
-  const years: SocialGravityYear[] = []
+export function getSocialGravity(): { individualYears: SocialGravityYear[]; groupYears: SocialGravityYear[] } {
+  const individualYears: SocialGravityYear[] = []
+  const groupYears: SocialGravityYear[] = []
   try {
     const { homedir } = require('os')
     const { join } = require('path')
     const fs = require('fs')
     const chatDbPath = join(homedir(), 'Library/Messages/chat.db')
-    if (!fs.existsSync(chatDbPath)) return { years }
+    if (!fs.existsSync(chatDbPath)) return { individualYears, groupYears }
 
     const chatDb = new Database(chatDbPath, { readonly: true })
     const APPLE_EPOCH = 978307200
@@ -1095,131 +1096,152 @@ export function getSocialGravity(): { years: SocialGravityYear[] } {
     const currentYear = new Date().getFullYear()
 
     try {
-      // Messages per contact per year (1:1 only, exclude from_me)
-      const rows = chatDb.prepare(`
+      // Identify group chats (multi-participant)
+      const groupChatIds = new Set(
+        (chatDb.prepare(`SELECT c.chat_identifier FROM chat c WHERE (SELECT COUNT(DISTINCT chj.handle_id) FROM chat_handle_join chj WHERE chj.chat_id = c.ROWID) > 1`).all() as { chat_identifier: string }[]).map(r => r.chat_identifier)
+      )
+
+      // ── Individual messages: received per handle per year ──
+      const indivRecv = chatDb.prepare(`
         SELECT CAST(strftime('%Y', datetime(m.date/${NS} + ${APPLE_EPOCH}, 'unixepoch', 'localtime')) AS INTEGER) as year,
-               h.id as handle,
-               COUNT(*) as cnt
+               h.id as handle, COUNT(*) as cnt
         FROM message m
         JOIN handle h ON m.handle_id = h.ROWID
+        JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
+        JOIN chat c ON cmj.chat_id = c.ROWID
         WHERE m.is_from_me = 0 AND (m.text IS NOT NULL OR m.cache_has_attachments = 1)
-        GROUP BY year, h.id
-        HAVING year > 2005 AND year <= ${currentYear}
+          AND (SELECT COUNT(DISTINCT chj.handle_id) FROM chat_handle_join chj WHERE chj.chat_id = c.ROWID) = 1
+        GROUP BY year, h.id HAVING year > 2005 AND year <= ${currentYear}
       `).all() as { year: number; handle: string; cnt: number }[]
 
-      // Also count sent messages per handle per year
-      const sentRows = chatDb.prepare(`
+      // Individual messages: sent per chat_identifier per year (1:1 only)
+      const indivSent = chatDb.prepare(`
         SELECT CAST(strftime('%Y', datetime(m.date/${NS} + ${APPLE_EPOCH}, 'unixepoch', 'localtime')) AS INTEGER) as year,
-               c.chat_identifier as handle,
-               COUNT(*) as cnt
+               c.chat_identifier as handle, COUNT(*) as cnt
         FROM message m
         JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
         JOIN chat c ON cmj.chat_id = c.ROWID
         WHERE m.is_from_me = 1 AND (m.text IS NOT NULL OR m.cache_has_attachments = 1)
-          AND c.chat_identifier NOT LIKE 'chat%'
-        GROUP BY year, c.chat_identifier
-        HAVING year > 2005 AND year <= ${currentYear}
+          AND (SELECT COUNT(DISTINCT chj.handle_id) FROM chat_handle_join chj WHERE chj.chat_id = c.ROWID) = 1
+        GROUP BY year, c.chat_identifier HAVING year > 2005 AND year <= ${currentYear}
       `).all() as { year: number; handle: string; cnt: number }[]
 
-      // Merge received + sent into per-handle-per-year totals
-      const yearHandleMap = new Map<string, number>()
-      for (const r of rows) {
-        const key = `${r.year}|||${r.handle}`
-        yearHandleMap.set(key, (yearHandleMap.get(key) || 0) + r.cnt)
-      }
-      for (const r of sentRows) {
-        const key = `${r.year}|||${r.handle}`
-        yearHandleMap.set(key, (yearHandleMap.get(key) || 0) + r.cnt)
-      }
+      // ── Group messages: per group chat per year ──
+      const grpRecv = chatDb.prepare(`
+        SELECT CAST(strftime('%Y', datetime(m.date/${NS} + ${APPLE_EPOCH}, 'unixepoch', 'localtime')) AS INTEGER) as year,
+               c.chat_identifier as chat_id, COUNT(*) as cnt
+        FROM message m
+        JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
+        JOIN chat c ON cmj.chat_id = c.ROWID
+        WHERE m.is_from_me = 0 AND (m.text IS NOT NULL OR m.cache_has_attachments = 1)
+          AND (SELECT COUNT(DISTINCT chj.handle_id) FROM chat_handle_join chj WHERE chj.chat_id = c.ROWID) > 1
+        GROUP BY year, c.chat_identifier HAVING year > 2005 AND year <= ${currentYear}
+      `).all() as { year: number; chat_id: string; cnt: number }[]
 
-      // Group by year
-      const byYear = new Map<number, { handle: string; cnt: number }[]>()
-      for (const [key, cnt] of yearHandleMap) {
-        const sep = key.indexOf('|||')
-        const year = parseInt(key.slice(0, sep))
-        const handle = key.slice(sep + 3)
-        if (!byYear.has(year)) byYear.set(year, [])
-        byYear.get(year)!.push({ handle, cnt })
-      }
+      const grpSent = chatDb.prepare(`
+        SELECT CAST(strftime('%Y', datetime(m.date/${NS} + ${APPLE_EPOCH}, 'unixepoch', 'localtime')) AS INTEGER) as year,
+               c.chat_identifier as chat_id, COUNT(*) as cnt
+        FROM message m
+        JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
+        JOIN chat c ON cmj.chat_id = c.ROWID
+        WHERE m.is_from_me = 1 AND (m.text IS NOT NULL OR m.cache_has_attachments = 1)
+          AND (SELECT COUNT(DISTINCT chj.handle_id) FROM chat_handle_join chj WHERE chj.chat_id = c.ROWID) > 1
+        GROUP BY year, c.chat_identifier HAVING year > 2005 AND year <= ${currentYear}
+      `).all() as { year: number; chat_id: string; cnt: number }[]
 
-      // Shared group data for cluster detection
-      const groupRows = chatDb.prepare(`
+      // ── Shared group data for individual cluster detection ──
+      const groupMembership = chatDb.prepare(`
         SELECT c.chat_identifier as chat_id, h.id as handle_id
-        FROM chat c
-        JOIN chat_handle_join chj ON c.ROWID = chj.chat_id
-        JOIN handle h ON chj.handle_id = h.ROWID
+        FROM chat c JOIN chat_handle_join chj ON c.ROWID = chj.chat_id JOIN handle h ON chj.handle_id = h.ROWID
         WHERE (SELECT COUNT(DISTINCT chj2.handle_id) FROM chat_handle_join chj2 WHERE chj2.chat_id = c.ROWID) > 1
       `).all() as { chat_id: string; handle_id: string }[]
 
       const chatToHandles = new Map<string, Set<string>>()
-      for (const r of groupRows) {
+      for (const r of groupMembership) {
         if (!chatToHandles.has(r.chat_id)) chatToHandles.set(r.chat_id, new Set())
         chatToHandles.get(r.chat_id)!.add(r.handle_id)
       }
 
-      // Build co-occurrence: for a given handle, who appears in the same groups?
       const coGroupMap = new Map<string, Map<string, number>>()
       for (const handles of chatToHandles.values()) {
         const arr = Array.from(handles)
         for (const a of arr) {
           if (!coGroupMap.has(a)) coGroupMap.set(a, new Map())
-          for (const b of arr) {
-            if (a !== b) coGroupMap.get(a)!.set(b, (coGroupMap.get(a)!.get(b) || 0) + 1)
-          }
+          for (const b of arr) { if (a !== b) coGroupMap.get(a)!.set(b, (coGroupMap.get(a)!.get(b) || 0) + 1) }
         }
       }
 
-      // Group chat names for label inference
-      const chatNames = chatDb.prepare(`SELECT chat_identifier, display_name FROM chat WHERE display_name IS NOT NULL AND display_name != ''`).all() as { chat_identifier: string; display_name: string }[]
-      const chatNameMap = new Map(chatNames.map(r => [r.chat_identifier, r.display_name]))
+      const chatDisplayNames = chatDb.prepare(`SELECT chat_identifier, display_name FROM chat WHERE display_name IS NOT NULL AND display_name != ''`).all() as { chat_identifier: string; display_name: string }[]
+      const chatNameDb = new Map(chatDisplayNames.map(r => [r.chat_identifier, r.display_name]))
 
-      for (const [year, contacts] of [...byYear.entries()].sort((a, b) => a[0] - b[0])) {
+      // ── Build individual years ──
+      const indivMap = new Map<string, number>()
+      for (const r of indivRecv) indivMap.set(`${r.year}|||${r.handle}`, (indivMap.get(`${r.year}|||${r.handle}`) || 0) + r.cnt)
+      for (const r of indivSent) indivMap.set(`${r.year}|||${r.handle}`, (indivMap.get(`${r.year}|||${r.handle}`) || 0) + r.cnt)
+
+      const indivByYear = new Map<number, { handle: string; cnt: number }[]>()
+      for (const [key, cnt] of indivMap) {
+        const sep = key.indexOf('|||'); const year = parseInt(key.slice(0, sep)); const handle = key.slice(sep + 3)
+        if (!indivByYear.has(year)) indivByYear.set(year, [])
+        indivByYear.get(year)!.push({ handle, cnt })
+      }
+
+      for (const [year, contacts] of [...indivByYear.entries()].sort((a, b) => a[0] - b[0])) {
         contacts.sort((a, b) => b.cnt - a.cnt)
         const total = contacts.reduce((s, c) => s + c.cnt, 0)
         if (total < 10) continue
-
-        const top5 = contacts.slice(0, 5).map(c => ({
-          name: c.handle,
-          count: c.cnt,
-          pct: Math.round((c.cnt / total) * 100)
-        }))
+        const top5 = contacts.slice(0, 5).map(c => ({ name: c.handle, count: c.cnt, pct: Math.round((c.cnt / total) * 100) }))
         const dominant = top5[0]
-
-        // Cluster: find contacts who share groups with the dominant handle AND are in top contacts this year
+        // Cluster detection for individuals
         const topHandles = new Set(contacts.slice(0, 10).map(c => c.handle))
         const coGroup = coGroupMap.get(dominant.name)
         const clusterContacts: string[] = []
         if (coGroup) {
-          const sorted = [...coGroup.entries()]
-            .filter(([h]) => topHandles.has(h))
-            .sort((a, b) => b[1] - a[1])
-            .slice(0, 4)
-          for (const [h] of sorted) clusterContacts.push(h)
+          for (const [h] of [...coGroup.entries()].filter(([h]) => topHandles.has(h)).sort((a, b) => b[1] - a[1]).slice(0, 4)) clusterContacts.push(h)
         }
-
-        // Label: check if dominant + cluster share a named group chat
         let clusterLabel: string | null = null
         if (clusterContacts.length >= 1) {
           const clusterSet = new Set([dominant.name, ...clusterContacts])
           for (const [chatId, handles] of chatToHandles) {
             const overlap = [...handles].filter(h => clusterSet.has(h)).length
-            if (overlap >= Math.min(clusterSet.size, 3) && chatNameMap.has(chatId)) {
-              const name = chatNameMap.get(chatId)!
-              if (name.length > 1 && name.length < 40 && !name.startsWith('+')) {
-                clusterLabel = name
-                break
-              }
+            if (overlap >= Math.min(clusterSet.size, 3) && chatNameDb.has(chatId)) {
+              const name = chatNameDb.get(chatId)!
+              if (name.length > 1 && name.length < 40 && !name.startsWith('+')) { clusterLabel = name; break }
             }
           }
         }
+        individualYears.push({ year, dominant, top5, clusterContacts, clusterLabel })
+      }
 
-        years.push({ year, dominant, top5, clusterContacts, clusterLabel })
+      // ── Build group years ──
+      const grpMap = new Map<string, number>()
+      for (const r of grpRecv) grpMap.set(`${r.year}|||${r.chat_id}`, (grpMap.get(`${r.year}|||${r.chat_id}`) || 0) + r.cnt)
+      for (const r of grpSent) grpMap.set(`${r.year}|||${r.chat_id}`, (grpMap.get(`${r.year}|||${r.chat_id}`) || 0) + r.cnt)
+
+      const grpByYear = new Map<number, { handle: string; cnt: number }[]>()
+      for (const [key, cnt] of grpMap) {
+        const sep = key.indexOf('|||'); const year = parseInt(key.slice(0, sep)); const handle = key.slice(sep + 3)
+        if (!grpByYear.has(year)) grpByYear.set(year, [])
+        grpByYear.get(year)!.push({ handle, cnt })
+      }
+
+      for (const [year, chats] of [...grpByYear.entries()].sort((a, b) => a[0] - b[0])) {
+        chats.sort((a, b) => b.cnt - a.cnt)
+        const total = chats.reduce((s, c) => s + c.cnt, 0)
+        if (total < 10) continue
+        const top5 = chats.slice(0, 5).map(c => ({ name: c.handle, count: c.cnt, pct: Math.round((c.cnt / total) * 100) }))
+        const dominant = top5[0]
+        // For groups, cluster = members of the dominant group chat
+        const members = chatToHandles.get(dominant.name)
+        const clusterContacts = members ? [...members].slice(0, 5) : []
+        const clusterLabel = chatNameDb.get(dominant.name) || null
+        groupYears.push({ year, dominant, top5, clusterContacts, clusterLabel })
       }
     } finally {
       try { chatDb.close() } catch { /* ignore */ }
     }
   } catch { /* fallback */ }
-  return { years }
+  return { individualYears, groupYears }
 }
 
 export function invalidateLaughCache(): void {

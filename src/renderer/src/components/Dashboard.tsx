@@ -438,11 +438,13 @@ function LoquaciousnessCard({ myAvg, theirAvg, theirName, onShare, span }: {
 type TimelineEvent = { timestamp: string; type: string; description: string; metric?: number }
 type GravityYear = { year: number; dominant: { name: string; count: number; pct: number }; top5: { name: string; count: number; pct: number }[]; clusterContacts: string[]; clusterLabel: string | null }
 
-function SocialGravityCard({ years, chatNameMap, onSelectYear, highlightedYears }: {
-  years: GravityYear[]; chatNameMap: Record<string, string>; onSelectYear?: (year: string) => void; highlightedYears?: Set<number>
+function SocialGravityCard({ individualYears, groupYears, chatNameMap, onSelectYear, highlightedYears }: {
+  individualYears: GravityYear[]; groupYears: GravityYear[]; chatNameMap: Record<string, string>; onSelectYear?: (year: string) => void; highlightedYears?: Set<number>
 }): JSX.Element | null {
   const [hoveredYear, setHoveredYear] = useState<number | null>(null)
-  if (years.length < 2) return null
+  const [mode, setMode] = useState<'people' | 'groups'>('people')
+  const years = mode === 'people' ? individualYears : groupYears
+  if (individualYears.length < 2 && groupYears.length < 2) return null
 
   const getName = (raw: string) => {
     const n = (chatNameMap[raw] || raw).replace(/^#/, '').replace(/^\+/, '')
@@ -450,12 +452,20 @@ function SocialGravityCard({ years, chatNameMap, onSelectYear, highlightedYears 
     return first.length > 10 ? first.slice(0, 9) + '\u2026' : first
   }
   const getFullName = (raw: string) => (chatNameMap[raw] || raw).replace(/^#/, '')
-  const maxPct = Math.max(...years.map(y => y.dominant.pct))
+  const maxPct = years.length > 0 ? Math.max(...years.map(y => y.dominant.pct)) : 1
+  const subtitle = mode === 'people' ? 'Who dominated your attention, year by year.' : 'Which group dominated your attention, year by year.'
 
   return (
     <div style={{ gridColumn: 'span 12', borderRadius: 18, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', padding: '22px 24px 18px', boxShadow: '0 2px 12px rgba(0,0,0,0.04)', position: 'relative' }}>
-      <div style={{ fontSize: 10, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#E8604A', marginBottom: 4, fontFamily: "'DM Sans'", fontWeight: 600 }}>Social gravity</div>
-      <div style={{ fontSize: 13, color: '#9a948f', marginBottom: 18, fontFamily: "'DM Sans'" }}>Who dominated your attention, year by year.</div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
+        <div style={{ fontSize: 10, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#E8604A', fontFamily: "'DM Sans'", fontWeight: 600 }}>Social gravity</div>
+        <div style={{ display: 'flex', gap: 2, background: 'rgba(0,0,0,0.04)', borderRadius: 6, padding: 2 }}>
+          {(['people', 'groups'] as const).map(m => (
+            <button key={m} onClick={() => setMode(m)} style={{ padding: '3px 10px', borderRadius: 4, fontSize: 9, border: 'none', cursor: 'pointer', fontFamily: "'DM Sans'", letterSpacing: '0.06em', textTransform: 'uppercase', background: mode === m ? '#fff' : 'transparent', color: mode === m ? '#E8604A' : '#9a948f', fontWeight: mode === m ? 600 : 400, boxShadow: mode === m ? '0 1px 2px rgba(0,0,0,0.08)' : 'none', transition: 'all 0.15s' }}>{m}</button>
+          ))}
+        </div>
+      </div>
+      <div style={{ fontSize: 13, color: '#9a948f', marginBottom: 18, fontFamily: "'DM Sans'" }}>{subtitle}</div>
 
       {/* Timeline */}
       <div style={{ display: 'flex', alignItems: 'flex-end', gap: 0, position: 'relative' }}>
@@ -546,10 +556,12 @@ function computeChapters(years: GravityYear[]): LifeChapter[] {
   return chapters
 }
 
-function LifeChaptersCard({ chapters, chatNameMap, onHoverChapter }: {
-  chapters: LifeChapter[]; chatNameMap: Record<string, string>; onHoverChapter?: (years: Set<number> | null) => void
+function LifeChaptersCard({ personChapters, groupChapters, chatNameMap, onHoverChapter }: {
+  personChapters: LifeChapter[]; groupChapters: LifeChapter[]; chatNameMap: Record<string, string>; onHoverChapter?: (years: Set<number> | null) => void
 }): JSX.Element | null {
-  if (chapters.length < 2) return null
+  const [mode, setMode] = useState<'people' | 'groups'>('people')
+  const chapters = mode === 'people' ? personChapters : groupChapters
+  if (personChapters.length < 2 && groupChapters.length < 2) return null
 
   const getName = (raw: string) => {
     const n = (chatNameMap[raw] || raw).replace(/^#/, '').replace(/^\+/, '')
@@ -564,40 +576,51 @@ function LifeChaptersCard({ chapters, chatNameMap, onHoverChapter }: {
     return s
   }
 
+  const subtitle = mode === 'people' ? 'The people eras of your messaging life.' : 'The group chat eras of your messaging life.'
+
   return (
     <div style={{ gridColumn: 'span 12', borderRadius: 18, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', padding: '22px 24px 18px', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}>
-      <div style={{ fontSize: 10, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#E8604A', marginBottom: 4, fontFamily: "'DM Sans'", fontWeight: 600 }}>Life chapters</div>
-      <div style={{ fontSize: 13, color: '#9a948f', marginBottom: 18, fontFamily: "'DM Sans'" }}>The eras that defined your messaging life.</div>
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-        {chapters.map((ch, i) => {
-          const span = ch.startYear === ch.endYear ? String(ch.startYear) : `${ch.startYear}\u2013${ch.endYear}`
-          const isLast = i === chapters.length - 1
-          return (
-            <div key={i} style={{ display: 'flex', gap: 16, position: 'relative', paddingBottom: isLast ? 0 : 20, cursor: 'default' }}
-              onMouseEnter={() => onHoverChapter?.(yearSet(ch))}
-              onMouseLeave={() => onHoverChapter?.(null)}>
-              {/* Timeline spine */}
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 12, flexShrink: 0, paddingTop: 4 }}>
-                <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#E8604A', flexShrink: 0 }} />
-                {!isLast && <div style={{ width: 1, flex: 1, background: 'rgba(232,96,74,0.15)', marginTop: 4 }} />}
-              </div>
-              {/* Content */}
-              <div style={{ flex: 1, minWidth: 0, paddingTop: 0 }}>
-                <div style={{ fontFamily: "'Unbounded', sans-serif", fontWeight: 200, fontSize: 16, color: '#1A1A1A', lineHeight: 1.3, marginBottom: 2 }}>
-                  {getFullName(ch.dominantContact)} Era
-                </div>
-                <div style={{ fontSize: 12, color: '#E8604A', fontFamily: "'DM Sans'", fontWeight: 500, marginBottom: 4 }}>{span}</div>
-                {ch.supportingContacts.length > 0 && (
-                  <div style={{ fontSize: 12, color: '#9a948f', fontFamily: "'DM Sans'" }}>
-                    with {ch.supportingContacts.slice(0, 3).map(c => getName(c)).join(', ')}
-                  </div>
-                )}
-              </div>
-            </div>
-          )
-        })}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
+        <div style={{ fontSize: 10, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#E8604A', fontFamily: "'DM Sans'", fontWeight: 600 }}>Life chapters</div>
+        <div style={{ display: 'flex', gap: 2, background: 'rgba(0,0,0,0.04)', borderRadius: 6, padding: 2 }}>
+          {(['people', 'groups'] as const).map(m => (
+            <button key={m} onClick={() => setMode(m)} style={{ padding: '3px 10px', borderRadius: 4, fontSize: 9, border: 'none', cursor: 'pointer', fontFamily: "'DM Sans'", letterSpacing: '0.06em', textTransform: 'uppercase', background: mode === m ? '#fff' : 'transparent', color: mode === m ? '#E8604A' : '#9a948f', fontWeight: mode === m ? 600 : 400, boxShadow: mode === m ? '0 1px 2px rgba(0,0,0,0.08)' : 'none', transition: 'all 0.15s' }}>{m}</button>
+          ))}
+        </div>
       </div>
+      <div style={{ fontSize: 13, color: '#9a948f', marginBottom: 18, fontFamily: "'DM Sans'" }}>{subtitle}</div>
+
+      {chapters.length < 2 ? (
+        <div style={{ fontSize: 12, color: '#c8c0ba', fontFamily: "'DM Sans'", padding: '8px 0' }}>Not enough data for {mode} chapters yet.</div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+          {chapters.map((ch, i) => {
+            const span = ch.startYear === ch.endYear ? String(ch.startYear) : `${ch.startYear}\u2013${ch.endYear}`
+            const isLast = i === chapters.length - 1
+            return (
+              <div key={i} style={{ display: 'flex', gap: 16, position: 'relative', paddingBottom: isLast ? 0 : 20, cursor: 'default' }}
+                onMouseEnter={() => onHoverChapter?.(yearSet(ch))}
+                onMouseLeave={() => onHoverChapter?.(null)}>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 12, flexShrink: 0, paddingTop: 4 }}>
+                  <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#E8604A', flexShrink: 0 }} />
+                  {!isLast && <div style={{ width: 1, flex: 1, background: 'rgba(232,96,74,0.15)', marginTop: 4 }} />}
+                </div>
+                <div style={{ flex: 1, minWidth: 0, paddingTop: 0 }}>
+                  <div style={{ fontFamily: "'Unbounded', sans-serif", fontWeight: 200, fontSize: 16, color: '#1A1A1A', lineHeight: 1.3, marginBottom: 2 }}>
+                    {getFullName(ch.dominantContact)} Era
+                  </div>
+                  <div style={{ fontSize: 12, color: '#E8604A', fontFamily: "'DM Sans'", fontWeight: 500, marginBottom: 4 }}>{span}</div>
+                  {ch.supportingContacts.length > 0 && (
+                    <div style={{ fontSize: 12, color: '#9a948f', fontFamily: "'DM Sans'" }}>
+                      with {ch.supportingContacts.slice(0, 3).map(c => getName(c)).join(', ')}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }
@@ -998,8 +1021,9 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
   }, [dateRange])
   useEffect(() => { window.api.getTodayInHistory().then(setTodayMemories).catch(() => {}) }, [])
   useEffect(() => { window.api.getMessagingNetwork().then(setNetworkData).catch(() => {}) }, [])
-  const [gravityData, setGravityData] = useState<GravityYear[] | null>(null)
-  useEffect(() => { window.api.getSocialGravity().then(r => setGravityData(r.years)).catch(() => {}) }, [])
+  const [gravityIndiv, setGravityIndiv] = useState<GravityYear[]>([])
+  const [gravityGroups, setGravityGroups] = useState<GravityYear[]>([])
+  useEffect(() => { window.api.getSocialGravity().then(r => { setGravityIndiv(r.individualYears); setGravityGroups(r.groupYears) }).catch(() => {}) }, [])
   const [chapterHighlight, setChapterHighlight] = useState<Set<number> | null>(null)
 
   const topFunny = byLaughsReceived[0]
@@ -1515,11 +1539,11 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
         })()}
 
         {/* ── TIER 1.5: SOCIAL GRAVITY + LIFE CHAPTERS ── */}
-        {gravityData && gravityData.length >= 2 && (
-          <SocialGravityCard years={gravityData} chatNameMap={chatNameMap} onSelectYear={(y) => onSurfaceChange?.('relationship')} highlightedYears={chapterHighlight ?? undefined} />
+        {(gravityIndiv.length >= 2 || gravityGroups.length >= 2) && (
+          <SocialGravityCard individualYears={gravityIndiv} groupYears={gravityGroups} chatNameMap={chatNameMap} onSelectYear={(y) => onSurfaceChange?.('relationship')} highlightedYears={chapterHighlight ?? undefined} />
         )}
-        {gravityData && gravityData.length >= 2 && (
-          <LifeChaptersCard chapters={computeChapters(gravityData)} chatNameMap={chatNameMap} onHoverChapter={setChapterHighlight} />
+        {(gravityIndiv.length >= 2 || gravityGroups.length >= 2) && (
+          <LifeChaptersCard personChapters={computeChapters(gravityIndiv)} groupChapters={computeChapters(gravityGroups)} chatNameMap={chatNameMap} onHoverChapter={setChapterHighlight} />
         )}
 
         {/* ── TIER 2: IDENTITY SPECTRUMS ── */}
