@@ -1110,39 +1110,60 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
   useEffect(() => { window.api.getSocialGravity().then(r => { setGravityIndiv(r.individualYears); setGravityGroups(r.groupYears) }).catch(() => {}) }, [])
   const [chapterHighlight, setChapterHighlight] = useState<Set<number> | null>(null)
   const [topicEras, setTopicEras] = useState<TopicChapter[]>([])
-  useEffect(() => { window.api.getTopicEras().then(r => setTopicEras(r.chapters)).catch(() => {}) }, [])
   const [memoryMoments, setMemoryMoments] = useState<MemoryMoment[]>([])
-  useEffect(() => { window.api.getMemoryMoments().then(r => setMemoryMoments(r.moments)).catch(() => {}) }, [])
-
-  // ── AI enrichment (non-blocking, layered on top of deterministic data) ──
   const [aiEnrichedTopics, setAiEnrichedTopics] = useState(false)
   const [aiEnrichedMemory, setAiEnrichedMemory] = useState(false)
-  useEffect(() => {
-    if (topicEras.length === 0 || aiEnrichedTopics) return
-    console.log('[UI] Checking AI status for topic era enrichment...')
-    window.api.getAIStatus().then(status => {
-      console.log('[UI] AI STATUS:', JSON.stringify(status))
-      if (!status.configured) { console.log('[UI] AI not configured, skipping enrichment'); return }
-      const input = topicEras.map(e => ({ startYear: e.startYear, endYear: e.endYear, heuristicLabel: e.topicLabel, keywords: e.keywords, strengthScore: e.strengthScore }))
-      console.log('[UI] Calling enrichTopicEras with', input.length, 'eras')
-      window.api.enrichTopicEras(input).then(enrichments => {
-        console.log('[UI] enrichTopicEras result:', enrichments ? enrichments.length + ' items' : 'null', enrichments)
-        if (!enrichments || enrichments.length === 0) { console.warn('[UI] No enrichments returned'); return }
-        setAiEnrichedTopics(true)
-        setTopicEras(prev => {
-          const updated = prev.map(era => {
-            const e = enrichments.find(en => en.originalLabel === era.topicLabel)
-            if (!e) return era
-            if (e.suppress) return null
-            return { ...era, topicLabel: e.enrichedLabel || era.topicLabel }
-          }).filter((e): e is TopicChapter => e !== null)
-          console.log('[UI] Applied enrichment, eras:', updated.map(e => e.topicLabel))
-          return updated
-        })
-      }).catch(err => { console.error('[UI] enrichTopicEras error:', err) })
-    }).catch(err => { console.error('[UI] getAIStatus error:', err) })
-  }, [topicEras.length, aiEnrichedTopics])
 
+  // Load topic eras then attempt AI enrichment in one flow
+  useEffect(() => {
+    let cancelled = false
+    window.api.getTopicEras().then(async r => {
+      if (cancelled) return
+      const baseEras = r.chapters
+      console.log('[TOPIC ERAS] Heuristic loaded:', baseEras.length, baseEras.map(e => e.topicLabel))
+      if (baseEras.length === 0) { setTopicEras([]); return }
+
+      // Try AI enrichment
+      try {
+        const status = await window.api.getAIStatus()
+        console.log('[TOPIC ERAS] AI status:', JSON.stringify(status))
+        if (status.configured) {
+          const input = baseEras.map(e => ({ startYear: e.startYear, endYear: e.endYear, heuristicLabel: e.topicLabel, keywords: e.keywords, strengthScore: e.strengthScore }))
+          console.log('[TOPIC ERAS] Calling AI enrichment...')
+          const enrichments = await window.api.enrichTopicEras(input)
+          console.log('[TOPIC ERAS] AI response:', enrichments)
+
+          if (enrichments && enrichments.length > 0) {
+            // Apply by index — AI returns one enrichment per input era in order
+            const enriched: TopicChapter[] = []
+            for (let i = 0; i < baseEras.length; i++) {
+              const e = enrichments[i]
+              if (!e || e.suppress) continue
+              enriched.push({ ...baseEras[i], topicLabel: e.enrichedLabel || baseEras[i].topicLabel })
+            }
+            // Safety: don't let AI collapse everything
+            if (enriched.length > 0 && enriched.length >= Math.floor(baseEras.length / 2)) {
+              console.log('[TOPIC ERAS FINAL] AI enriched:', enriched.map(e => e.topicLabel))
+              if (!cancelled) { setTopicEras(enriched); setAiEnrichedTopics(true) }
+              return
+            }
+            console.warn('[TOPIC ERAS] AI result too small, falling back to heuristic')
+          } else {
+            console.warn('[TOPIC ERAS] AI enrichment returned empty')
+          }
+        }
+      } catch (err) { console.error('[TOPIC ERAS] AI enrichment failed:', err) }
+
+      // Fallback: use heuristic
+      console.log('[TOPIC ERAS FINAL] Using heuristic:', baseEras.map(e => e.topicLabel))
+      if (!cancelled) setTopicEras(baseEras)
+    }).catch(() => {})
+    return () => { cancelled = true }
+  }, [])
+
+  useEffect(() => { window.api.getMemoryMoments().then(r => setMemoryMoments(r.moments)).catch(() => {}) }, [])
+
+  // ── Memory AI enrichment (non-blocking) ──
   useEffect(() => {
     if (memoryMoments.length === 0 || aiEnrichedMemory) return
     window.api.getAIStatus().then(status => {
@@ -1151,14 +1172,14 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
       window.api.enrichMemoryMoments(input).then(enrichments => {
         if (!enrichments || enrichments.length === 0) return
         setAiEnrichedMemory(true)
-        setMemoryMoments(prev => prev.map(moment => {
-          const e = enrichments.find(en => en.originalTitle === moment.title)
+        setMemoryMoments(prev => prev.map((moment, i) => {
+          const e = enrichments[i]
           if (!e) return moment
           return { ...moment, title: e.enrichedTitle || moment.title, subtitle: e.enrichedSubtitle || moment.subtitle }
         }))
       }).catch(() => {})
     }).catch(() => {})
-  }, [memoryMoments.length])
+  }, [memoryMoments.length, aiEnrichedMemory])
 
   const topFunny = byLaughsReceived[0]
   const topChat = byMessages[0]
