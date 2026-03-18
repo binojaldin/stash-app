@@ -2,7 +2,7 @@ import { app, shell, BrowserWindow, ipcMain, dialog, Menu, Tray, nativeImage, po
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import { checkFullDiskAccess } from './messagesReader'
-import { initDb, searchAttachments, getStats, getFastStats, getTodayInHistory, getUsageStats, getMessagingNetwork, getAttachmentById, closeDb, hideChat, getHiddenChats, getConversationStats, getRelationshipTimeline, getSocialGravity, getTopicEras, updateReactionCounts, invalidateLaughCache, searchMessages, getMessageIndexStatus, getVocabStats, getWordOrigins } from './db'
+import { initDb, searchAttachments, getStats, getFastStats, getTodayInHistory, getUsageStats, getMessagingNetwork, getAttachmentById, closeDb, hideChat, getHiddenChats, getConversationStats, getRelationshipTimeline, getSocialGravity, getTopicEras, getMemoryMoments, updateReactionCounts, invalidateLaughCache, searchMessages, getMessageIndexStatus, getVocabStats, getWordOrigins } from './db'
 import { startIndexing, getIndexingProgress, fetchChatSummaries, saveChatPriorities, getSavedPriorityChats, resetIndexing, recoverAttachment, resolveNamesInBackground } from './indexer'
 import { compileContactsHelper, resolveContact, resolveContactsBatch } from './contacts'
 import { generateWrapped, getAvailableYears } from './wrapped'
@@ -191,6 +191,7 @@ function setupIpc(): void {
   ipcMain.handle('get-relationship-timeline', (_event, chatIdentifier: string) => getRelationshipTimeline(chatIdentifier))
   ipcMain.handle('get-social-gravity', () => getSocialGravity())
   ipcMain.handle('get-topic-eras', () => getTopicEras())
+  ipcMain.handle('get-memory-moments', () => getMemoryMoments())
   ipcMain.handle('get-fast-stats', (_event, chatNameFilter?: string, dateFrom?: string, dateTo?: string) => {
     return { ...getFastStats(chatNameFilter, dateFrom, dateTo), chatNameMap: {} }
   })

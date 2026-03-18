@@ -116,6 +116,9 @@ const api = {
   getTopicEras: (): Promise<{
     chapters: { startYear: number; endYear: number; topicLabel: string; keywords: string[]; strengthScore: number }[]
   }> => ipcRenderer.invoke('get-topic-eras'),
+  getMemoryMoments: (): Promise<{
+    moments: { type: string; title: string; subtitle: string; dateLabel: string; chatName: string | null; metric: number | null }[]
+  }> => ipcRenderer.invoke('get-memory-moments'),
   refreshReactions: (): Promise<void> => ipcRenderer.invoke('refresh-reactions'),
   getHiddenChats: (): Promise<string[]> => ipcRenderer.invoke('get-hidden-chats'),
   generateWrapped: (year: number): Promise<unknown> => ipcRenderer.invoke('generate-wrapped', year),

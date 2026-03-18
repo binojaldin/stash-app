@@ -627,6 +627,45 @@ function LifeChaptersCard({ personChapters, groupChapters, chatNameMap, onHoverC
   )
 }
 
+type MemoryMoment = { type: string; title: string; subtitle: string; dateLabel: string; chatName: string | null; metric: number | null }
+
+const MEMORY_ICONS: Record<string, string> = {
+  on_this_day: '\u{1F4C5}', first_message: '\u{1F4AC}', biggest_day: '\u{1F525}',
+  biggest_month: '\u{1F4CA}', streak: '\u{26A1}', intensity_echo: '\u{1F300}'
+}
+
+function MemoryCard({ moments, chatNameMap }: { moments: MemoryMoment[]; chatNameMap: Record<string, string> }): JSX.Element | null {
+  if (moments.length === 0) return null
+  const resolve = (raw: string | null) => {
+    if (!raw) return null
+    const n = (chatNameMap[raw] || raw).replace(/^#/, '')
+    return n.startsWith('+') ? null : n
+  }
+  return (
+    <div style={{ gridColumn: 'span 12', borderRadius: 18, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', padding: '22px 24px 18px', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}>
+      <div style={{ fontSize: 10, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#E8604A', marginBottom: 4, fontFamily: "'DM Sans'", fontWeight: 600 }}>Memory</div>
+      <div style={{ fontSize: 13, color: '#9a948f', marginBottom: 18, fontFamily: "'DM Sans'" }}>Moments worth remembering.</div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 12 }}>
+        {moments.map((m, i) => {
+          const name = resolve(m.chatName)
+          const icon = MEMORY_ICONS[m.type] || '\u{2728}'
+          return (
+            <div key={i} style={{ borderRadius: 14, background: '#F8F4F0', padding: '16px 18px', position: 'relative', overflow: 'hidden' }}>
+              <div style={{ position: 'absolute', right: -8, bottom: -8, fontSize: 48, opacity: 0.06, pointerEvents: 'none' }}>{icon}</div>
+              <div style={{ fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#E8604A', marginBottom: 6, fontFamily: "'DM Sans'", fontWeight: 600 }}>{m.title}</div>
+              <div style={{ fontSize: 13, color: '#1A1A1A', lineHeight: 1.5, marginBottom: 6, fontFamily: "'DM Sans'", fontWeight: 500 }}>{m.subtitle}</div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ fontSize: 11, color: '#9a948f', fontFamily: "'DM Sans'" }}>{m.dateLabel}</div>
+                {name && <div style={{ fontSize: 11, color: '#E8604A', fontFamily: "'DM Sans'", fontWeight: 500 }}>{name}</div>}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 type TopicChapter = { startYear: number; endYear: number; topicLabel: string; keywords: string[]; strengthScore: number }
 
 function TopicErasCard({ chapters }: { chapters: TopicChapter[] }): JSX.Element | null {
@@ -1069,6 +1108,8 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
   const [chapterHighlight, setChapterHighlight] = useState<Set<number> | null>(null)
   const [topicEras, setTopicEras] = useState<TopicChapter[]>([])
   useEffect(() => { window.api.getTopicEras().then(r => setTopicEras(r.chapters)).catch(() => {}) }, [])
+  const [memoryMoments, setMemoryMoments] = useState<MemoryMoment[]>([])
+  useEffect(() => { window.api.getMemoryMoments().then(r => setMemoryMoments(r.moments)).catch(() => {}) }, [])
 
   const topFunny = byLaughsReceived[0]
   const topChat = byMessages[0]
@@ -1591,6 +1632,11 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
         )}
         {topicEras.length >= 1 && (
           <TopicErasCard chapters={topicEras} />
+        )}
+
+        {/* ── TIER 1.7: MEMORY ── */}
+        {memoryMoments.length >= 1 && (
+          <MemoryCard moments={memoryMoments} chatNameMap={chatNameMap} />
         )}
 
         {/* ── TIER 2: IDENTITY SPECTRUMS ── */}

@@ -1656,6 +1656,224 @@ export function getTopicEras(): { chapters: TopicChapter[] } {
   return { chapters }
 }
 
+export interface MemoryMoment {
+  type: 'on_this_day' | 'first_message' | 'biggest_day' | 'biggest_month' | 'streak' | 'intensity_echo'
+  title: string
+  subtitle: string
+  dateLabel: string
+  chatName: string | null
+  metric: number | null
+}
+
+export function getMemoryMoments(): { moments: MemoryMoment[] } {
+  const moments: MemoryMoment[] = []
+  try {
+    const { homedir } = require('os')
+    const { join } = require('path')
+    const fs = require('fs')
+    const chatDbPath = join(homedir(), 'Library/Messages/chat.db')
+    if (!fs.existsSync(chatDbPath)) return { moments }
+
+    const chatDb = new Database(chatDbPath, { readonly: true })
+    const APPLE_EPOCH = 978307200
+    const NS = 1000000000
+    const now = new Date()
+    const todayMD = `${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+    const currentYear = now.getFullYear()
+    const MONTH_NAMES_MEM = ['January','February','March','April','May','June','July','August','September','October','November','December']
+
+    try {
+      // ── 1. On This Day: find prior-year activity on same month-day ──
+      const onThisDay = chatDb.prepare(`
+        SELECT CAST(strftime('%Y', datetime(m.date/${NS}+${APPLE_EPOCH}, 'unixepoch', 'localtime')) AS INTEGER) as year,
+               c.chat_identifier as chat_id, COUNT(*) as cnt
+        FROM message m
+        JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
+        JOIN chat c ON cmj.chat_id = c.ROWID
+        WHERE strftime('%m-%d', datetime(m.date/${NS}+${APPLE_EPOCH}, 'unixepoch', 'localtime')) = ?
+          AND CAST(strftime('%Y', datetime(m.date/${NS}+${APPLE_EPOCH}, 'unixepoch', 'localtime')) AS INTEGER) < ${currentYear}
+        GROUP BY year, c.chat_identifier
+        ORDER BY cnt DESC LIMIT 5
+      `).all(todayMD) as { year: number; chat_id: string; cnt: number }[]
+
+      if (onThisDay.length > 0) {
+        const best = onThisDay[0]
+        const yearsAgo = currentYear - best.year
+        moments.push({
+          type: 'on_this_day',
+          title: 'On This Day',
+          subtitle: `${yearsAgo} year${yearsAgo !== 1 ? 's' : ''} ago today, you exchanged ${best.cnt} messages.`,
+          dateLabel: `${MONTH_NAMES_MEM[now.getMonth()]} ${now.getDate()}, ${best.year}`,
+          chatName: best.chat_id,
+          metric: best.cnt
+        })
+      }
+
+      // ── 2. First Message Anniversary: find contacts whose first message date is near today ──
+      const anniversaries = chatDb.prepare(`
+        SELECT c.chat_identifier as chat_id,
+               MIN(datetime(m.date/${NS}+${APPLE_EPOCH}, 'unixepoch', 'localtime')) as first_date
+        FROM message m
+        JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
+        JOIN chat c ON cmj.chat_id = c.ROWID
+        GROUP BY c.chat_identifier
+        HAVING first_date IS NOT NULL
+      `).all() as { chat_id: string; first_date: string }[]
+
+      let bestAnniv: { chat_id: string; year: number; dayDiff: number } | null = null
+      for (const r of anniversaries) {
+        const d = new Date(r.first_date)
+        if (isNaN(d.getTime())) continue
+        const year = d.getFullYear()
+        if (year >= currentYear) continue
+        // Check if anniversary is within 3 days of today
+        const annivThisYear = new Date(currentYear, d.getMonth(), d.getDate())
+        const diff = Math.abs(now.getTime() - annivThisYear.getTime()) / 86400000
+        if (diff <= 3 && (!bestAnniv || year < bestAnniv.year)) {
+          bestAnniv = { chat_id: r.chat_id, year, dayDiff: Math.round(diff) }
+        }
+      }
+      if (bestAnniv) {
+        const yearsAgo = currentYear - bestAnniv.year
+        const fd = anniversaries.find(a => a.chat_id === bestAnniv!.chat_id)
+        const firstDate = fd ? new Date(fd.first_date) : null
+        const monthName = firstDate ? MONTH_NAMES_MEM[firstDate.getMonth()] : ''
+        moments.push({
+          type: 'first_message',
+          title: 'First Message Anniversary',
+          subtitle: `You first texted this contact ${yearsAgo} year${yearsAgo !== 1 ? 's' : ''} ago${monthName ? `, in ${monthName} ${bestAnniv.year}` : ''}.`,
+          dateLabel: firstDate ? `${monthName} ${firstDate.getDate()}, ${bestAnniv.year}` : String(bestAnniv.year),
+          chatName: bestAnniv.chat_id,
+          metric: yearsAgo
+        })
+      }
+
+      // ── 3. Biggest Day Ever ──
+      const biggestDay = chatDb.prepare(`
+        SELECT date(datetime(m.date/${NS}+${APPLE_EPOCH}, 'unixepoch', 'localtime')) as d,
+               COUNT(*) as cnt
+        FROM message m
+        WHERE (m.text IS NOT NULL OR m.cache_has_attachments = 1) AND m.item_type = 0
+        GROUP BY d ORDER BY cnt DESC LIMIT 1
+      `).get() as { d: string; cnt: number } | undefined
+
+      if (biggestDay && biggestDay.cnt > 50) {
+        const bd = new Date(biggestDay.d + 'T12:00:00')
+        moments.push({
+          type: 'biggest_day',
+          title: 'Biggest Day',
+          subtitle: `${biggestDay.cnt.toLocaleString()} messages exchanged in a single day.`,
+          dateLabel: bd.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+          chatName: null,
+          metric: biggestDay.cnt
+        })
+      }
+
+      // ── 4. Biggest Month Ever ──
+      const biggestMonth = chatDb.prepare(`
+        SELECT strftime('%Y-%m', datetime(m.date/${NS}+${APPLE_EPOCH}, 'unixepoch', 'localtime')) as ym,
+               COUNT(*) as cnt
+        FROM message m
+        WHERE (m.text IS NOT NULL OR m.cache_has_attachments = 1) AND m.item_type = 0
+        GROUP BY ym ORDER BY cnt DESC LIMIT 1
+      `).get() as { ym: string; cnt: number } | undefined
+
+      if (biggestMonth && biggestMonth.cnt > 200) {
+        const [y, mo] = biggestMonth.ym.split('-').map(Number)
+        moments.push({
+          type: 'biggest_month',
+          title: 'Biggest Month',
+          subtitle: `${biggestMonth.cnt.toLocaleString()} messages in your busiest month ever.`,
+          dateLabel: `${MONTH_NAMES_MEM[mo - 1]} ${y}`,
+          chatName: null,
+          metric: biggestMonth.cnt
+        })
+      }
+
+      // ── 5. Longest Streak (across all contacts) ──
+      const streakRows = chatDb.prepare(`
+        SELECT c.chat_identifier as chat_id,
+               date(datetime(m.date/${NS}+${APPLE_EPOCH}, 'unixepoch', 'localtime')) as d
+        FROM message m
+        JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
+        JOIN chat c ON cmj.chat_id = c.ROWID
+        WHERE (SELECT COUNT(DISTINCT chj.handle_id) FROM chat_handle_join chj WHERE chj.chat_id = c.ROWID) = 1
+        GROUP BY c.chat_identifier, d
+        ORDER BY c.chat_identifier, d
+      `).all() as { chat_id: string; d: string }[]
+
+      let bestStreak = { chat: '', length: 0, startDate: '' }
+      {
+        let curChat = '', curLen = 1, curStart = '', prevDate = ''
+        for (const r of streakRows) {
+          if (r.chat_id !== curChat) { curChat = r.chat_id; curLen = 1; curStart = r.d; prevDate = r.d; continue }
+          const diff = (new Date(r.d).getTime() - new Date(prevDate).getTime()) / 86400000
+          if (diff === 1) { curLen++; if (curLen > bestStreak.length) bestStreak = { chat: curChat, length: curLen, startDate: curStart } }
+          else { curLen = 1; curStart = r.d }
+          prevDate = r.d
+        }
+      }
+
+      if (bestStreak.length >= 14) {
+        const sd = new Date(bestStreak.startDate + 'T12:00:00')
+        moments.push({
+          type: 'streak',
+          title: 'Longest Streak',
+          subtitle: `${bestStreak.length} consecutive days of messaging.`,
+          dateLabel: `Started ${sd.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}`,
+          chatName: bestStreak.chat,
+          metric: bestStreak.length
+        })
+      }
+
+      // ── 6. Intensity Echo: compare recent 30-day volume to historical peaks ──
+      const thirtyDaysAgo = (Date.now() / 1000 - APPLE_EPOCH - 30 * 86400) * NS
+      const recentByChat = chatDb.prepare(`
+        SELECT c.chat_identifier as chat_id, COUNT(*) as cnt
+        FROM message m
+        JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
+        JOIN chat c ON cmj.chat_id = c.ROWID
+        WHERE m.date >= ${thirtyDaysAgo} AND (m.text IS NOT NULL OR m.cache_has_attachments = 1)
+          AND (SELECT COUNT(DISTINCT chj.handle_id) FROM chat_handle_join chj WHERE chj.chat_id = c.ROWID) = 1
+        GROUP BY c.chat_identifier ORDER BY cnt DESC LIMIT 3
+      `).all() as { chat_id: string; cnt: number }[]
+
+      for (const recent of recentByChat) {
+        if (recent.cnt < 100) continue
+        // Find this contact's historical peak month
+        const chatIds2 = chatDb.prepare('SELECT ROWID FROM chat WHERE chat_identifier = ?').all(recent.chat_id) as { ROWID: number }[]
+        if (chatIds2.length === 0) continue
+        const idList2 = chatIds2.map(r => r.ROWID).join(',')
+        const peakMonth = chatDb.prepare(`
+          SELECT strftime('%Y-%m', datetime(m.date/${NS}+${APPLE_EPOCH}, 'unixepoch', 'localtime')) as ym, COUNT(*) as cnt
+          FROM message m JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
+          WHERE cmj.chat_id IN (${idList2})
+          GROUP BY ym ORDER BY cnt DESC LIMIT 1
+        `).get() as { ym: string; cnt: number } | undefined
+        if (peakMonth) {
+          const [py, pm] = peakMonth.ym.split('-').map(Number)
+          const peakDate = new Date(py, pm - 1)
+          const monthsAgo = (currentYear - py) * 12 + (now.getMonth() - (pm - 1))
+          if (monthsAgo > 3 && recent.cnt > peakMonth.cnt * 0.5) {
+            moments.push({
+              type: 'intensity_echo',
+              title: 'Familiar Intensity',
+              subtitle: `You haven't talked like this since ${MONTH_NAMES_MEM[pm - 1]} ${py}.`,
+              dateLabel: 'Last 30 days',
+              chatName: recent.chat_id,
+              metric: recent.cnt
+            })
+            break // only one echo
+          }
+        }
+      }
+
+      chatDb.close()
+    } catch { /* queries failed */ }
+  } catch { /* fallback */ }
+  return { moments }
+}
+
 export function invalidateLaughCache(): void {
   laughCacheValid = false
   laughCache.clear()
