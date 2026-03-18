@@ -814,7 +814,11 @@ function ConstellationCard({ network, chatNameMap, onSelectConversation }: {
   const msgCountMap = new Map(sorted.map(n => [n.rawName, n.messageCount]))
   const getName = (raw: string) => { const c = (chatNameMap[raw] || raw).replace(/^#/, '').replace(/^\+/, '').split(' ')[0]; return c.length > 9 ? c.slice(0, 8) + '\u2026' : c }
   const getFullName = (raw: string) => (chatNameMap[raw] || raw).replace(/^#/, '')
-  const handleNodeClick = (rawName: string) => { if (!isPanning) setFocused(focused === rawName ? null : rawName) }
+  const handleNodeClick = (rawName: string) => {
+    if (isPanning) return
+    if (focused === rawName) { onSelectConversation(rawName); setFocused(null) }
+    else setFocused(rawName)
+  }
   const handleBgClick = () => { if (focused && !isPanning) setFocused(null) }
 
   // Pan handlers
@@ -921,8 +925,7 @@ function ConstellationCard({ network, chatNameMap, onSelectConversation }: {
           return (
             <g key={node.rawName} style={{ cursor: 'pointer', transition: 'opacity 0.2s' }} opacity={isDimmed ? 0.08 : 1}
               onMouseEnter={() => setHovered(node.rawName)} onMouseLeave={() => setHovered(null)}
-              onClick={(e) => { e.stopPropagation(); handleNodeClick(node.rawName) }}
-              onDoubleClick={() => onSelectConversation(node.rawName)}>
+              onClick={(e) => { e.stopPropagation(); handleNodeClick(node.rawName) }}>
               <circle cx={pos.x} cy={pos.y} r={Math.max(r, 10)} fill="transparent" />
               {isFoc && <>
                 <circle cx={pos.x} cy={pos.y} r={r + 12} fill="none" stroke="rgba(46,196,160,0.18)" strokeWidth={5} style={{ animation: 'focusGlow 2s ease-in-out infinite' }} />
@@ -966,7 +969,7 @@ function ConstellationCard({ network, chatNameMap, onSelectConversation }: {
 
       {focused && (
         <div style={{ marginTop: 8, padding: '5px 12px', background: 'rgba(46,196,160,0.08)', border: '1px solid rgba(46,196,160,0.12)', borderRadius: 8, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 10, color: '#2EC4A0', fontFamily: "'DM Sans'" }}>Focused: {getFullName(focused)}</span>
+          <span style={{ fontSize: 10, color: '#2EC4A0', fontFamily: "'DM Sans'" }}>{getFullName(focused)} · <span style={{ opacity: 0.6 }}>click again to view</span></span>
           <button onClick={() => setFocused(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 10, color: 'rgba(46,196,160,0.4)', fontFamily: "'DM Sans'" }}>✕</button>
         </div>
       )}

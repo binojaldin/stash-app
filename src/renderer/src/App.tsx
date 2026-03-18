@@ -243,7 +243,7 @@ export default function App(): JSX.Element {
         {/* Main surface */}
         {showInsights ? (
           <Dashboard stats={stats} chatNameMap={stats.chatNameMap}
-            onSelectConversation={(rawName) => setMainView({ kind: 'person-attachments', person: rawName })}
+            onSelectConversation={(rawName) => setMainView({ kind: 'person-insights', person: rawName })}
             dateRange={dateRange} scopedPerson={scopedPerson} onClearScope={goHome}
             insightSurface={insightSurface} onSurfaceChange={setInsightSurface}
             isStatsLoading={isStatsLoading}
