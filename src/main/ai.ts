@@ -228,29 +228,100 @@ export function buildLifeChapterSummaryInput(chapters: LifeChapterSummaryInput[]
 
 // ── Enrichment functions ──
 
+// Rich context input for v2 enrichment
+export interface TopicEraContextInput {
+  startYear: number
+  endYear: number
+  heuristicLabel: string
+  keywords: string[]
+  topPeople: string[]
+  topGroups: string[]
+  sampleMessages: string[]
+  topAttachments: string[]
+  repeatedPhrases: string[]
+}
+
 export async function enrichTopicEras(eras: TopicEraSummaryInput[]): Promise<TopicEraEnrichment[] | null> {
-  console.log('[AI] enrichTopicEras called, input count:', eras.length)
+  console.log('[AI] enrichTopicEras (v1 keyword-based) called, input count:', eras.length)
   if (!getAIStatus().configured) { console.log('[AI] Not configured, skipping'); return null }
-  if (eras.length === 0) { console.log('[AI] No eras to enrich'); return null }
+  if (eras.length === 0) return null
 
-  const cached = getCached<TopicEraEnrichment[]>('topic-eras', eras)
-  if (cached) { console.log('[AI] Topic Eras cache HIT, returning', cached.length, 'items'); return cached }
+  const cached = getCached<TopicEraEnrichment[]>('topic-eras-v1', eras)
+  if (cached) { console.log('[AI] Topic Eras v1 cache HIT'); return cached }
 
-  console.log('[AI] Topic Eras cache MISS, calling API...')
   const input = buildTopicEraSummaryInput(eras)
-  const system = `You improve topic era labels for a messaging analytics app. Given heuristic-detected eras with keywords, return a JSON array where each element has: { "originalLabel": string, "enrichedLabel": string or null, "summary": string or null (one short sentence), "suppress": boolean }. Set suppress=true for garbage/meaningless eras. Set enrichedLabel to a cleaner human-readable topic name (2-3 words max) when the heuristic label is weak. Return null for enrichedLabel if the original is already good. Keep labels short and obvious: "Golf", "Music Production", "Job Hunt", etc. Return ONLY the JSON array.`
+  const system = `You improve topic era labels for a messaging analytics app. Given heuristic-detected eras with keywords, return a JSON array where each element has: { "originalLabel": string, "enrichedLabel": string or null, "summary": string or null (one short sentence), "suppress": boolean }. Set suppress=true for garbage/meaningless eras. Set enrichedLabel to a cleaner human-readable topic name (2-3 words max) when the heuristic label is weak. Return ONLY the JSON array.`
 
   const text = await callAnthropic(system, input, 800)
-  if (!text) { console.warn('[AI] Topic Eras API returned empty'); return null }
-  console.log('[AI] Topic Eras raw response:', text.slice(0, 200))
+  if (!text) return null
+  try {
+    const result = JSON.parse(text.trim().replace(/^```json?\n?/, '').replace(/\n?```$/, '')) as TopicEraEnrichment[]
+    setCache('topic-eras-v1', eras, result)
+    return result
+  } catch { return null }
+}
+
+export async function enrichTopicErasV2(contexts: TopicEraContextInput[]): Promise<TopicEraEnrichment[] | null> {
+  console.log('[AI] enrichTopicErasV2 (context-based) called, input count:', contexts.length)
+  if (!getAIStatus().configured) { console.log('[AI] Not configured, skipping'); return null }
+  if (contexts.length === 0) return null
+
+  const cached = getCached<TopicEraEnrichment[]>('topic-eras-v2', contexts)
+  if (cached) { console.log('[AI] Topic Eras v2 cache HIT'); return cached }
+
+  console.log('[AI] Topic Eras v2 cache MISS, calling API...')
+
+  // Build rich prompt
+  const blocks = contexts.map(c => {
+    const lines = [
+      `## ${c.startYear}${c.endYear !== c.startYear ? '–' + c.endYear : ''}`,
+      `Heuristic label: "${c.heuristicLabel}"`,
+      `Keywords: ${c.keywords.join(', ')}`,
+      c.topPeople.length > 0 ? `Top people: ${c.topPeople.join(', ')}` : null,
+      c.topGroups.length > 0 ? `Top groups: ${c.topGroups.join(', ')}` : null,
+      c.repeatedPhrases.length > 0 ? `Repeated phrases: ${c.repeatedPhrases.join('; ')}` : null,
+      c.topAttachments.length > 0 ? `Attachments: ${c.topAttachments.join('; ')}` : null,
+      c.sampleMessages.length > 0 ? `Sample messages:\n${c.sampleMessages.map(m => `  - "${m}"`).join('\n')}` : null,
+    ]
+    return lines.filter(Boolean).join('\n')
+  })
+  const userMessage = `Messaging behavior by time period:\n\n${blocks.join('\n\n---\n\n')}`
+
+  const system = `You are analyzing someone's messaging history to identify what life phases they were going through. For each time period, look at the people they talked to, what they discussed, their sample messages, and repeated phrases.
+
+For each period, identify the DOMINANT THEME of that phase of their life. This could be:
+- A hobby or activity (Golf, Cycling, Music Production)
+- A life event (Wedding Planning, New Job, Moving)
+- A social circle (College Friends, Work Team)
+- A relationship phase (New Relationship, Long Distance)
+- A project or interest (Side Project, Fitness Journey)
+
+Return a JSON array with one object per period:
+{
+  "originalLabel": the heuristic label provided,
+  "enrichedLabel": your improved 1-3 word label (or null if original is good),
+  "summary": one sentence describing what defined this period,
+  "suppress": true if this period has no meaningful theme
+}
+
+Rules:
+- Labels should be short and instantly recognizable
+- Use the sample messages and people context to infer themes the keywords missed
+- If messages mention specific activities/places/events repeatedly, name the theme after that
+- suppress=true ONLY for periods with truly no discernible theme
+- Return ONLY the JSON array, no other text`
+
+  const text = await callAnthropic(system, userMessage, 1200)
+  if (!text) { console.warn('[AI] Topic Eras v2 API returned empty'); return null }
+  console.log('[AI] Topic Eras v2 raw response:', text.slice(0, 300))
 
   try {
     const result = JSON.parse(text.trim().replace(/^```json?\n?/, '').replace(/\n?```$/, '')) as TopicEraEnrichment[]
-    console.log('[AI] Topic Eras parsed:', result.length, 'enrichments:', JSON.stringify(result))
-    setCache('topic-eras', eras, result)
+    console.log('[AI] Topic Eras v2 parsed:', result.length, 'enrichments')
+    setCache('topic-eras-v2', contexts, result)
     return result
   } catch (err) {
-    console.error('[AI] Failed to parse topic era enrichment:', err)
+    console.error('[AI] Failed to parse topic era v2 enrichment:', err)
     return null
   }
 }

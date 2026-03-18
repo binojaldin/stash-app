@@ -1123,14 +1123,17 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
       console.log('[TOPIC ERAS] Heuristic loaded:', baseEras.length, baseEras.map(e => e.topicLabel))
       if (baseEras.length === 0) { setTopicEras([]); return }
 
-      // Try AI enrichment
+      // Try AI enrichment (v2: rich context)
       try {
         const status = await window.api.getAIStatus()
         console.log('[TOPIC ERAS] AI status:', JSON.stringify(status))
         if (status.configured) {
-          const input = baseEras.map(e => ({ startYear: e.startYear, endYear: e.endYear, heuristicLabel: e.topicLabel, keywords: e.keywords, strengthScore: e.strengthScore }))
-          console.log('[TOPIC ERAS] Calling AI enrichment...')
-          const enrichments = await window.api.enrichTopicEras(input)
+          // Build rich context from message/attachment data
+          console.log('[TOPIC ERAS] Fetching era context...')
+          const { contexts } = await window.api.getTopicEraContext(baseEras.map(e => ({ startYear: e.startYear, endYear: e.endYear, topicLabel: e.topicLabel, keywords: e.keywords })))
+          console.log('[TOPIC ERAS] Context built:', contexts.length, 'eras, sample msgs:', contexts.map(c => c.sampleMessages.length))
+          console.log('[TOPIC ERAS] Calling AI enrichment v2...')
+          const enrichments = await window.api.enrichTopicErasV2(contexts)
           console.log('[TOPIC ERAS] AI response:', enrichments)
 
           if (enrichments && enrichments.length > 0) {

@@ -1874,6 +1874,121 @@ export function getMemoryMoments(): { moments: MemoryMoment[] } {
   return { moments }
 }
 
+export interface TopicEraContext {
+  startYear: number
+  endYear: number
+  heuristicLabel: string
+  keywords: string[]
+  topPeople: string[]
+  topGroups: string[]
+  sampleMessages: string[]
+  topAttachments: string[]
+  repeatedPhrases: string[]
+}
+
+export function getTopicEraContext(chapters: { startYear: number; endYear: number; topicLabel: string; keywords: string[] }[]): { contexts: TopicEraContext[] } {
+  const contexts: TopicEraContext[] = []
+  try {
+    const d = initDb()
+    const hasMsgs = (d.prepare('SELECT COUNT(*) as c FROM messages').get() as { c: number }).c
+    if (hasMsgs < 50) return { contexts }
+
+    for (const ch of chapters) {
+      const fromDate = `${ch.startYear}-01-01`
+      const toDate = `${ch.endYear}-12-31`
+
+      // ── Top people by message volume ──
+      const topPeopleRows = d.prepare(`
+        SELECT chat_name, COUNT(*) as cnt FROM messages
+        WHERE sent_at >= ? AND sent_at <= ? AND chat_name IS NOT NULL AND chat_name NOT LIKE 'chat%'
+        GROUP BY chat_name ORDER BY cnt DESC LIMIT 5
+      `).all(fromDate, toDate + ' 23:59:59') as { chat_name: string; cnt: number }[]
+      const topPeople = topPeopleRows.map(r => r.chat_name)
+
+      // ── Top groups (chat identifiers starting with 'chat') ──
+      const topGroupRows = d.prepare(`
+        SELECT chat_name, COUNT(*) as cnt FROM messages
+        WHERE sent_at >= ? AND sent_at <= ? AND chat_name IS NOT NULL AND chat_name LIKE 'chat%'
+        GROUP BY chat_name ORDER BY cnt DESC LIMIT 3
+      `).all(fromDate, toDate + ' 23:59:59') as { chat_name: string; cnt: number }[]
+      const topGroups = topGroupRows.map(r => r.chat_name)
+
+      // ── Sample messages (evenly distributed, short, meaningful) ──
+      const totalMsgs = (d.prepare(`
+        SELECT COUNT(*) as c FROM messages WHERE sent_at >= ? AND sent_at <= ? AND body IS NOT NULL AND length(body) BETWEEN 10 AND 300
+      `).get(fromDate, toDate + ' 23:59:59') as { c: number }).c
+
+      const step = Math.max(1, Math.floor(totalMsgs / 20))
+      const sampleRows = d.prepare(`
+        SELECT body FROM (
+          SELECT body, ROW_NUMBER() OVER (ORDER BY sent_at) as rn
+          FROM messages
+          WHERE sent_at >= ? AND sent_at <= ? AND body IS NOT NULL AND length(body) BETWEEN 10 AND 300
+        ) WHERE rn % ? = 0 LIMIT 20
+      `).all(fromDate, toDate + ' 23:59:59', step) as { body: string }[]
+      const sampleMessages = sampleRows.map(r => r.body.slice(0, 280))
+
+      // ── Top attachment signals ──
+      let topAttachments: string[] = []
+      try {
+        const attRows = d.prepare(`
+          SELECT filename, mime_type, COUNT(*) as cnt FROM attachments
+          WHERE created_at >= ? AND created_at <= ?
+            AND filename IS NOT NULL AND filename != ''
+          GROUP BY LOWER(SUBSTR(filename, 1, INSTR(filename || '.', '.') - 1))
+          ORDER BY cnt DESC LIMIT 8
+        `).all(fromDate, toDate + ' 23:59:59') as { filename: string; mime_type: string | null; cnt: number }[]
+        topAttachments = attRows.map(r => {
+          const ext = r.filename.split('.').pop() || ''
+          const base = r.filename.replace(/\.[^.]+$/, '').replace(/[^a-zA-Z\s-]/g, ' ').trim()
+          return base.length > 2 ? `${base} (${ext}, ${r.cnt}x)` : `${r.mime_type || ext} (${r.cnt}x)`
+        }).filter(a => a.length > 3)
+      } catch { /* attachments table may be empty */ }
+
+      // ── Repeated phrases (bigrams/trigrams) ──
+      const phraseMap = new Map<string, number>()
+      const phraseMsgs = d.prepare(`
+        SELECT body FROM messages
+        WHERE sent_at >= ? AND sent_at <= ? AND body IS NOT NULL AND length(body) BETWEEN 5 AND 500
+        ORDER BY RANDOM() LIMIT 5000
+      `).all(fromDate, toDate + ' 23:59:59') as { body: string }[]
+
+      for (const r of phraseMsgs) {
+        const words = r.body.toLowerCase().replace(/[^a-z\s'-]/g, ' ').split(/\s+/).filter(w => w.length >= 3)
+        // Bigrams
+        for (let j = 0; j < words.length - 1; j++) {
+          const bi = `${words[j]} ${words[j + 1]}`
+          phraseMap.set(bi, (phraseMap.get(bi) || 0) + 1)
+        }
+        // Trigrams
+        for (let j = 0; j < words.length - 2; j++) {
+          const tri = `${words[j]} ${words[j + 1]} ${words[j + 2]}`
+          phraseMap.set(tri, (phraseMap.get(tri) || 0) + 1)
+        }
+      }
+      // Filter: require 5+ occurrences, exclude stop-heavy phrases
+      const repeatedPhrases = [...phraseMap.entries()]
+        .filter(([phrase, count]) => count >= 5 && phrase.split(' ').some(w => !TOPIC_STOPS.has(w)))
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 15)
+        .map(([phrase, count]) => `${phrase} (${count}x)`)
+
+      contexts.push({
+        startYear: ch.startYear,
+        endYear: ch.endYear,
+        heuristicLabel: ch.topicLabel,
+        keywords: ch.keywords,
+        topPeople,
+        topGroups,
+        sampleMessages,
+        topAttachments,
+        repeatedPhrases
+      })
+    }
+  } catch (err) { console.error('[TopicEraContext] Error:', err) }
+  return { contexts }
+}
+
 export function invalidateLaughCache(): void {
   laughCacheValid = false
   laughCache.clear()
