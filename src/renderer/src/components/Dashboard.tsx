@@ -627,7 +627,7 @@ function LifeChaptersCard({ personChapters, groupChapters, chatNameMap, onHoverC
   )
 }
 
-type TopicChapter = { startYear: number; endYear: number; topicLabel: string; keywords: string[] }
+type TopicChapter = { startYear: number; endYear: number; topicLabel: string; keywords: string[]; strengthScore: number }
 
 function TopicErasCard({ chapters }: { chapters: TopicChapter[] }): JSX.Element | null {
   if (chapters.length < 1) return null

@@ -1292,9 +1292,13 @@ export interface TopicChapter {
   endYear: number
   topicLabel: string
   keywords: string[]
+  strengthScore: number
 }
 
-const STOPWORDS = new Set([
+// ── Topic Eras: signal-based theme detection ──
+
+const TOPIC_STOPS = new Set([
+  // pronouns, articles, prepositions, conjunctions
   'i','me','my','myself','we','our','ours','ourselves','you','your','yours','yourself','yourselves',
   'he','him','his','himself','she','her','hers','herself','it','its','itself','they','them','their',
   'theirs','themselves','what','which','who','whom','this','that','these','those','am','is','are',
@@ -1303,30 +1307,113 @@ const STOPWORDS = new Set([
   'against','between','through','during','before','after','above','below','to','from','up','down',
   'in','out','on','off','over','under','again','further','then','once','here','there','when',
   'where','why','how','all','both','each','few','more','most','other','some','such','no','nor',
-  'not','only','own','same','so','than','too','very','s','t','can','will','just','don','should',
-  'now','d','ll','m','o','re','ve','y','ain','aren','couldn','didn','doesn','hadn','hasn','haven',
-  'isn','ma','mightn','mustn','needn','shan','shouldn','wasn','weren','won','wouldn',
-  'yeah','yea','yes','no','ok','okay','like','lol','haha','hahaha','ha','oh','ah','um','uh',
+  'not','only','own','same','so','than','too','very','can','will','just','don','should',
+  'now','ain','aren','couldn','didn','doesn','hadn','hasn','haven','isn','mightn','mustn',
+  'needn','shan','shouldn','wasn','weren','won','wouldn',
+  // chat noise
+  'yeah','yea','yes','ok','okay','like','lol','haha','hahaha','ha','oh','ah','um','uh','hmm',
   'gonna','gotta','wanna','idk','lmao','omg','brb','btw','tbh','imo','smh','nah','yep','nope',
   'hey','hi','hello','bye','thanks','thank','sorry','please','good','great','nice','cool',
+  // ultra-common verbs / fillers
   'got','get','go','going','went','come','came','know','think','said','say','see','look',
   'want','need','let','make','made','take','took','thing','things','stuff','really','pretty',
-  'much','well','back','still','even','also','way','time','today','tomorrow','yesterday',
-  'one','two','right','would','could','should','might','actually','literally','basically',
-  'something','anything','nothing','everything','someone','anyone','everyone','people','guy',
-  'girl','man','day','week','month','year','tonight','morning','night','feel','lot','bit',
-  'sure','maybe','probably','already','though','thought','kind','keep','first','last','new',
-  'old','big','little','long','real','whole','try','put','tell','told','give','gave','work',
-  'call','text','send','sent','message','chat','phone','pic','photo','video','link','app',
-  'love','miss','hate','bad','best','worst','hard','easy','fun','funny','weird','crazy',
-  'wait','done','start','stop','never','always','every','many','much','many','enough',
-  'home','house','place','room','car','food','eat','dinner','lunch','drink','water','coffee',
-  'damn','shit','fuck','ass','hell','dude','bro','man','yo','sup','hehe','wow','aww',
-  'left','find','found','point','part','end','head','hand','set','small','world','life',
-  'play','run','move','live','believe','bring','happen','write','provide','sit','stand',
-  'lose','pay','meet','include','continue','learn','change','lead','understand','watch',
-  'follow','turn','leave','close','open','show','hear','seem','help','talk','read','ask'
+  'much','well','back','still','even','also','way','today','tomorrow','yesterday',
+  'one','two','three','right','would','could','might','actually','literally','basically',
+  'something','anything','nothing','everything','someone','anyone','everyone','people',
+  'guy','girl','day','week','month','year','tonight','morning','night','feel','lot','bit',
+  'sure','maybe','probably','already','though','thought','kind','keep','first','last',
+  'try','put','tell','told','give','gave','call','text','send','sent','message','chat',
+  'phone','pic','photo','video','link','app','wait','done','start','stop','never','always',
+  'every','enough','damn','shit','fuck','ass','hell','dude','bro','yo','sup','hehe','wow',
+  'aww','left','find','found','point','part','end','head','hand','set','world','life',
+  'play','run','move','live','bring','happen','write','sit','stand','lose','pay','meet',
+  'change','lead','understand','watch','follow','turn','leave','close','open','show',
+  'hear','seem','help','talk','read','ask','love','miss','hate','bad','best','worst',
+  'hard','easy','fun','funny','weird','crazy','new','old','big','little','long','real',
+  'whole','home','house','place','room','car','food','eat','dinner','lunch','drink',
+  'water','coffee','man','time','work','gonna','think','know','just','like','really',
+  'getting','looking','coming','doing','saying','making','taking','having','being',
+  'hahah','hahahaha','lmfao','soo','soooo','tho','rn','thats','dont','cant','wont',
+  'didnt','doesnt','isnt','wasnt','havent','wouldnt','couldnt','shouldnt','aint',
+  'ima','imma','til','bout','gon','tryna','kinda','sorta','lemme','trynna'
 ])
+
+// Concept clusters: related keywords → human-readable label
+const CONCEPT_MAP: [string, string[]][] = [
+  ['Golf', ['golf','tee','fairway','birdie','bogey','handicap','putter','wedge','driving range','par','clubhouse','nine holes','eighteen','back nine','front nine']],
+  ['Cycling', ['bike','cycling','ride','biking','peloton','strava','miles','cadence','pedal','velodrome','century ride']],
+  ['Running', ['running','marathon','half marathon','5k','10k','pace','splits','tempo run','trail run','treadmill','jogging']],
+  ['Fitness', ['gym','workout','lifting','weights','bench','squat','deadlift','crossfit','hiit','sets','reps','gains','protein','creatine','muscle']],
+  ['Surfing', ['surf','surfing','swell','waves','board','wetsuit','lineup','barrel','offshore']],
+  ['Skiing', ['ski','skiing','snowboard','powder','slope','moguls','chairlift','apres','resort']],
+  ['Hiking', ['hike','hiking','trail','summit','backpacking','elevation','campsite','switchback']],
+  ['Climbing', ['climbing','bouldering','belay','crag','route','v-grade','send','crimp']],
+  ['Tennis', ['tennis','racket','serve','volley','match point','deuce','forehand','backhand']],
+  ['Basketball', ['basketball','hoops','court','dunk','three pointer','pickup game','layup']],
+  ['Soccer', ['soccer','football','pitch','goal','match','league','premier league']],
+  ['Baseball', ['baseball','batting','pitcher','home run','inning','diamond','dugout']],
+  ['Fantasy Sports', ['fantasy','draft','waiver','roster','lineup','trade','sleeper','bust','matchup']],
+  ['Fishing', ['fishing','bass','trout','casting','lure','tackle','reel','catch','fly fishing']],
+  ['Travel', ['travel','flight','airport','hotel','airbnb','passport','trip','vacation','resort','itinerary','boarding pass']],
+  ['Camping', ['camping','tent','campfire','campground','rv','glamping','firewood','s\'mores']],
+  ['Music', ['guitar','bass','drums','band','rehearsal','gig','album','recording','studio','mixing','songwriting','setlist','amp','pedal','synth']],
+  ['Music Listening', ['spotify','playlist','album','concert','festival','tickets','venue','setlist','opener','headliner']],
+  ['Photography', ['photography','camera','lens','shoot','aperture','lightroom','editing','portrait','landscape']],
+  ['Gaming', ['gaming','game','xbox','playstation','nintendo','steam','fortnite','warzone','valorant','minecraft','controller','multiplayer','ranked','gg']],
+  ['Cooking', ['cooking','recipe','baking','kitchen','ingredient','meal prep','seasoning','grill','bbq','smoker','sous vide']],
+  ['Coding', ['code','coding','programming','github','deploy','api','database','frontend','backend','javascript','python','react','bug','debug','pull request','merge']],
+  ['Startup', ['startup','launch','funding','investor','pitch','mvp','product','users','growth','revenue','equity','valuation']],
+  ['Career', ['interview','resume','offer','salary','promotion','manager','meeting','deadline','quarterly','performance review','onboarding']],
+  ['Real Estate', ['house','apartment','mortgage','closing','realtor','listing','offer','inspection','escrow','rent','lease']],
+  ['Wedding', ['wedding','engaged','engagement','venue','reception','ceremony','bridesmaid','groomsman','registry','rehearsal dinner']],
+  ['Baby', ['baby','pregnant','pregnancy','nursery','stroller','diaper','ultrasound','due date','onesie','pediatrician']],
+  ['Pets', ['dog','puppy','cat','kitten','vet','walk','treats','fetch','leash','adoption']],
+  ['Crypto', ['crypto','bitcoin','ethereum','blockchain','wallet','nft','token','defi','mining','hodl']],
+  ['Investing', ['investing','stocks','portfolio','dividend','market','etf','401k','ira','broker','shares']],
+  ['School', ['class','professor','exam','midterm','final','homework','semester','campus','lecture','study','grade','gpa']],
+  ['Grad School', ['thesis','dissertation','advisor','research','phd','masters','defend','publish','journal','conference']],
+  ['Movies', ['movie','film','theater','cinema','director','trailer','screening','oscar','sequel','streaming']],
+  ['TV Shows', ['episode','season','series','binge','finale','premiere','showrunner','netflix','hbo']],
+  ['Reading', ['book','reading','novel','author','chapter','kindle','library','nonfiction','memoir','audiobook']],
+  ['Yoga', ['yoga','meditation','mindfulness','pose','mat','vinyasa','breathwork','chakra','zen']],
+  ['Martial Arts', ['martial arts','bjj','jiu jitsu','karate','boxing','sparring','belt','dojo','kickboxing','mma']],
+  ['Boating', ['boat','sailing','marina','dock','anchor','charter','yacht','catamaran','kayak']],
+  ['Cars', ['car','truck','engine','horsepower','turbo','exhaust','modification','track day','autocross','dyno']],
+  ['Fashion', ['outfit','style','brand','sneakers','drop','collection','designer','thrift','vintage']],
+  ['Art', ['painting','drawing','gallery','exhibition','canvas','sculpture','sketch','commission','mural']],
+  ['Podcast', ['podcast','episode','host','guest','listener','recording','mic','audio']],
+  ['Volunteer', ['volunteer','charity','donation','nonprofit','community service','fundraiser']],
+  ['Moving', ['moving','packing','boxes','new place','lease','movers','unpacking','neighborhood']],
+  ['Renovation', ['renovation','remodel','contractor','tile','flooring','paint','cabinet','plumbing','drywall']],
+  ['Gardening', ['garden','plant','soil','seeds','compost','harvest','tomato','herb','landscaping']],
+  ['Board Games', ['board game','catan','settlers','strategy','dice','tabletop','game night']],
+  ['D&D', ['dnd','d&d','dungeon','campaign','character','roll','dm','session','quest']],
+  ['Wine', ['wine','vineyard','tasting','cabernet','pinot','chardonnay','sommelier','bottle']],
+  ['Beer', ['beer','brewery','ipa','craft','hops','lager','stout','taproom','homebrew']],
+  ['Spirits', ['whiskey','bourbon','cocktail','bartender','neat','rocks','distillery','tequila','mezcal']],
+]
+
+// Domain → topic signal
+const DOMAIN_TOPICS: Record<string, string[]> = {
+  'spotify.com': ['music listening','spotify'],
+  'youtube.com': ['video','youtube'],
+  'youtu.be': ['video','youtube'],
+  'strava.com': ['fitness','strava','cycling','running'],
+  'zillow.com': ['real estate','house'],
+  'redfin.com': ['real estate','house'],
+  'airbnb.com': ['travel','airbnb'],
+  'github.com': ['coding','github'],
+  'stackoverflow.com': ['coding'],
+  'netflix.com': ['tv shows','streaming'],
+  'alltrails.com': ['hiking','trail'],
+  'soundcloud.com': ['music','soundcloud'],
+  'bandcamp.com': ['music','bandcamp'],
+  'twitch.tv': ['gaming','streaming'],
+  'espn.com': ['sports'],
+  'fantasy.espn.com': ['fantasy sports'],
+  'sleeper.com': ['fantasy sports'],
+  'yahoo.com/fantasy': ['fantasy sports'],
+}
 
 export function getTopicEras(): { chapters: TopicChapter[] } {
   const chapters: TopicChapter[] = []
@@ -1335,84 +1422,217 @@ export function getTopicEras(): { chapters: TopicChapter[] } {
     const hasMessages = (d.prepare('SELECT COUNT(*) as c FROM messages').get() as { c: number }).c
     if (hasMessages < 100) return { chapters }
 
-    // Get word frequencies per year from stash.db messages
-    const rows = d.prepare(`
-      SELECT CAST(strftime('%Y', sent_at) AS INTEGER) as year, body
-      FROM messages
-      WHERE body IS NOT NULL AND length(body) > 2
-    `).all() as { year: number; body: string }[]
-
     const currentYear = new Date().getFullYear()
-    const yearWords = new Map<number, Map<string, number>>()
 
-    for (const r of rows) {
+    // ── Build contact name set for filtering ──
+    const contactNames = new Set<string>()
+    try {
+      const chatNames = d.prepare(`SELECT DISTINCT chat_name FROM messages WHERE chat_name IS NOT NULL`).all() as { chat_name: string }[]
+      for (const r of chatNames) {
+        const parts = r.chat_name.replace(/[^a-zA-Z\s]/g, ' ').toLowerCase().split(/\s+/)
+        for (const p of parts) if (p.length >= 3) contactNames.add(p)
+      }
+      const handles = d.prepare(`SELECT DISTINCT sender_handle FROM messages WHERE sender_handle IS NOT NULL`).all() as { sender_handle: string }[]
+      for (const r of handles) {
+        const parts = r.sender_handle.replace(/[^a-zA-Z\s]/g, ' ').toLowerCase().split(/\s+/)
+        for (const p of parts) if (p.length >= 3) contactNames.add(p)
+      }
+      // Also resolve via chatNameMap if available (from attachments)
+      const attNames = d.prepare(`SELECT DISTINCT chat_name FROM attachments WHERE chat_name IS NOT NULL`).all() as { chat_name: string }[]
+      for (const r of attNames) {
+        const parts = r.chat_name.replace(/[^a-zA-Z\s]/g, ' ').toLowerCase().split(/\s+/)
+        for (const p of parts) if (p.length >= 3) contactNames.add(p)
+      }
+    } catch { /* ignore */ }
+
+    const isName = (w: string): boolean => contactNames.has(w)
+    const isGarbage = (w: string): boolean => {
+      if (w.length < 3 || w.length > 25) return true
+      if (/^\d+$/.test(w)) return true
+      if (/^[^aeiou]{4,}$/i.test(w)) return true // no vowels = garbage
+      if (/(.)\1{2,}/.test(w)) return true // repeated chars like "ahhh", "oooo"
+      if (/^[A-Z]{2,}$/.test(w)) return true // all caps abbreviations
+      return false
+    }
+    const isValidToken = (w: string): boolean => {
+      if (TOPIC_STOPS.has(w)) return false
+      if (isGarbage(w)) return false
+      if (isName(w)) return false
+      return true
+    }
+
+    // ── Signal 1: Message text per year with cross-chat tracking ──
+    type Signal = { count: number; chats: Set<string>; months: Set<string> }
+    const yearSignals = new Map<number, Map<string, Signal>>()
+
+    const ensureSignal = (year: number, term: string, chat: string, month: string) => {
+      if (!yearSignals.has(year)) yearSignals.set(year, new Map())
+      const ym = yearSignals.get(year)!
+      if (!ym.has(term)) ym.set(term, { count: 0, chats: new Set(), months: new Set() })
+      const s = ym.get(term)!
+      s.count++
+      s.chats.add(chat)
+      s.months.add(month)
+    }
+
+    const msgRows = d.prepare(`
+      SELECT CAST(strftime('%Y', sent_at) AS INTEGER) as year,
+             strftime('%Y-%m', sent_at) as month,
+             chat_name, body
+      FROM messages WHERE body IS NOT NULL AND length(body) > 3
+    `).all() as { year: number; month: string; chat_name: string; body: string }[]
+
+    for (const r of msgRows) {
       if (r.year < 2006 || r.year > currentYear) continue
-      if (!yearWords.has(r.year)) yearWords.set(r.year, new Map())
-      const wmap = yearWords.get(r.year)!
-      const words = r.body.toLowerCase().replace(/[^a-z'\s-]/g, ' ').split(/\s+/)
+      const chat = r.chat_name || '__unknown'
+      const text = r.body.toLowerCase().replace(/[^a-z\s'-]/g, ' ')
+      const words = text.split(/\s+/).filter(w => w.length >= 3 && w.length <= 25)
+
+      // Unigrams
       for (const w of words) {
-        if (w.length < 3 || w.length > 20 || STOPWORDS.has(w)) continue
-        wmap.set(w, (wmap.get(w) || 0) + 1)
+        if (isValidToken(w)) ensureSignal(r.year, w, chat, r.month)
+      }
+      // Bigrams (phrase detection)
+      for (let j = 0; j < words.length - 1; j++) {
+        const bigram = `${words[j]} ${words[j + 1]}`
+        if (words[j].length >= 3 && words[j + 1].length >= 3 && !TOPIC_STOPS.has(words[j]) && !TOPIC_STOPS.has(words[j + 1]) && !isName(words[j]) && !isName(words[j + 1])) {
+          ensureSignal(r.year, bigram, chat, r.month)
+        }
+      }
+
+      // Link domain extraction
+      const urls = r.body.match(/https?:\/\/[^\s]+/gi) || []
+      for (const url of urls) {
+        try {
+          const domain = url.replace(/^https?:\/\//, '').split('/')[0].replace(/^www\./, '')
+          for (const [d, topics] of Object.entries(DOMAIN_TOPICS)) {
+            if (domain.includes(d.split('.')[0])) {
+              for (const t of topics) ensureSignal(r.year, t, chat, r.month)
+            }
+          }
+        } catch { /* ignore bad urls */ }
       }
     }
 
-    // Compute global frequency to find words that spike in specific years
-    const globalFreq = new Map<string, number>()
-    for (const wmap of yearWords.values()) {
-      for (const [w, c] of wmap) globalFreq.set(w, (globalFreq.get(w) || 0) + c)
-    }
-    const totalYears = yearWords.size
+    // ── Signal 2: Attachment filenames and MIME types ──
+    try {
+      const attRows = d.prepare(`
+        SELECT CAST(strftime('%Y', created_at) AS INTEGER) as year,
+               strftime('%Y-%m', created_at) as month,
+               chat_name, filename, mime_type
+        FROM attachments WHERE filename IS NOT NULL
+      `).all() as { year: number; month: string; chat_name: string | null; filename: string; mime_type: string | null }[]
 
-    // For each year, find distinctive keywords (high local frequency, not universally common)
-    const yearKeywords = new Map<number, { word: string; score: number }[]>()
-    for (const [year, wmap] of [...yearWords.entries()].sort((a, b) => a[0] - b[0])) {
-      const yearTotal = [...wmap.values()].reduce((s, c) => s + c, 0)
-      if (yearTotal < 20) continue
-      const scored: { word: string; score: number }[] = []
-      for (const [w, count] of wmap) {
-        if (count < 3) continue
-        const globalCount = globalFreq.get(w) || count
-        const localRate = count / yearTotal
-        const globalRate = globalCount / ([...yearWords.values()].reduce((s, m) => s + ([...m.values()].reduce((a, b) => a + b, 0)), 0) || 1)
-        // TF-IDF-like: boost words that are frequent this year relative to overall
-        const specificity = globalRate > 0 ? localRate / globalRate : 1
-        // Also count how many years this word appears in
-        let yearPresence = 0
-        for (const wm of yearWords.values()) { if (wm.has(w)) yearPresence++ }
-        const idf = Math.log(totalYears / Math.max(yearPresence, 1))
-        scored.push({ word: w, score: count * specificity * idf })
+      for (const r of attRows) {
+        if (r.year < 2006 || r.year > currentYear) continue
+        const chat = r.chat_name || '__unknown'
+        // Extract meaningful words from filename
+        const fnWords = r.filename.replace(/\.[^.]+$/, '').replace(/[^a-zA-Z]/g, ' ').toLowerCase().split(/\s+/)
+        for (const w of fnWords) {
+          if (w.length >= 4 && isValidToken(w)) ensureSignal(r.year, w, chat, r.month)
+        }
+      }
+    } catch { /* ignore */ }
+
+    // ── Score and rank signals per year ──
+    const yearTopics = new Map<number, { term: string; score: number }[]>()
+
+    // Pre-compute global term presence for IDF
+    const globalTermYears = new Map<string, number>()
+    for (const sigs of yearSignals.values()) {
+      for (const term of sigs.keys()) globalTermYears.set(term, (globalTermYears.get(term) || 0) + 1)
+    }
+    const totalYearCount = yearSignals.size
+
+    for (const [year, sigs] of [...yearSignals.entries()].sort((a, b) => a[0] - b[0])) {
+      const scored: { term: string; score: number }[] = []
+      for (const [term, sig] of sigs) {
+        if (sig.count < 4) continue
+        // Cross-chat bonus: terms in 2+ chats are more meaningful
+        const chatBonus = Math.min(sig.chats.size, 5)
+        // Temporal persistence: appears in multiple months
+        const monthBonus = Math.min(sig.months.size, 6) / 3
+        // IDF: rare across years = more distinctive
+        const termYears = globalTermYears.get(term) || 1
+        const idf = Math.log((totalYearCount + 1) / termYears)
+        // Bigram bonus
+        const phraseBonus = term.includes(' ') ? 2.5 : 1
+        // Concept match bonus
+        let conceptBonus = 1
+        for (const [, keywords] of CONCEPT_MAP) {
+          if (keywords.includes(term)) { conceptBonus = 3; break }
+        }
+        scored.push({ term, score: sig.count * chatBonus * monthBonus * idf * phraseBonus * conceptBonus })
       }
       scored.sort((a, b) => b.score - a.score)
-      yearKeywords.set(year, scored.slice(0, 15))
+      if (scored.length > 0) yearTopics.set(year, scored.slice(0, 20))
     }
 
-    // Group into chapters: consecutive years with overlapping keywords merge
-    const sortedYears = [...yearKeywords.keys()].sort((a, b) => a - b)
+    // ── Map keywords to concept labels ──
+    const labelForKeywords = (keywords: string[]): string => {
+      // Score each concept by how many of its keywords appear
+      let bestLabel = ''
+      let bestScore = 0
+      for (const [label, conceptKws] of CONCEPT_MAP) {
+        let score = 0
+        for (const kw of keywords) {
+          if (conceptKws.includes(kw)) score += 3
+          // Partial match: concept keyword is substring of our keyword or vice versa
+          for (const ck of conceptKws) {
+            if (kw.includes(ck) || ck.includes(kw)) score += 1
+          }
+        }
+        if (score > bestScore) { bestScore = score; bestLabel = label }
+      }
+      if (bestScore >= 3) return bestLabel
+      // Fallback: capitalize the top keyword if it looks reasonable
+      const top = keywords[0]
+      if (top && top.length >= 4 && !top.includes(' ')) return top.charAt(0).toUpperCase() + top.slice(1)
+      return 'Conversation Shift'
+    }
+
+    // ── Group into eras ──
+    const sortedYears = [...yearTopics.keys()].sort((a, b) => a - b)
     if (sortedYears.length === 0) return { chapters }
 
-    let cur = { startYear: sortedYears[0], endYear: sortedYears[0], keywords: new Set(yearKeywords.get(sortedYears[0])!.slice(0, 8).map(k => k.word)) }
+    const getTopTerms = (year: number) => new Set(yearTopics.get(year)!.slice(0, 10).map(t => t.term))
+
+    let cur = { startYear: sortedYears[0], endYear: sortedYears[0], terms: getTopTerms(sortedYears[0]), allScored: [...yearTopics.get(sortedYears[0])!.slice(0, 10)] }
+
+    const finalize = () => {
+      const keywords = cur.allScored.sort((a, b) => b.score - a.score).slice(0, 8).map(t => t.term)
+      if (keywords.length < 2) return
+      const label = labelForKeywords(keywords)
+      const strength = cur.allScored.slice(0, 5).reduce((s, t) => s + t.score, 0)
+      if (strength < 20) return // minimum quality threshold
+      // Show top 4-6 keywords, prefer phrases, deduplicate
+      const displayKw: string[] = []
+      for (const kw of keywords) {
+        if (displayKw.length >= 6) break
+        // Skip if a phrase already contains this unigram
+        if (!kw.includes(' ') && displayKw.some(dk => dk.includes(kw))) continue
+        displayKw.push(kw)
+      }
+      chapters.push({ startYear: cur.startYear, endYear: cur.endYear, topicLabel: label, keywords: displayKw, strengthScore: Math.round(strength) })
+    }
 
     for (let i = 1; i < sortedYears.length; i++) {
       const year = sortedYears[i]
-      const kws = yearKeywords.get(year)!.slice(0, 8).map(k => k.word)
-      const overlap = kws.filter(w => cur.keywords.has(w)).length
+      const terms = getTopTerms(year)
+      const overlap = [...terms].filter(t => cur.terms.has(t)).length
       if (overlap >= 2) {
         cur.endYear = year
-        for (const w of kws) cur.keywords.add(w)
+        for (const t of terms) cur.terms.add(t)
+        cur.allScored.push(...yearTopics.get(year)!.slice(0, 10))
       } else {
-        // Finalize current chapter
-        const topKw = [...cur.keywords].slice(0, 6)
-        if (topKw.length >= 2) {
-          chapters.push({ startYear: cur.startYear, endYear: cur.endYear, topicLabel: topKw[0].charAt(0).toUpperCase() + topKw[0].slice(1), keywords: topKw })
-        }
-        cur = { startYear: year, endYear: year, keywords: new Set(kws) }
+        finalize()
+        cur = { startYear: year, endYear: year, terms: getTopTerms(year), allScored: [...yearTopics.get(year)!.slice(0, 10)] }
       }
     }
-    // Final chapter
-    const topKw = [...cur.keywords].slice(0, 6)
-    if (topKw.length >= 2) {
-      chapters.push({ startYear: cur.startYear, endYear: cur.endYear, topicLabel: topKw[0].charAt(0).toUpperCase() + topKw[0].slice(1), keywords: topKw })
-    }
+    finalize()
+
+    // Sort by strength descending, take top meaningful eras
+    chapters.sort((a, b) => b.strengthScore - a.strengthScore)
   } catch { /* fallback */ }
   return { chapters }
 }
