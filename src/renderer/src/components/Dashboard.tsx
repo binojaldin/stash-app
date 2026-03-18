@@ -1090,10 +1090,22 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
 
   const [todayMemories, setTodayMemories] = useState<MemoryItem[]>([])
   const [networkData, setNetworkData] = useState<NetworkData | null>(null)
-
   type UsageData = { totalMessages: number; sentMessages: number; receivedMessages: number; messagesPerYear: { year: number; count: number }[]; busiestDay: { date: string; count: number } | null; busiestYear: { year: number; count: number } | null; activeConversations: number }
   const [usageData, setUsageData] = useState<UsageData | null>(null)
+  const [gravityIndiv, setGravityIndiv] = useState<GravityYear[]>([])
+  const [gravityGroups, setGravityGroups] = useState<GravityYear[]>([])
+  const [chapterHighlight, setChapterHighlight] = useState<Set<number> | null>(null)
+  const [topicEras, setTopicEras] = useState<TopicChapter[]>([])
+  const [memoryMoments, setMemoryMoments] = useState<MemoryMoment[]>([])
+  const [aiEnrichedTopics, setAiEnrichedTopics] = useState(false)
+  const [aiEnrichedMemory, setAiEnrichedMemory] = useState(false)
+
+  // ── STAGED HYDRATION: fast first paint, then progressive loading ──
+  const hydrateStart = useRef(Date.now())
+
+  // Usage stats re-fetches on dateRange change (lightweight, always needed)
   useEffect(() => {
+    const t0 = Date.now()
     const bounds: { from?: string; to?: string } = {}
     if (dateRange === '7days') { const d = new Date(); d.setDate(d.getDate()-7); bounds.from = d.toISOString().split('T')[0] }
     else if (dateRange === '30days') { const d = new Date(); d.setDate(d.getDate()-30); bounds.from = d.toISOString().split('T')[0] }
@@ -1101,88 +1113,92 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
     else if (dateRange === 'year') { bounds.from = `${new Date().getFullYear()}-01-01` }
     else if (/^\d{4}$/.test(dateRange || '')) { bounds.from = `${dateRange}-01-01`; bounds.to = `${dateRange}-12-31` }
     else if (/^\d{4}-\d{2}$/.test(dateRange || '')) { const [y,m] = (dateRange||'').split('-'); bounds.from = `${y}-${m}-01`; bounds.to = new Date(+y, +m, 0).toISOString().split('T')[0] }
-    window.api.getUsageStats(bounds.from, bounds.to).then(setUsageData).catch(() => {})
+    window.api.getUsageStats(bounds.from, bounds.to).then(r => { setUsageData(r); console.log(`[PERF] getUsageStats: ${Date.now()-t0}ms`) }).catch(() => {})
   }, [dateRange])
-  useEffect(() => { window.api.getTodayInHistory().then(setTodayMemories).catch(() => {}) }, [])
-  useEffect(() => { window.api.getMessagingNetwork().then(setNetworkData).catch(() => {}) }, [])
-  const [gravityIndiv, setGravityIndiv] = useState<GravityYear[]>([])
-  const [gravityGroups, setGravityGroups] = useState<GravityYear[]>([])
-  useEffect(() => { window.api.getSocialGravity().then(r => { setGravityIndiv(r.individualYears); setGravityGroups(r.groupYears) }).catch(() => {}) }, [])
-  const [chapterHighlight, setChapterHighlight] = useState<Set<number> | null>(null)
-  const [topicEras, setTopicEras] = useState<TopicChapter[]>([])
-  const [memoryMoments, setMemoryMoments] = useState<MemoryMoment[]>([])
-  const [aiEnrichedTopics, setAiEnrichedTopics] = useState(false)
-  const [aiEnrichedMemory, setAiEnrichedMemory] = useState(false)
 
-  // Load topic eras then attempt AI enrichment in one flow
+  // Stage B: lightweight above-the-fold (next tick after mount)
+  useEffect(() => {
+    const t0 = Date.now()
+    window.api.getTodayInHistory().then(r => { setTodayMemories(r); console.log(`[PERF] getTodayInHistory: ${Date.now()-t0}ms`) }).catch(() => {})
+  }, [])
+
+  // Stage C: heavy network/gravity (deferred 80ms to let shell paint)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const t0 = Date.now()
+      Promise.all([
+        window.api.getMessagingNetwork().then(r => { setNetworkData(r); console.log(`[PERF] getMessagingNetwork: ${Date.now()-t0}ms`) }),
+        window.api.getSocialGravity().then(r => { setGravityIndiv(r.individualYears); setGravityGroups(r.groupYears); console.log(`[PERF] getSocialGravity: ${Date.now()-t0}ms`) }),
+      ]).catch(() => {})
+    }, 80)
+    return () => clearTimeout(timer)
+  }, [])
+
+  // Stage D: heaviest deterministic sections (deferred 250ms)
   useEffect(() => {
     let cancelled = false
-    window.api.getTopicEras().then(async r => {
-      if (cancelled) return
-      const baseEras = r.chapters
-      console.log('[TOPIC ERAS] Heuristic loaded:', baseEras.length, baseEras.map(e => e.topicLabel))
-      if (baseEras.length === 0) { setTopicEras([]); return }
+    const timer = setTimeout(async () => {
+      const t0 = Date.now()
+      // Topic Eras + Memory in parallel (deterministic first)
+      const [erasResult, momentsResult] = await Promise.all([
+        window.api.getTopicEras().then(r => { console.log(`[PERF] getTopicEras: ${Date.now()-t0}ms`); return r }).catch(() => ({ chapters: [] as TopicChapter[] })),
+        window.api.getMemoryMoments().then(r => { console.log(`[PERF] getMemoryMoments: ${Date.now()-t0}ms`); return r }).catch(() => ({ moments: [] as MemoryMoment[] })),
+      ])
 
-      // Try AI enrichment (v2: rich context)
+      if (cancelled) return
+      const baseEras = erasResult.chapters
+      setTopicEras(baseEras)
+      setMemoryMoments(momentsResult.moments)
+      console.log(`[PERF] Stage D deterministic: ${Date.now()-t0}ms`)
+
+      // Stage E: AI enrichment (never blocks, runs after deterministic renders)
       try {
         const status = await window.api.getAIStatus()
-        console.log('[TOPIC ERAS] AI status:', JSON.stringify(status))
-        if (status.configured) {
-          // Build rich context from message/attachment data
-          console.log('[TOPIC ERAS] Fetching era context...')
-          const { contexts } = await window.api.getTopicEraContext(baseEras.map(e => ({ startYear: e.startYear, endYear: e.endYear, topicLabel: e.topicLabel, keywords: e.keywords })))
-          console.log('[TOPIC ERAS] Context built:', contexts.length, 'eras, sample msgs:', contexts.map(c => c.sampleMessages.length))
-          console.log('[TOPIC ERAS] Calling AI enrichment v2...')
-          const enrichments = await window.api.enrichTopicErasV2(contexts)
-          console.log('[TOPIC ERAS] AI response:', enrichments)
+        if (!status.configured) { console.log(`[PERF] Total hydrate: ${Date.now()-hydrateStart.current}ms (no AI)`); return }
 
-          if (enrichments && enrichments.length > 0) {
-            // Apply by index — AI returns one enrichment per input era in order
+        // Topic Eras AI enrichment
+        if (baseEras.length > 0) {
+          const t1 = Date.now()
+          console.log('[PERF] Starting Topic Eras AI enrichment...')
+          const { contexts } = await window.api.getTopicEraContext(baseEras.map(e => ({ startYear: e.startYear, endYear: e.endYear, topicLabel: e.topicLabel, keywords: e.keywords })))
+          console.log(`[PERF] getTopicEraContext: ${Date.now()-t1}ms`)
+          const t2 = Date.now()
+          const enrichments = await window.api.enrichTopicErasV2(contexts)
+          console.log(`[PERF] enrichTopicErasV2: ${Date.now()-t2}ms`)
+          if (!cancelled && enrichments && enrichments.length > 0) {
             const enriched: TopicChapter[] = []
             for (let i = 0; i < baseEras.length; i++) {
               const e = enrichments[i]
               if (!e || e.suppress) continue
               enriched.push({ ...baseEras[i], topicLabel: e.enrichedLabel || baseEras[i].topicLabel })
             }
-            // Safety: don't let AI collapse everything
             if (enriched.length > 0 && enriched.length >= Math.floor(baseEras.length / 2)) {
-              console.log('[TOPIC ERAS FINAL] AI enriched:', enriched.map(e => e.topicLabel))
-              if (!cancelled) { setTopicEras(enriched); setAiEnrichedTopics(true) }
-              return
+              setTopicEras(enriched); setAiEnrichedTopics(true)
             }
-            console.warn('[TOPIC ERAS] AI result too small, falling back to heuristic')
-          } else {
-            console.warn('[TOPIC ERAS] AI enrichment returned empty')
           }
         }
-      } catch (err) { console.error('[TOPIC ERAS] AI enrichment failed:', err) }
 
-      // Fallback: use heuristic
-      console.log('[TOPIC ERAS FINAL] Using heuristic:', baseEras.map(e => e.topicLabel))
-      if (!cancelled) setTopicEras(baseEras)
-    }).catch(() => {})
-    return () => { cancelled = true }
+        // Memory AI enrichment
+        if (momentsResult.moments.length > 0) {
+          const t3 = Date.now()
+          const input = momentsResult.moments.map(m => ({ type: m.type, title: m.title, subtitle: m.subtitle, dateLabel: m.dateLabel, contactName: m.chatName, metric: m.metric }))
+          const enrichments = await window.api.enrichMemoryMoments(input)
+          console.log(`[PERF] enrichMemoryMoments: ${Date.now()-t3}ms`)
+          if (!cancelled && enrichments && enrichments.length > 0) {
+            setAiEnrichedMemory(true)
+            setMemoryMoments(prev => prev.map((moment, i) => {
+              const e = enrichments[i]
+              if (!e) return moment
+              return { ...moment, title: e.enrichedTitle || moment.title, subtitle: e.enrichedSubtitle || moment.subtitle }
+            }))
+          }
+        }
+
+        console.log(`[PERF] Total hydrate (with AI): ${Date.now()-hydrateStart.current}ms`)
+      } catch (err) { console.error('[PERF] AI enrichment failed:', err) }
+    }, 250)
+    return () => { cancelled = true; clearTimeout(timer) }
   }, [])
-
-  useEffect(() => { window.api.getMemoryMoments().then(r => setMemoryMoments(r.moments)).catch(() => {}) }, [])
-
-  // ── Memory AI enrichment (non-blocking) ──
-  useEffect(() => {
-    if (memoryMoments.length === 0 || aiEnrichedMemory) return
-    window.api.getAIStatus().then(status => {
-      if (!status.configured) return
-      const input = memoryMoments.map(m => ({ type: m.type, title: m.title, subtitle: m.subtitle, dateLabel: m.dateLabel, contactName: m.chatName, metric: m.metric }))
-      window.api.enrichMemoryMoments(input).then(enrichments => {
-        if (!enrichments || enrichments.length === 0) return
-        setAiEnrichedMemory(true)
-        setMemoryMoments(prev => prev.map((moment, i) => {
-          const e = enrichments[i]
-          if (!e) return moment
-          return { ...moment, title: e.enrichedTitle || moment.title, subtitle: e.enrichedSubtitle || moment.subtitle }
-        }))
-      }).catch(() => {})
-    }).catch(() => {})
-  }, [memoryMoments.length, aiEnrichedMemory])
 
   const topFunny = byLaughsReceived[0]
   const topChat = byMessages[0]
@@ -1690,6 +1706,7 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
         )}
 
         {/* ── TIER 1: MESSAGING NETWORK — the visual centerpiece ── */}
+        {!networkData && <WarmingCard span={12} />}
         {networkData && networkData.nodes.length >= 4 && (
           <ConstellationCard network={networkData} chatNameMap={chatNameMap} onSelectConversation={onSelectConversation} />
         )}
@@ -1730,12 +1747,14 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
         })()}
 
         {/* ── TIER 1.5: SOCIAL GRAVITY + LIFE CHAPTERS ── */}
+        {gravityIndiv.length === 0 && gravityGroups.length === 0 && !networkData && <WarmingCard span={12} />}
         {(gravityIndiv.length >= 2 || gravityGroups.length >= 2) && (
           <SocialGravityCard individualYears={gravityIndiv} groupYears={gravityGroups} chatNameMap={chatNameMap} onSelectYear={(y) => onSurfaceChange?.('relationship')} highlightedYears={chapterHighlight ?? undefined} />
         )}
         {(gravityIndiv.length >= 2 || gravityGroups.length >= 2) && (
           <LifeChaptersCard personChapters={computeChapters(gravityIndiv)} groupChapters={computeChapters(gravityGroups)} chatNameMap={chatNameMap} onHoverChapter={setChapterHighlight} />
         )}
+        {topicEras.length === 0 && memoryMoments.length === 0 && gravityIndiv.length > 0 && <WarmingCard span={6} />}
         {topicEras.length >= 1 && (
           <TopicErasCard chapters={topicEras} aiEnhanced={aiEnrichedTopics} />
         )}
