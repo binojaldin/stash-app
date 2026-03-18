@@ -1245,10 +1245,43 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
     await window.api.saveShareCard(dataUrl, `stash-${slug}.png`)
   }
 
+  const [aiSearchResults, setAiSearchResults] = useState<{ contact: string; count: number; samples: { body: string; sent_at: string; is_from_me: number }[] }[] | null>(null)
+  const [aiSearchExplanation, setAiSearchExplanation] = useState<string | null>(null)
+
+  const isSemanticQuery = (q: string): boolean => {
+    const lower = q.toLowerCase().trim()
+    return /^(who|what|when|where|why|how|which)\b/.test(lower) ||
+      /\b(most|least|often|first|last|ever|never|always)\b/.test(lower) ||
+      /\b(how many|how much|do i|did i|have i)\b/.test(lower)
+  }
+
   const handleMsgSearch = async (): Promise<void> => {
     if (!msgQuery.trim() || msgSearching) return
     setMsgSearching(true)
-    try { setMsgResults(await window.api.searchMessages(msgQuery.trim(), scopedPerson || undefined, 30)) }
+    setAiSearchResults(null)
+    setAiSearchExplanation(null)
+
+    const query = msgQuery.trim()
+
+    // Try AI semantic search for intent-based queries
+    if (isSemanticQuery(query)) {
+      try {
+        const intent = await window.api.interpretSearchQuery(query)
+        if (intent && intent.phrase && intent.type === 'phrase_aggregation') {
+          const results = await window.api.searchMessagesAggregated(intent.phrase, scopedPerson || undefined)
+          if (results.length > 0) {
+            setAiSearchExplanation(intent.explanation)
+            setAiSearchResults(results)
+            setMsgResults(null)
+            setMsgSearching(false)
+            return
+          }
+        }
+      } catch { /* fall through to literal */ }
+    }
+
+    // Fallback: literal search
+    try { setMsgResults(await window.api.searchMessages(query, scopedPerson || undefined, 30)) }
     catch { setMsgResults([]) }
     finally { setMsgSearching(false) }
   }
@@ -2060,6 +2093,37 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
         )}
         {isIndexed && <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', marginTop: 8, fontFamily: "'DM Sans'" }}>{msgIndexStatus!.indexed.toLocaleString()} messages indexed</div>}
       </div>
+
+      {/* AI aggregated results */}
+      {aiSearchResults !== null && (
+        <div style={{ gridColumn: 'span 12' }}>
+          {aiSearchExplanation && (
+            <div style={{ fontSize: 12, color: '#E8604A', marginBottom: 10, fontFamily: "'DM Sans'", fontWeight: 500 }}>{aiSearchExplanation}</div>
+          )}
+          {aiSearchResults.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: 24, color: '#9a948f', fontSize: 13, fontFamily: "'DM Sans'" }}>No results found.</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {aiSearchResults.map((r, i) => (
+                <div key={r.contact} onClick={() => onSelectConversation(r.contact)}
+                  style={{ padding: '14px 18px', borderRadius: 12, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', cursor: 'pointer', boxShadow: '0 2px 8px rgba(0,0,0,0.03)' }}
+                  onMouseEnter={e => (e.currentTarget.style.background = '#F8F4F0')} onMouseLeave={e => (e.currentTarget.style.background = '#fff')}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                    <span style={{ fontSize: 14, fontWeight: 600, color: '#1A1A1A', fontFamily: "'DM Sans'" }}>{resolveName(r.contact, chatNameMap)}</span>
+                    <span style={{ fontFamily: "'Unbounded', sans-serif", fontWeight: 200, fontSize: 16, color: '#E8604A' }}>{r.count}x</span>
+                  </div>
+                  {r.samples.slice(0, 2).map((s, j) => (
+                    <div key={j} style={{ fontSize: 12, color: '#6f6a65', lineHeight: 1.5, fontFamily: "'DM Sans'", padding: '3px 0', borderTop: j > 0 ? '1px solid rgba(0,0,0,0.04)' : 'none' }}>
+                      <span style={{ color: s.is_from_me ? '#E8604A' : '#2EC4A0', fontSize: 10, fontWeight: 500, marginRight: 6 }}>{s.is_from_me ? 'You' : 'Them'}</span>
+                      {s.body}
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {msgResults !== null && (
         <div style={{ gridColumn: 'span 12' }}>

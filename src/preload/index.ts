@@ -137,6 +137,12 @@ const api = {
   getMemoryMoments: (): Promise<{
     moments: { type: string; title: string; subtitle: string; dateLabel: string; chatName: string | null; metric: number | null }[]
   }> => ipcRenderer.invoke('get-memory-moments'),
+  interpretSearchQuery: (query: string): Promise<{
+    type: string; phrase: string | null; groupBy: string | null; sort: string; explanation: string
+  } | null> => ipcRenderer.invoke('interpret-search-query', query),
+  searchMessagesAggregated: (phrase: string, chatName?: string): Promise<{
+    contact: string; count: number; samples: { body: string; sent_at: string; is_from_me: number }[]
+  }[]> => ipcRenderer.invoke('search-messages-aggregated', phrase, chatName),
   refreshReactions: (): Promise<void> => ipcRenderer.invoke('refresh-reactions'),
   getHiddenChats: (): Promise<string[]> => ipcRenderer.invoke('get-hidden-chats'),
   generateWrapped: (year: number): Promise<unknown> => ipcRenderer.invoke('generate-wrapped', year),

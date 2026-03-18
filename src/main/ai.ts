@@ -359,6 +359,53 @@ export async function enrichMemoryMoments(moments: MemoryMomentSummaryInput[]): 
   }
 }
 
+// ── Semantic search intent interpretation ──
+
+export interface SearchIntent {
+  type: 'phrase_aggregation' | 'topic_search' | 'person_search' | 'literal'
+  phrase: string | null
+  groupBy: 'person' | 'time' | null
+  sort: 'desc' | 'asc'
+  explanation: string
+}
+
+export async function interpretSearchQuery(query: string): Promise<SearchIntent | null> {
+  if (!getAIStatus().configured) return null
+
+  const cached = getCached<SearchIntent>('search-intent', query)
+  if (cached) return cached
+
+  const system = `You interpret natural-language questions about someone's iMessage history into structured search intents.
+
+Return a JSON object:
+{
+  "type": "phrase_aggregation" | "topic_search" | "person_search" | "literal",
+  "phrase": the key phrase/words to search for (or null if not a phrase search),
+  "groupBy": "person" | "time" | null,
+  "sort": "desc" | "asc",
+  "explanation": a short sentence explaining what the user is asking
+}
+
+Examples:
+- "who have I said I love you to the most" → { "type": "phrase_aggregation", "phrase": "I love you", "groupBy": "person", "sort": "desc", "explanation": "Finding who you've said 'I love you' to most frequently" }
+- "when did I first mention golf" → { "type": "phrase_aggregation", "phrase": "golf", "groupBy": "time", "sort": "asc", "explanation": "Finding the earliest mention of golf" }
+- "who do I talk about work with" → { "type": "phrase_aggregation", "phrase": "work", "groupBy": "person", "sort": "desc", "explanation": "Finding who you discuss work with most" }
+- "show me messages about moving" → { "type": "literal", "phrase": "moving", "groupBy": null, "sort": "desc", "explanation": "Searching for messages about moving" }
+
+Return ONLY the JSON object, no other text.`
+
+  const text = await callAnthropic(system, `Query: "${query}"`, 300)
+  if (!text) return null
+
+  try {
+    const result = JSON.parse(text.trim().replace(/^```json?\n?/, '').replace(/\n?```$/, '')) as SearchIntent
+    setCache('search-intent', query, result)
+    return result
+  } catch {
+    return null
+  }
+}
+
 // ── Conversation search (migrated from index.ts) ──
 
 export async function searchConversationsAI(

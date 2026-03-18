@@ -2110,6 +2110,45 @@ export function searchMessages(query: string, chatName?: string, limit = 50): {
   } catch { return [] }
 }
 
+export interface AggregatedSearchResult {
+  contact: string
+  count: number
+  samples: { body: string; sent_at: string; is_from_me: number }[]
+}
+
+export function searchMessagesAggregated(phrase: string, chatName?: string, limit = 10): AggregatedSearchResult[] {
+  const d = initDb()
+  if (!phrase.trim()) return []
+  try {
+    const likeTerm = `%${phrase.trim().toLowerCase()}%`
+    const chatFilter = chatName ? ' AND chat_name = ?' : ''
+    const params: (string | number)[] = [likeTerm]
+    if (chatName) params.push(chatName)
+
+    const rows = d.prepare(`
+      SELECT chat_name, body, sent_at, is_from_me
+      FROM messages
+      WHERE LOWER(body) LIKE ?${chatFilter}
+      ORDER BY sent_at DESC
+    `).all(...params) as { chat_name: string; body: string; sent_at: string; is_from_me: number }[]
+
+    // Group by contact
+    const byContact = new Map<string, { count: number; samples: { body: string; sent_at: string; is_from_me: number }[] }>()
+    for (const r of rows) {
+      const key = r.chat_name
+      if (!byContact.has(key)) byContact.set(key, { count: 0, samples: [] })
+      const entry = byContact.get(key)!
+      entry.count++
+      if (entry.samples.length < 3) entry.samples.push({ body: r.body.slice(0, 200), sent_at: r.sent_at, is_from_me: r.is_from_me })
+    }
+
+    return [...byContact.entries()]
+      .sort((a, b) => b[1].count - a[1].count)
+      .slice(0, limit)
+      .map(([contact, data]) => ({ contact, count: data.count, samples: data.samples }))
+  } catch { return [] }
+}
+
 export function getMessageIndexStatus(): { total: number; indexed: number } {
   const d = initDb()
   try {
