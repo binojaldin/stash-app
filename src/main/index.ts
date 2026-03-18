@@ -238,7 +238,12 @@ function setupIpc(): void {
   ipcMain.handle('search-conversations-ai', async (_event, description: string, conversations: { display: string; identifier: string }[]) => {
     return searchConversationsAI(description, conversations)
   })
-  ipcMain.handle('enrich-topic-eras', async (_event, eras: TopicEraSummaryInput[]) => enrichTopicEras(eras))
+  ipcMain.handle('enrich-topic-eras', async (_event, eras: TopicEraSummaryInput[]) => {
+    console.log('[IPC] enrich-topic-eras called, eras:', eras.length)
+    const result = await enrichTopicEras(eras)
+    console.log('[IPC] enrich-topic-eras result:', result ? result.length + ' items' : 'null')
+    return result
+  })
   ipcMain.handle('enrich-memory-moments', async (_event, moments: MemoryMomentSummaryInput[]) => enrichMemoryMoments(moments))
   ipcMain.handle('refresh-reactions', () => { updateReactionCounts() })
   ipcMain.handle('hide-chat', (_event, chatIdentifier: string) => { hideChat(chatIdentifier) })

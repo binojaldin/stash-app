@@ -229,23 +229,28 @@ export function buildLifeChapterSummaryInput(chapters: LifeChapterSummaryInput[]
 // ── Enrichment functions ──
 
 export async function enrichTopicEras(eras: TopicEraSummaryInput[]): Promise<TopicEraEnrichment[] | null> {
-  if (!getAIStatus().configured || eras.length === 0) return null
+  console.log('[AI] enrichTopicEras called, input count:', eras.length)
+  if (!getAIStatus().configured) { console.log('[AI] Not configured, skipping'); return null }
+  if (eras.length === 0) { console.log('[AI] No eras to enrich'); return null }
 
   const cached = getCached<TopicEraEnrichment[]>('topic-eras', eras)
-  if (cached) return cached
+  if (cached) { console.log('[AI] Topic Eras cache HIT, returning', cached.length, 'items'); return cached }
 
+  console.log('[AI] Topic Eras cache MISS, calling API...')
   const input = buildTopicEraSummaryInput(eras)
   const system = `You improve topic era labels for a messaging analytics app. Given heuristic-detected eras with keywords, return a JSON array where each element has: { "originalLabel": string, "enrichedLabel": string or null, "summary": string or null (one short sentence), "suppress": boolean }. Set suppress=true for garbage/meaningless eras. Set enrichedLabel to a cleaner human-readable topic name (2-3 words max) when the heuristic label is weak. Return null for enrichedLabel if the original is already good. Keep labels short and obvious: "Golf", "Music Production", "Job Hunt", etc. Return ONLY the JSON array.`
 
   const text = await callAnthropic(system, input, 800)
-  if (!text) return null
+  if (!text) { console.warn('[AI] Topic Eras API returned empty'); return null }
+  console.log('[AI] Topic Eras raw response:', text.slice(0, 200))
 
   try {
     const result = JSON.parse(text.trim().replace(/^```json?\n?/, '').replace(/\n?```$/, '')) as TopicEraEnrichment[]
+    console.log('[AI] Topic Eras parsed:', result.length, 'enrichments:', JSON.stringify(result))
     setCache('topic-eras', eras, result)
     return result
-  } catch {
-    console.error('[AI] Failed to parse topic era enrichment')
+  } catch (err) {
+    console.error('[AI] Failed to parse topic era enrichment:', err)
     return null
   }
 }

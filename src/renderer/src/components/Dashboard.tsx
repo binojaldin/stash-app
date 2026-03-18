@@ -668,11 +668,14 @@ function MemoryCard({ moments, chatNameMap }: { moments: MemoryMoment[]; chatNam
 
 type TopicChapter = { startYear: number; endYear: number; topicLabel: string; keywords: string[]; strengthScore: number }
 
-function TopicErasCard({ chapters }: { chapters: TopicChapter[] }): JSX.Element | null {
+function TopicErasCard({ chapters, aiEnhanced }: { chapters: TopicChapter[]; aiEnhanced?: boolean }): JSX.Element | null {
   if (chapters.length < 1) return null
   return (
     <div style={{ gridColumn: 'span 12', borderRadius: 18, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', padding: '22px 24px 18px', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}>
-      <div style={{ fontSize: 10, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#E8604A', marginBottom: 4, fontFamily: "'DM Sans'", fontWeight: 600 }}>Topic eras</div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+        <div style={{ fontSize: 10, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#E8604A', fontFamily: "'DM Sans'", fontWeight: 600 }}>Topic eras</div>
+        {aiEnhanced && <div style={{ fontSize: 8, color: '#9a948f', background: 'rgba(232,96,74,0.08)', borderRadius: 4, padding: '2px 6px', fontFamily: "'DM Sans'", letterSpacing: '0.08em', textTransform: 'uppercase' }}>AI enhanced</div>}
+      </div>
       <div style={{ fontSize: 13, color: '#9a948f', marginBottom: 18, fontFamily: "'DM Sans'" }}>Phases of your life, based on what you talked about.</div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
         {chapters.map((ch, i) => {
@@ -1112,30 +1115,43 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
   useEffect(() => { window.api.getMemoryMoments().then(r => setMemoryMoments(r.moments)).catch(() => {}) }, [])
 
   // ── AI enrichment (non-blocking, layered on top of deterministic data) ──
+  const [aiEnrichedTopics, setAiEnrichedTopics] = useState(false)
+  const [aiEnrichedMemory, setAiEnrichedMemory] = useState(false)
   useEffect(() => {
-    if (topicEras.length === 0) return
+    if (topicEras.length === 0 || aiEnrichedTopics) return
+    console.log('[UI] Checking AI status for topic era enrichment...')
     window.api.getAIStatus().then(status => {
-      if (!status.configured) return
+      console.log('[UI] AI STATUS:', JSON.stringify(status))
+      if (!status.configured) { console.log('[UI] AI not configured, skipping enrichment'); return }
       const input = topicEras.map(e => ({ startYear: e.startYear, endYear: e.endYear, heuristicLabel: e.topicLabel, keywords: e.keywords, strengthScore: e.strengthScore }))
+      console.log('[UI] Calling enrichTopicEras with', input.length, 'eras')
       window.api.enrichTopicEras(input).then(enrichments => {
-        if (!enrichments) return
-        setTopicEras(prev => prev.map((era, i) => {
-          const e = enrichments.find(en => en.originalLabel === era.topicLabel)
-          if (!e || e.suppress) return e?.suppress ? null! : era
-          return { ...era, topicLabel: e.enrichedLabel || era.topicLabel }
-        }).filter(Boolean))
-      }).catch(() => {})
-    }).catch(() => {})
-  }, [topicEras.length])
+        console.log('[UI] enrichTopicEras result:', enrichments ? enrichments.length + ' items' : 'null', enrichments)
+        if (!enrichments || enrichments.length === 0) { console.warn('[UI] No enrichments returned'); return }
+        setAiEnrichedTopics(true)
+        setTopicEras(prev => {
+          const updated = prev.map(era => {
+            const e = enrichments.find(en => en.originalLabel === era.topicLabel)
+            if (!e) return era
+            if (e.suppress) return null
+            return { ...era, topicLabel: e.enrichedLabel || era.topicLabel }
+          }).filter((e): e is TopicChapter => e !== null)
+          console.log('[UI] Applied enrichment, eras:', updated.map(e => e.topicLabel))
+          return updated
+        })
+      }).catch(err => { console.error('[UI] enrichTopicEras error:', err) })
+    }).catch(err => { console.error('[UI] getAIStatus error:', err) })
+  }, [topicEras.length, aiEnrichedTopics])
 
   useEffect(() => {
-    if (memoryMoments.length === 0) return
+    if (memoryMoments.length === 0 || aiEnrichedMemory) return
     window.api.getAIStatus().then(status => {
       if (!status.configured) return
       const input = memoryMoments.map(m => ({ type: m.type, title: m.title, subtitle: m.subtitle, dateLabel: m.dateLabel, contactName: m.chatName, metric: m.metric }))
       window.api.enrichMemoryMoments(input).then(enrichments => {
-        if (!enrichments) return
-        setMemoryMoments(prev => prev.map((moment, i) => {
+        if (!enrichments || enrichments.length === 0) return
+        setAiEnrichedMemory(true)
+        setMemoryMoments(prev => prev.map(moment => {
           const e = enrichments.find(en => en.originalTitle === moment.title)
           if (!e) return moment
           return { ...moment, title: e.enrichedTitle || moment.title, subtitle: e.enrichedSubtitle || moment.subtitle }
@@ -1664,7 +1680,7 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
           <LifeChaptersCard personChapters={computeChapters(gravityIndiv)} groupChapters={computeChapters(gravityGroups)} chatNameMap={chatNameMap} onHoverChapter={setChapterHighlight} />
         )}
         {topicEras.length >= 1 && (
-          <TopicErasCard chapters={topicEras} />
+          <TopicErasCard chapters={topicEras} aiEnhanced={aiEnrichedTopics} />
         )}
 
         {/* ── TIER 1.7: MEMORY ── */}
