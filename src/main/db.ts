@@ -1287,6 +1287,136 @@ export function getSocialGravity(): { individualYears: SocialGravityYear[]; grou
   return { individualYears, groupYears }
 }
 
+export interface TopicChapter {
+  startYear: number
+  endYear: number
+  topicLabel: string
+  keywords: string[]
+}
+
+const STOPWORDS = new Set([
+  'i','me','my','myself','we','our','ours','ourselves','you','your','yours','yourself','yourselves',
+  'he','him','his','himself','she','her','hers','herself','it','its','itself','they','them','their',
+  'theirs','themselves','what','which','who','whom','this','that','these','those','am','is','are',
+  'was','were','be','been','being','have','has','had','having','do','does','did','doing','a','an',
+  'the','and','but','if','or','because','as','until','while','of','at','by','for','with','about',
+  'against','between','through','during','before','after','above','below','to','from','up','down',
+  'in','out','on','off','over','under','again','further','then','once','here','there','when',
+  'where','why','how','all','both','each','few','more','most','other','some','such','no','nor',
+  'not','only','own','same','so','than','too','very','s','t','can','will','just','don','should',
+  'now','d','ll','m','o','re','ve','y','ain','aren','couldn','didn','doesn','hadn','hasn','haven',
+  'isn','ma','mightn','mustn','needn','shan','shouldn','wasn','weren','won','wouldn',
+  'yeah','yea','yes','no','ok','okay','like','lol','haha','hahaha','ha','oh','ah','um','uh',
+  'gonna','gotta','wanna','idk','lmao','omg','brb','btw','tbh','imo','smh','nah','yep','nope',
+  'hey','hi','hello','bye','thanks','thank','sorry','please','good','great','nice','cool',
+  'got','get','go','going','went','come','came','know','think','said','say','see','look',
+  'want','need','let','make','made','take','took','thing','things','stuff','really','pretty',
+  'much','well','back','still','even','also','way','time','today','tomorrow','yesterday',
+  'one','two','right','would','could','should','might','actually','literally','basically',
+  'something','anything','nothing','everything','someone','anyone','everyone','people','guy',
+  'girl','man','day','week','month','year','tonight','morning','night','feel','lot','bit',
+  'sure','maybe','probably','already','though','thought','kind','keep','first','last','new',
+  'old','big','little','long','real','whole','try','put','tell','told','give','gave','work',
+  'call','text','send','sent','message','chat','phone','pic','photo','video','link','app',
+  'love','miss','hate','bad','best','worst','hard','easy','fun','funny','weird','crazy',
+  'wait','done','start','stop','never','always','every','many','much','many','enough',
+  'home','house','place','room','car','food','eat','dinner','lunch','drink','water','coffee',
+  'damn','shit','fuck','ass','hell','dude','bro','man','yo','sup','hehe','wow','aww',
+  'left','find','found','point','part','end','head','hand','set','small','world','life',
+  'play','run','move','live','believe','bring','happen','write','provide','sit','stand',
+  'lose','pay','meet','include','continue','learn','change','lead','understand','watch',
+  'follow','turn','leave','close','open','show','hear','seem','help','talk','read','ask'
+])
+
+export function getTopicEras(): { chapters: TopicChapter[] } {
+  const chapters: TopicChapter[] = []
+  try {
+    const d = initDb()
+    const hasMessages = (d.prepare('SELECT COUNT(*) as c FROM messages').get() as { c: number }).c
+    if (hasMessages < 100) return { chapters }
+
+    // Get word frequencies per year from stash.db messages
+    const rows = d.prepare(`
+      SELECT CAST(strftime('%Y', sent_at) AS INTEGER) as year, body
+      FROM messages
+      WHERE body IS NOT NULL AND length(body) > 2
+    `).all() as { year: number; body: string }[]
+
+    const currentYear = new Date().getFullYear()
+    const yearWords = new Map<number, Map<string, number>>()
+
+    for (const r of rows) {
+      if (r.year < 2006 || r.year > currentYear) continue
+      if (!yearWords.has(r.year)) yearWords.set(r.year, new Map())
+      const wmap = yearWords.get(r.year)!
+      const words = r.body.toLowerCase().replace(/[^a-z'\s-]/g, ' ').split(/\s+/)
+      for (const w of words) {
+        if (w.length < 3 || w.length > 20 || STOPWORDS.has(w)) continue
+        wmap.set(w, (wmap.get(w) || 0) + 1)
+      }
+    }
+
+    // Compute global frequency to find words that spike in specific years
+    const globalFreq = new Map<string, number>()
+    for (const wmap of yearWords.values()) {
+      for (const [w, c] of wmap) globalFreq.set(w, (globalFreq.get(w) || 0) + c)
+    }
+    const totalYears = yearWords.size
+
+    // For each year, find distinctive keywords (high local frequency, not universally common)
+    const yearKeywords = new Map<number, { word: string; score: number }[]>()
+    for (const [year, wmap] of [...yearWords.entries()].sort((a, b) => a[0] - b[0])) {
+      const yearTotal = [...wmap.values()].reduce((s, c) => s + c, 0)
+      if (yearTotal < 20) continue
+      const scored: { word: string; score: number }[] = []
+      for (const [w, count] of wmap) {
+        if (count < 3) continue
+        const globalCount = globalFreq.get(w) || count
+        const localRate = count / yearTotal
+        const globalRate = globalCount / ([...yearWords.values()].reduce((s, m) => s + ([...m.values()].reduce((a, b) => a + b, 0)), 0) || 1)
+        // TF-IDF-like: boost words that are frequent this year relative to overall
+        const specificity = globalRate > 0 ? localRate / globalRate : 1
+        // Also count how many years this word appears in
+        let yearPresence = 0
+        for (const wm of yearWords.values()) { if (wm.has(w)) yearPresence++ }
+        const idf = Math.log(totalYears / Math.max(yearPresence, 1))
+        scored.push({ word: w, score: count * specificity * idf })
+      }
+      scored.sort((a, b) => b.score - a.score)
+      yearKeywords.set(year, scored.slice(0, 15))
+    }
+
+    // Group into chapters: consecutive years with overlapping keywords merge
+    const sortedYears = [...yearKeywords.keys()].sort((a, b) => a - b)
+    if (sortedYears.length === 0) return { chapters }
+
+    let cur = { startYear: sortedYears[0], endYear: sortedYears[0], keywords: new Set(yearKeywords.get(sortedYears[0])!.slice(0, 8).map(k => k.word)) }
+
+    for (let i = 1; i < sortedYears.length; i++) {
+      const year = sortedYears[i]
+      const kws = yearKeywords.get(year)!.slice(0, 8).map(k => k.word)
+      const overlap = kws.filter(w => cur.keywords.has(w)).length
+      if (overlap >= 2) {
+        cur.endYear = year
+        for (const w of kws) cur.keywords.add(w)
+      } else {
+        // Finalize current chapter
+        const topKw = [...cur.keywords].slice(0, 6)
+        if (topKw.length >= 2) {
+          chapters.push({ startYear: cur.startYear, endYear: cur.endYear, topicLabel: topKw[0].charAt(0).toUpperCase() + topKw[0].slice(1), keywords: topKw })
+        }
+        cur = { startYear: year, endYear: year, keywords: new Set(kws) }
+      }
+    }
+    // Final chapter
+    const topKw = [...cur.keywords].slice(0, 6)
+    if (topKw.length >= 2) {
+      chapters.push({ startYear: cur.startYear, endYear: cur.endYear, topicLabel: topKw[0].charAt(0).toUpperCase() + topKw[0].slice(1), keywords: topKw })
+    }
+  } catch { /* fallback */ }
+  return { chapters }
+}
+
 export function invalidateLaughCache(): void {
   laughCacheValid = false
   laughCache.clear()

@@ -113,6 +113,9 @@ const api = {
     individualYears: { year: number; dominant: { name: string; count: number; pct: number }; top5: { name: string; count: number; pct: number }[]; clusterContacts: string[]; clusterLabel: string | null }[]
     groupYears: { year: number; dominant: { name: string; count: number; pct: number }; top5: { name: string; count: number; pct: number }[]; clusterContacts: string[]; clusterLabel: string | null }[]
   }> => ipcRenderer.invoke('get-social-gravity'),
+  getTopicEras: (): Promise<{
+    chapters: { startYear: number; endYear: number; topicLabel: string; keywords: string[] }[]
+  }> => ipcRenderer.invoke('get-topic-eras'),
   refreshReactions: (): Promise<void> => ipcRenderer.invoke('refresh-reactions'),
   getHiddenChats: (): Promise<string[]> => ipcRenderer.invoke('get-hidden-chats'),
   generateWrapped: (year: number): Promise<unknown> => ipcRenderer.invoke('generate-wrapped', year),

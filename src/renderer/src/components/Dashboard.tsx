@@ -627,6 +627,43 @@ function LifeChaptersCard({ personChapters, groupChapters, chatNameMap, onHoverC
   )
 }
 
+type TopicChapter = { startYear: number; endYear: number; topicLabel: string; keywords: string[] }
+
+function TopicErasCard({ chapters }: { chapters: TopicChapter[] }): JSX.Element | null {
+  if (chapters.length < 1) return null
+  return (
+    <div style={{ gridColumn: 'span 12', borderRadius: 18, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', padding: '22px 24px 18px', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}>
+      <div style={{ fontSize: 10, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#E8604A', marginBottom: 4, fontFamily: "'DM Sans'", fontWeight: 600 }}>Topic eras</div>
+      <div style={{ fontSize: 13, color: '#9a948f', marginBottom: 18, fontFamily: "'DM Sans'" }}>Phases of your life, based on what you talked about.</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+        {chapters.map((ch, i) => {
+          const span = ch.startYear === ch.endYear ? String(ch.startYear) : `${ch.startYear}\u2013${ch.endYear}`
+          const isLast = i === chapters.length - 1
+          return (
+            <div key={i} style={{ display: 'flex', gap: 16, position: 'relative', paddingBottom: isLast ? 0 : 20 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 12, flexShrink: 0, paddingTop: 4 }}>
+                <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#E8604A', flexShrink: 0 }} />
+                {!isLast && <div style={{ width: 1, flex: 1, background: 'rgba(232,96,74,0.15)', marginTop: 4 }} />}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontFamily: "'Unbounded', sans-serif", fontWeight: 200, fontSize: 16, color: '#1A1A1A', lineHeight: 1.3, marginBottom: 2 }}>
+                  {ch.topicLabel} Era
+                </div>
+                <div style={{ fontSize: 12, color: '#E8604A', fontFamily: "'DM Sans'", fontWeight: 500, marginBottom: 6 }}>{span}</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                  {ch.keywords.map(kw => (
+                    <span key={kw} style={{ fontSize: 11, color: '#6f6a65', background: '#F5F0EA', borderRadius: 4, padding: '2px 8px', fontFamily: "'DM Sans'" }}>{kw}</span>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 function RelationshipTimelineCard({ events, firstName }: { events: TimelineEvent[]; firstName: string }): JSX.Element | null {
   if (events.length < 2) return null
 
@@ -1027,6 +1064,8 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
   const [gravityGroups, setGravityGroups] = useState<GravityYear[]>([])
   useEffect(() => { window.api.getSocialGravity().then(r => { setGravityIndiv(r.individualYears); setGravityGroups(r.groupYears) }).catch(() => {}) }, [])
   const [chapterHighlight, setChapterHighlight] = useState<Set<number> | null>(null)
+  const [topicEras, setTopicEras] = useState<TopicChapter[]>([])
+  useEffect(() => { window.api.getTopicEras().then(r => setTopicEras(r.chapters)).catch(() => {}) }, [])
 
   const topFunny = byLaughsReceived[0]
   const topChat = byMessages[0]
@@ -1546,6 +1585,9 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
         )}
         {(gravityIndiv.length >= 2 || gravityGroups.length >= 2) && (
           <LifeChaptersCard personChapters={computeChapters(gravityIndiv)} groupChapters={computeChapters(gravityGroups)} chatNameMap={chatNameMap} onHoverChapter={setChapterHighlight} />
+        )}
+        {topicEras.length >= 1 && (
+          <TopicErasCard chapters={topicEras} />
         )}
 
         {/* ── TIER 2: IDENTITY SPECTRUMS ── */}
