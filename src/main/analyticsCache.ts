@@ -65,9 +65,11 @@ export function setCachedAnalytics(name: string, inputSignal: string, data: unkn
 
 /**
  * Get a cache-input signal for message-count-based analytics.
- * Uses the count of messages in stash.db + attachments count as a fingerprint.
+ * Cached per session to avoid 5+ redundant DB opens on launch.
  */
+let _signalCache: string | null = null
 export function getMessageCountSignal(): string {
+  if (_signalCache) return _signalCache
   try {
     const Database = require('better-sqlite3')
     const dbPath = join(app.getPath('appData'), 'Stash', 'stash.db')
@@ -76,9 +78,12 @@ export function getMessageCountSignal(): string {
     const msgCount = (d.prepare('SELECT COUNT(*) as c FROM messages').get() as { c: number }).c
     const attCount = (d.prepare('SELECT COUNT(*) as c FROM attachments').get() as { c: number }).c
     d.close()
-    return `${msgCount}:${attCount}`
+    _signalCache = `${msgCount}:${attCount}`
+    return _signalCache
   } catch { return 'unknown' }
 }
+
+export function invalidateSignalCache(): void { _signalCache = null }
 
 /**
  * Yield to the event loop between heavy operations.

@@ -8,7 +8,7 @@ import { compileContactsHelper, resolveContact, resolveContactsBatch } from './c
 import { generateWrapped, getAvailableYears } from './wrapped'
 import { setApiKey, getAIStatus, searchConversationsAI, enrichTopicEras, enrichTopicErasV2, enrichMemoryMoments, interpretSearchQuery } from './ai'
 import type { TopicEraSummaryInput, TopicEraContextInput, MemoryMomentSummaryInput } from './ai'
-import { getCachedAnalytics, setCachedAnalytics, getMessageCountSignal, yieldEventLoop } from './analyticsCache'
+import { getCachedAnalytics, setCachedAnalytics, getMessageCountSignal, yieldEventLoop, invalidateSignalCache } from './analyticsCache'
 import { copyFileSync, existsSync, readFileSync } from 'fs'
 import { extname } from 'path'
 
@@ -149,8 +149,19 @@ function setupIpc(): void {
     return searchAttachments('', filters, page, limit, sortOrder)
   })
 
-  ipcMain.handle('get-stats', (_event, chatNameFilter?: string, dateFrom?: string, dateTo?: string) => {
+  ipcMain.handle('get-stats', async (_event, chatNameFilter?: string, dateFrom?: string, dateTo?: string) => {
+    const cacheKey = `stats:${chatNameFilter || 'all'}:${dateFrom || ''}:${dateTo || ''}`
+    const signal = getMessageCountSignal()
+    const cached = getCachedAnalytics<unknown>('getStats_' + cacheKey.replace(/[^a-z0-9]/gi, '_'), signal)
+    if (cached) { console.log(`[PERF][CACHE HIT] getStats`); return cached }
+
+    await yieldEventLoop()
+    const t0 = Date.now()
     const stats = getStats(chatNameFilter, dateFrom, dateTo)
+    console.log(`[PERF][COMPUTE] getStats (SQL): ${Date.now()-t0}ms`)
+
+    await yieldEventLoop()
+    const t1 = Date.now()
     const chatNameMap: Record<string, string> = {}
     try {
       compileContactsHelper()
@@ -161,21 +172,23 @@ function setupIpc(): void {
         const name = chat.rawName
         if (!name) continue
         if (name.startsWith('+') || name.includes('@')) {
-          // Phone/email — try contact resolution
           const resolved = resolveContact(name)
           chatNameMap[name] = (resolved && resolved !== name) ? resolved : name
         } else if (/^chat\d+/i.test(name) || name.includes(';')) {
-          // Group chat identifier
           chatNameMap[name] = chat.isGroup ? `Group · ${name.length > 20 ? 'chat' : name}` : 'Group chat'
         } else {
-          // Named group chat or other — use as-is
           chatNameMap[name] = name.startsWith('#') ? 'Group chat' : name
         }
       }
     } catch {
       for (const c of stats.chatNames) chatNameMap[c.rawName] = c.rawName
     }
-    return { ...stats, chatNameMap }
+    console.log(`[PERF][COMPUTE] getStats (contacts): ${Date.now()-t1}ms`)
+    console.log(`[PERF][COMPUTE] getStats total: ${Date.now()-t0}ms`)
+
+    const result = { ...stats, chatNameMap }
+    setCachedAnalytics('getStats_' + cacheKey.replace(/[^a-z0-9]/gi, '_'), signal, result)
+    return result
   })
   ipcMain.handle('get-today-in-history', () => getTodayInHistory())
   ipcMain.handle('get-usage-stats', (_event, dateFrom?: string, dateTo?: string) => getUsageStats(dateFrom, dateTo))
@@ -264,6 +277,7 @@ function setupIpc(): void {
       await startIndexing(mainWindow, priorityChats)
     } finally {
       powerSaveBlocker.stop(blockerId)
+      invalidateSignalCache() // new data means caches should refresh
     }
   })
   ipcMain.handle('get-chat-summaries', () => fetchChatSummaries())
@@ -399,8 +413,11 @@ function setupLoginItem(): void {
 }
 
 app.whenReady().then(() => {
+  const bootStart = Date.now()
   app.setName('Stash')
+  const t0 = Date.now()
   initDb()
+  console.log(`[PERF][BOOT] initDb: ${Date.now()-t0}ms`)
   // Force all stat caches to refresh on startup
   invalidateLaughCache()
   createMenu()
@@ -408,10 +425,13 @@ app.whenReady().then(() => {
   setupLoginItem()
 
   // Compile contacts binary early
+  const t1 = Date.now()
   compileContactsHelper()
+  console.log(`[PERF][BOOT] compileContactsHelper: ${Date.now()-t1}ms`)
 
   setupIpc()
   createWindow()
+  console.log(`[PERF][BOOT] Total boot to window created: ${Date.now()-bootStart}ms`)
 
   // Deferred reaction count sync
   setTimeout(() => { try { updateReactionCounts() } catch (e) { console.error('[Reactions]', e) } }, 3000)
