@@ -110,9 +110,14 @@ const api = {
     originalLabel: string; enrichedLabel: string | null; summary: string | null; suppress: boolean
   }[] | null> => ipcRenderer.invoke('enrich-topic-eras', eras),
   getTopicEraContext: (chapters: { startYear: number; endYear: number; topicLabel: string; keywords: string[] }[]): Promise<{
-    contexts: { startYear: number; endYear: number; heuristicLabel: string; keywords: string[]; topPeople: string[]; topGroups: string[]; sampleMessages: string[]; topAttachments: string[]; repeatedPhrases: string[] }[]
+    contexts: {
+      startYear: number; endYear: number; heuristicLabel: string; keywords: string[]
+      topPeople: { name: string; count: number }[]; topGroups: { name: string; count: number }[]
+      sampleMessages: { text: string; hasLink: boolean; hasMedia: boolean }[]
+      topAttachments: { type: string; count: number }[]; repeatedPhrases: string[]; summaryHint: string
+    }[]
   }> => ipcRenderer.invoke('get-topic-era-context', chapters),
-  enrichTopicErasV2: (contexts: { startYear: number; endYear: number; heuristicLabel: string; keywords: string[]; topPeople: string[]; topGroups: string[]; sampleMessages: string[]; topAttachments: string[]; repeatedPhrases: string[] }[]): Promise<{
+  enrichTopicErasV2: (contexts: unknown[]): Promise<{
     originalLabel: string; enrichedLabel: string | null; summary: string | null; suppress: boolean
   }[] | null> => ipcRenderer.invoke('enrich-topic-eras-v2', contexts),
   enrichMemoryMoments: (moments: { type: string; title: string; subtitle: string; dateLabel: string; contactName: string | null; metric: number | null }[]): Promise<{

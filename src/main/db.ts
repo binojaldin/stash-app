@@ -1879,11 +1879,12 @@ export interface TopicEraContext {
   endYear: number
   heuristicLabel: string
   keywords: string[]
-  topPeople: string[]
-  topGroups: string[]
-  sampleMessages: string[]
-  topAttachments: string[]
+  topPeople: { name: string; count: number }[]
+  topGroups: { name: string; count: number }[]
+  sampleMessages: { text: string; hasLink: boolean; hasMedia: boolean }[]
+  topAttachments: { type: string; count: number }[]
   repeatedPhrases: string[]
+  summaryHint: string
 }
 
 export function getTopicEraContext(chapters: { startYear: number; endYear: number; topicLabel: string; keywords: string[] }[]): { contexts: TopicEraContext[] } {
@@ -1895,94 +1896,111 @@ export function getTopicEraContext(chapters: { startYear: number; endYear: numbe
 
     for (const ch of chapters) {
       const fromDate = `${ch.startYear}-01-01`
-      const toDate = `${ch.endYear}-12-31`
+      const toDate = `${ch.endYear}-12-31 23:59:59`
 
-      // ── Top people by message volume ──
+      // ── Top people by message volume (always included) ──
       const topPeopleRows = d.prepare(`
         SELECT chat_name, COUNT(*) as cnt FROM messages
         WHERE sent_at >= ? AND sent_at <= ? AND chat_name IS NOT NULL AND chat_name NOT LIKE 'chat%'
         GROUP BY chat_name ORDER BY cnt DESC LIMIT 5
-      `).all(fromDate, toDate + ' 23:59:59') as { chat_name: string; cnt: number }[]
-      const topPeople = topPeopleRows.map(r => r.chat_name)
+      `).all(fromDate, toDate) as { chat_name: string; cnt: number }[]
+      const topPeople = topPeopleRows.map(r => ({ name: r.chat_name, count: r.cnt }))
 
-      // ── Top groups (chat identifiers starting with 'chat') ──
+      // ── Top groups with counts ──
       const topGroupRows = d.prepare(`
         SELECT chat_name, COUNT(*) as cnt FROM messages
         WHERE sent_at >= ? AND sent_at <= ? AND chat_name IS NOT NULL AND chat_name LIKE 'chat%'
         GROUP BY chat_name ORDER BY cnt DESC LIMIT 3
-      `).all(fromDate, toDate + ' 23:59:59') as { chat_name: string; cnt: number }[]
-      const topGroups = topGroupRows.map(r => r.chat_name)
+      `).all(fromDate, toDate) as { chat_name: string; cnt: number }[]
+      const topGroups = topGroupRows.map(r => ({ name: r.chat_name, count: r.cnt }))
 
-      // ── Sample messages (evenly distributed, short, meaningful) ──
-      const totalMsgs = (d.prepare(`
-        SELECT COUNT(*) as c FROM messages WHERE sent_at >= ? AND sent_at <= ? AND body IS NOT NULL AND length(body) BETWEEN 10 AND 300
-      `).get(fromDate, toDate + ' 23:59:59') as { c: number }).c
+      // ── Sample messages: meaningful, > 20 chars, evenly distributed ──
+      const totalMeaningful = (d.prepare(`
+        SELECT COUNT(*) as c FROM messages
+        WHERE sent_at >= ? AND sent_at <= ? AND body IS NOT NULL AND length(body) > 20
+      `).get(fromDate, toDate) as { c: number }).c
 
-      const step = Math.max(1, Math.floor(totalMsgs / 20))
+      const step = Math.max(1, Math.floor(totalMeaningful / 15))
       const sampleRows = d.prepare(`
         SELECT body FROM (
           SELECT body, ROW_NUMBER() OVER (ORDER BY sent_at) as rn
           FROM messages
-          WHERE sent_at >= ? AND sent_at <= ? AND body IS NOT NULL AND length(body) BETWEEN 10 AND 300
-        ) WHERE rn % ? = 0 LIMIT 20
-      `).all(fromDate, toDate + ' 23:59:59', step) as { body: string }[]
-      const sampleMessages = sampleRows.map(r => r.body.slice(0, 280))
+          WHERE sent_at >= ? AND sent_at <= ? AND body IS NOT NULL AND length(body) > 20
+        ) WHERE rn % ? = 0 LIMIT 15
+      `).all(fromDate, toDate, step) as { body: string }[]
 
-      // ── Top attachment signals ──
-      let topAttachments: string[] = []
+      const sampleMessages = sampleRows.map(r => {
+        const text = r.body.slice(0, 280)
+        return {
+          text,
+          hasLink: /https?:\/\//.test(text),
+          hasMedia: /\.(jpg|jpeg|png|gif|mp4|mov|heic|pdf)/i.test(text) || /photo|image|video|screenshot/i.test(text)
+        }
+      })
+
+      // ── Attachments: grouped by type with counts ──
+      const topAttachments: { type: string; count: number }[] = []
       try {
-        const attRows = d.prepare(`
-          SELECT filename, mime_type, COUNT(*) as cnt FROM attachments
-          WHERE created_at >= ? AND created_at <= ?
-            AND filename IS NOT NULL AND filename != ''
-          GROUP BY LOWER(SUBSTR(filename, 1, INSTR(filename || '.', '.') - 1))
-          ORDER BY cnt DESC LIMIT 8
-        `).all(fromDate, toDate + ' 23:59:59') as { filename: string; mime_type: string | null; cnt: number }[]
-        topAttachments = attRows.map(r => {
-          const ext = r.filename.split('.').pop() || ''
-          const base = r.filename.replace(/\.[^.]+$/, '').replace(/[^a-zA-Z\s-]/g, ' ').trim()
-          return base.length > 2 ? `${base} (${ext}, ${r.cnt}x)` : `${r.mime_type || ext} (${r.cnt}x)`
-        }).filter(a => a.length > 3)
-      } catch { /* attachments table may be empty */ }
+        const attTypeRows = d.prepare(`
+          SELECT
+            CASE
+              WHEN is_image = 1 THEN 'image'
+              WHEN is_video = 1 THEN 'video'
+              WHEN is_document = 1 THEN 'document'
+              WHEN mime_type LIKE 'audio/%' THEN 'audio'
+              ELSE 'other'
+            END as atype,
+            COUNT(*) as cnt
+          FROM attachments
+          WHERE created_at >= ? AND created_at <= ? AND filename IS NOT NULL
+          GROUP BY atype ORDER BY cnt DESC
+        `).all(fromDate, toDate) as { atype: string; cnt: number }[]
+        for (const r of attTypeRows) if (r.cnt > 0) topAttachments.push({ type: r.atype, count: r.cnt })
+      } catch { /* ignore */ }
 
-      // ── Repeated phrases (bigrams/trigrams) ──
+      // ── Repeated phrases: bigrams/trigrams, filtered aggressively ──
       const phraseMap = new Map<string, number>()
       const phraseMsgs = d.prepare(`
         SELECT body FROM messages
-        WHERE sent_at >= ? AND sent_at <= ? AND body IS NOT NULL AND length(body) BETWEEN 5 AND 500
+        WHERE sent_at >= ? AND sent_at <= ? AND body IS NOT NULL AND length(body) BETWEEN 15 AND 500
         ORDER BY RANDOM() LIMIT 5000
-      `).all(fromDate, toDate + ' 23:59:59') as { body: string }[]
+      `).all(fromDate, toDate) as { body: string }[]
 
       for (const r of phraseMsgs) {
-        const words = r.body.toLowerCase().replace(/[^a-z\s'-]/g, ' ').split(/\s+/).filter(w => w.length >= 3)
-        // Bigrams
-        for (let j = 0; j < words.length - 1; j++) {
-          const bi = `${words[j]} ${words[j + 1]}`
-          phraseMap.set(bi, (phraseMap.get(bi) || 0) + 1)
-        }
-        // Trigrams
+        const words = r.body.toLowerCase().replace(/[^a-z\s'-]/g, ' ').split(/\s+/).filter(w => w.length >= 3 && !TOPIC_STOPS.has(w))
+        for (let j = 0; j < words.length - 1; j++) phraseMap.set(`${words[j]} ${words[j + 1]}`, (phraseMap.get(`${words[j]} ${words[j + 1]}`) || 0) + 1)
         for (let j = 0; j < words.length - 2; j++) {
           const tri = `${words[j]} ${words[j + 1]} ${words[j + 2]}`
           phraseMap.set(tri, (phraseMap.get(tri) || 0) + 1)
         }
       }
-      // Filter: require 5+ occurrences, exclude stop-heavy phrases
+      // Only keep phrases where ALL words are non-stop, 8+ occurrences
       const repeatedPhrases = [...phraseMap.entries()]
-        .filter(([phrase, count]) => count >= 5 && phrase.split(' ').some(w => !TOPIC_STOPS.has(w)))
+        .filter(([phrase, count]) => count >= 8 && phrase.split(' ').every(w => w.length >= 3 && !TOPIC_STOPS.has(w)))
         .sort((a, b) => b[1] - a[1])
-        .slice(0, 15)
+        .slice(0, 10)
         .map(([phrase, count]) => `${phrase} (${count}x)`)
 
+      // ── Summary hint: deterministic behavioral summary ──
+      const totalMsgs = (d.prepare(`SELECT COUNT(*) as c FROM messages WHERE sent_at >= ? AND sent_at <= ?`).get(fromDate, toDate) as { c: number }).c
+      const groupMsgs = topGroupRows.reduce((s, r) => s + r.cnt, 0)
+      const groupPct = totalMsgs > 0 ? Math.round((groupMsgs / totalMsgs) * 100) : 0
+      const linkMsgs = (d.prepare(`SELECT COUNT(*) as c FROM messages WHERE sent_at >= ? AND sent_at <= ? AND body LIKE '%http%'`).get(fromDate, toDate) as { c: number }).c
+      const linkPct = totalMsgs > 0 ? Math.round((linkMsgs / totalMsgs) * 100) : 0
+      const totalAtt = topAttachments.reduce((s, a) => s + a.count, 0)
+
+      const hints: string[] = []
+      if (topPeople.length > 0) hints.push(`Frequent conversations with ${topPeople.slice(0, 3).map(p => p.name).join(', ')}`)
+      if (groupPct > 30) hints.push(`High group chat activity (${groupPct}% of messages)`)
+      else if (groupPct < 10 && topPeople.length > 0) hints.push('Mostly 1-on-1 conversations')
+      if (linkPct > 5) hints.push(`Shared links in ${linkPct}% of messages`)
+      if (totalAtt > 50) hints.push(`${totalAtt} attachments shared`)
+      const summaryHint = hints.length > 0 ? hints.join('. ') + '.' : `${totalMsgs} messages across this period.`
+
       contexts.push({
-        startYear: ch.startYear,
-        endYear: ch.endYear,
-        heuristicLabel: ch.topicLabel,
-        keywords: ch.keywords,
-        topPeople,
-        topGroups,
-        sampleMessages,
-        topAttachments,
-        repeatedPhrases
+        startYear: ch.startYear, endYear: ch.endYear,
+        heuristicLabel: ch.topicLabel, keywords: ch.keywords,
+        topPeople, topGroups, sampleMessages, topAttachments, repeatedPhrases, summaryHint
       })
     }
   } catch (err) { console.error('[TopicEraContext] Error:', err) }

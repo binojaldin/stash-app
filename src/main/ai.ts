@@ -271,30 +271,40 @@ export async function enrichTopicErasV2(contexts: TopicEraContextInput[]): Promi
 
   console.log('[AI] Topic Eras v2 cache MISS, calling API...')
 
-  // Build rich prompt
+  // Build rich prompt from structured context
   const blocks = contexts.map(c => {
     const lines = [
       `## ${c.startYear}${c.endYear !== c.startYear ? '–' + c.endYear : ''}`,
+      `Behavioral summary: ${(c as any).summaryHint || 'No summary available'}`,
       `Heuristic label: "${c.heuristicLabel}"`,
       `Keywords: ${c.keywords.join(', ')}`,
-      c.topPeople.length > 0 ? `Top people: ${c.topPeople.join(', ')}` : null,
-      c.topGroups.length > 0 ? `Top groups: ${c.topGroups.join(', ')}` : null,
+      c.topPeople.length > 0 ? `Top people (by message count): ${(typeof c.topPeople[0] === 'string' ? c.topPeople : (c.topPeople as { name: string; count: number }[]).map(p => `${p.name} (${p.count})`)).join(', ')}` : null,
+      c.topGroups.length > 0 ? `Top groups: ${(typeof c.topGroups[0] === 'string' ? c.topGroups : (c.topGroups as { name: string; count: number }[]).map(g => `${g.name} (${g.count})`)).join(', ')}` : null,
       c.repeatedPhrases.length > 0 ? `Repeated phrases: ${c.repeatedPhrases.join('; ')}` : null,
-      c.topAttachments.length > 0 ? `Attachments: ${c.topAttachments.join('; ')}` : null,
-      c.sampleMessages.length > 0 ? `Sample messages:\n${c.sampleMessages.map(m => `  - "${m}"`).join('\n')}` : null,
+      c.topAttachments.length > 0 ? `Media shared: ${(typeof c.topAttachments[0] === 'string' ? c.topAttachments : (c.topAttachments as { type: string; count: number }[]).map(a => `${a.type}: ${a.count}`)).join(', ')}` : null,
+      c.sampleMessages.length > 0 ? `Sample messages:\n${(c.sampleMessages as { text: string; hasLink: boolean; hasMedia: boolean }[]).map(m => {
+        const flags = [m.hasLink ? '[link]' : '', m.hasMedia ? '[media]' : ''].filter(Boolean).join(' ')
+        return `  - "${(m as any).text || m}"${flags ? ' ' + flags : ''}`
+      }).join('\n')}` : null,
     ]
     return lines.filter(Boolean).join('\n')
   })
   const userMessage = `Messaging behavior by time period:\n\n${blocks.join('\n\n---\n\n')}`
 
-  const system = `You are analyzing someone's messaging history to identify what life phases they were going through. For each time period, look at the people they talked to, what they discussed, their sample messages, and repeated phrases.
+  const system = `You are analyzing someone's messaging history to identify what life phases they were going through.
 
-For each period, identify the DOMINANT THEME of that phase of their life. This could be:
-- A hobby or activity (Golf, Cycling, Music Production)
-- A life event (Wedding Planning, New Job, Moving)
-- A social circle (College Friends, Work Team)
-- A relationship phase (New Relationship, Long Distance)
-- A project or interest (Side Project, Fitness Journey)
+PRIORITY ORDER for inference:
+1. PEOPLE and RELATIONSHIPS — who they talked to most, relationship dynamics
+2. ACTIVITIES and LIFESTYLE — hobbies, sports, creative pursuits mentioned in messages
+3. LIFE EVENTS — job changes, moves, milestones implied by conversation patterns
+4. SOCIAL CIRCLES — group chat activity, recurring friend groups
+
+For each period, identify the DOMINANT THEME. Examples:
+- A hobby: "Golf Season", "Music Production", "Cycling"
+- A life event: "Wedding Planning", "New Job", "Moving to NYC"
+- A social circle: "College Friends Era", "Work Team"
+- A relationship: "The Ash Era", "Long Distance Phase"
+- A project: "Startup Mode", "Fitness Journey"
 
 Return a JSON array with one object per period:
 {
@@ -305,9 +315,10 @@ Return a JSON array with one object per period:
 }
 
 Rules:
-- Labels should be short and instantly recognizable
-- Use the sample messages and people context to infer themes the keywords missed
-- If messages mention specific activities/places/events repeatedly, name the theme after that
+- Prioritize people, relationships, and activities over generic keywords
+- Use sample messages to infer what they were ACTUALLY doing, not just word frequency
+- Include people's names in labels when a relationship defines the era (e.g. "The Ash Era")
+- Labels must be short (1-3 words) and instantly recognizable
 - suppress=true ONLY for periods with truly no discernible theme
 - Return ONLY the JSON array, no other text`
 
