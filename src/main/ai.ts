@@ -234,11 +234,19 @@ export interface TopicEraContextInput {
   endYear: number
   heuristicLabel: string
   keywords: string[]
-  topPeople: string[]
-  topGroups: string[]
-  sampleMessages: string[]
-  topAttachments: string[]
+  topPeople: { name: string; count: number }[]
+  topGroups: { name: string; count: number }[]
+  sampleMessages: { text: string; hasLink: boolean; hasMedia: boolean }[]
+  topAttachments: { type: string; count: number }[]
   repeatedPhrases: string[]
+  summaryHint: string
+  totalMessages: number
+  relationshipScore: number
+  groupScore: number
+  mediaScore: number
+  primarySignalType: 'relationship' | 'activity' | 'social' | 'mixed'
+  primaryActors: string[]
+  attachmentSummary: string
 }
 
 export async function enrichTopicEras(eras: TopicEraSummaryInput[]): Promise<TopicEraEnrichment[] | null> {
@@ -271,22 +279,21 @@ export async function enrichTopicErasV2(contexts: TopicEraContextInput[]): Promi
 
   console.log('[AI] Topic Eras v2 cache MISS, calling API...')
 
-  // Build rich prompt from structured context
+  // Build rich prompt from structured context (typed fields, no casts)
   const blocks = contexts.map(c => {
-    const ctx = c as any
     const lines = [
       `## ${c.startYear}${c.endYear !== c.startYear ? '–' + c.endYear : ''}`,
-      ctx.summaryHint ? `Behavioral summary: ${ctx.summaryHint}` : null,
-      ctx.primarySignalType ? `Primary signal: ${ctx.primarySignalType} (relationship=${ctx.relationshipScore?.toFixed(2)}, group=${ctx.groupScore?.toFixed(2)}, media=${ctx.mediaScore?.toFixed(2)})` : null,
-      ctx.primaryActors?.length > 0 ? `Primary actors: ${ctx.primaryActors.join(', ')}` : null,
-      ctx.totalMessages ? `Total messages: ${ctx.totalMessages}` : null,
-      c.topPeople.length > 0 ? `Top people: ${(c.topPeople as { name: string; count: number }[]).map(p => `${p.name} (${p.count})`).join(', ')}` : null,
-      c.topGroups.length > 0 ? `Top groups: ${(c.topGroups as { name: string; count: number }[]).map(g => `${g.name} (${g.count})`).join(', ')}` : null,
+      `Behavioral summary: ${c.summaryHint}`,
+      `Primary signal: ${c.primarySignalType} (relationship=${c.relationshipScore.toFixed(2)}, group=${c.groupScore.toFixed(2)}, media=${c.mediaScore.toFixed(2)})`,
+      c.primaryActors.length > 0 ? `Primary actors: ${c.primaryActors.join(', ')}` : null,
+      `Total messages: ${c.totalMessages}`,
+      c.topPeople.length > 0 ? `Top people: ${c.topPeople.map(p => `${p.name} (${p.count} msgs)`).join(', ')}` : null,
+      c.topGroups.length > 0 ? `Top groups: ${c.topGroups.map(g => `${g.name} (${g.count} msgs)`).join(', ')}` : null,
       c.repeatedPhrases.length > 0 ? `Repeated phrases: ${c.repeatedPhrases.join('; ')}` : null,
-      ctx.attachmentSummary ? `Media: ${ctx.attachmentSummary}` : null,
+      c.attachmentSummary ? `Media: ${c.attachmentSummary}` : (c.topAttachments.length > 0 ? `Media: ${c.topAttachments.map(a => `${a.type}: ${a.count}`).join(', ')}` : null),
       `Heuristic label: "${c.heuristicLabel}" (keywords are supporting evidence only, not primary source of truth)`,
       c.keywords.length > 0 ? `Supporting keywords: ${c.keywords.join(', ')}` : null,
-      c.sampleMessages.length > 0 ? `Sample messages:\n${(c.sampleMessages as { text: string; hasLink: boolean; hasMedia: boolean }[]).map(m => {
+      c.sampleMessages.length > 0 ? `Sample messages:\n${c.sampleMessages.map(m => {
         const flags = [m.hasLink ? '[link]' : '', m.hasMedia ? '[media]' : ''].filter(Boolean).join(' ')
         return `  - "${m.text}"${flags ? ' ' + flags : ''}`
       }).join('\n')}` : null,
@@ -349,23 +356,30 @@ RULES:
     console.log('[AI] Topic Eras v2 parsed:', result.length, 'enrichments')
 
     // ── Post-processing guardrails ──
-    const LABEL_BLACKLIST = /\b(image|render|rendered|video|preview|http|https|www|screenshot|fullsize|renderedimage|renderedvideo)\b/i
+    const LABEL_BLACKLIST = /\b(image|render|rendered|video|preview|http|https|www|screenshot|fullsize|renderedimage|renderedvideo|loved|wordle)\b/i
     result = result.map((e, i) => {
       if (!e.enrichedLabel) return e
-      // Collapse repeated "Era"
-      let label = e.enrichedLabel.replace(/\bEra\s+Era\b/gi, 'Era').replace(/\bEra$/i, '').trim()
-      // Reject labels with artifact words
+      // 1. Collapse repeated "Era" patterns
+      let label = e.enrichedLabel
+        .replace(/\bEra\s+Era\b/gi, 'Era')
+        .replace(/\s+Era\s*$/i, '')
+        .trim()
+      // 2. Reject labels with artifact/system words
       if (LABEL_BLACKLIST.test(label)) {
-        const ctx = contexts[i] as any
-        const actors = ctx?.primaryActors
-        if (actors?.length > 0) label = actors[0]
-        else label = 'Social Shift'
-      }
-      // Reject empty labels
-      if (!label || label.length < 2) {
-        const ctx = contexts[i] as any
-        const actors = ctx?.primaryActors
+        const actors = contexts[i]?.primaryActors
         label = actors?.length > 0 ? actors[0] : 'Social Shift'
+        console.log(`[AI] Label "${e.enrichedLabel}" rejected (artifact), fallback: "${label}"`)
+      }
+      // 3. Reject empty/short labels
+      if (!label || label.length < 2) {
+        const actors = contexts[i]?.primaryActors
+        label = actors?.length > 0 ? actors[0] : 'Social Shift'
+        console.log(`[AI] Label empty/short, fallback: "${label}"`)
+      }
+      // 4. Reject labels that are just generic filler
+      if (/^(conversation|general|misc|other|unknown|untitled)\s*(shift|phase|period)?$/i.test(label)) {
+        const actors = contexts[i]?.primaryActors
+        if (actors?.length > 0) label = actors[0]
       }
       return { ...e, enrichedLabel: label }
     })
