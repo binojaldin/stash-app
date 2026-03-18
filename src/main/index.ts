@@ -9,7 +9,8 @@ import { generateWrapped, getAvailableYears } from './wrapped'
 import { setApiKey, getAIStatus, searchConversationsAI, enrichTopicEras, enrichTopicErasV2, enrichMemoryMoments, interpretSearchQuery } from './ai'
 import type { TopicEraSummaryInput, TopicEraContextInput, MemoryMomentSummaryInput } from './ai'
 import { getCachedAnalytics, setCachedAnalytics, getMessageCountSignal, yieldEventLoop, invalidateSignalCache } from './analyticsCache'
-import { copyFileSync, existsSync, readFileSync } from 'fs'
+import { Worker } from 'worker_threads'
+import { copyFileSync, existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
 import { extname } from 'path'
 
 let mainWindow: BrowserWindow | null = null
@@ -138,6 +139,222 @@ function createWindow(): void {
   }
 }
 
+// ── Worker-based getStats for cold launches ──
+let statsWorkerPromise: Promise<unknown> | null = null
+
+function getStatsWorkerPath(): string {
+  const dir = join(app.getPath('userData'), 'workers')
+  mkdirSync(dir, { recursive: true })
+  const workerPath = join(dir, 'statsWorker.js')
+  // Write worker script (idempotent, tiny file)
+  writeFileSync(workerPath, `
+const { parentPort, workerData } = require('worker_threads');
+const Database = require('better-sqlite3');
+const { homedir } = require('os');
+const { join } = require('path');
+const { existsSync } = require('fs');
+
+const { stashDbPath, chatNameFilter, dateFrom, dateTo } = workerData;
+
+try {
+  const d = new Database(stashDbPath);
+  d.pragma('journal_mode = WAL');
+
+  // ── Basic counts from stash.db ──
+  const dateParts = [];
+  if (dateFrom) dateParts.push("created_at >= '" + dateFrom + "'");
+  if (dateTo) dateParts.push("created_at <= '" + dateTo + " 23:59:59'");
+  const dateWhere = dateParts.length ? ' AND ' + dateParts.join(' AND ') : '';
+  const chatCond = chatNameFilter ? ' AND chat_name = ?' : '';
+  const params = chatNameFilter ? [chatNameFilter] : [];
+
+  const total = d.prepare('SELECT COUNT(*) as c FROM attachments WHERE 1=1' + chatCond + dateWhere).get(...params).c;
+  const images = d.prepare('SELECT COUNT(*) as c FROM attachments WHERE is_image = 1' + chatCond + dateWhere).get(...params).c;
+  const videos = d.prepare('SELECT COUNT(*) as c FROM attachments WHERE is_video = 1' + chatCond + dateWhere).get(...params).c;
+  const documents = d.prepare('SELECT COUNT(*) as c FROM attachments WHERE is_document = 1' + chatCond + dateWhere).get(...params).c;
+  const audio = d.prepare('SELECT COUNT(*) as c FROM attachments WHERE mime_type LIKE "audio/%" ' + chatCond + dateWhere).get(...params).c;
+  const unavailable = d.prepare('SELECT COUNT(*) as c FROM attachments WHERE is_available = 0' + chatCond + dateWhere).get(...params).c;
+
+  // Hidden chats
+  let hiddenSet = new Set();
+  try { const hRows = d.prepare("SELECT chat_identifier FROM hidden_chats").all(); hiddenSet = new Set(hRows.map(r => r.chat_identifier)); } catch {}
+
+  let chatSql = 'SELECT chat_name, COUNT(*) as attachment_count, MAX(created_at) as last_message_date FROM attachments WHERE chat_name IS NOT NULL';
+  const chatParams = [];
+  if (dateFrom) { chatSql += ' AND created_at >= ?'; chatParams.push(dateFrom); }
+  if (dateTo) { chatSql += ' AND created_at <= ?'; chatParams.push(dateTo); }
+  chatSql += ' GROUP BY chat_name ORDER BY last_message_date DESC';
+  const chatDetails = d.prepare(chatSql).all(...chatParams).filter(r => !hiddenSet.has(r.chat_name));
+
+  // ── Enrich from chat.db ──
+  const chatDbPath = join(homedir(), 'Library/Messages/chat.db');
+  let msgStats = new Map();
+  let globalPeakHour = null, globalPeakWeekday = null;
+  let participantMap = new Map();
+  let displayToIdentifier = new Map();
+
+  if (existsSync(chatDbPath)) {
+    const chatDb = new Database(chatDbPath, { readonly: true });
+    const APPLE_EPOCH = 978307200;
+    const NS = 1000000000;
+    const appleFrom = dateFrom ? (new Date(dateFrom).getTime() / 1000 - APPLE_EPOCH) * NS : null;
+    const appleTo = dateTo ? (new Date(dateTo).getTime() / 1000 - APPLE_EPOCH) * NS : null;
+    const dateCond = (appleFrom ? ' AND m.date >= ' + appleFrom : '') + (appleTo ? ' AND m.date <= ' + appleTo : '');
+
+    // Message counts
+    const rows = chatDb.prepare(
+      'SELECT c.chat_identifier as chat_name, COUNT(m.ROWID) as message_count, ' +
+      'SUM(CASE WHEN m.is_from_me = 1 THEN 1 ELSE 0 END) as sent_count, ' +
+      'SUM(CASE WHEN m.is_from_me = 0 THEN 1 ELSE 0 END) as received_count ' +
+      'FROM message m JOIN chat_message_join cmj ON m.ROWID = cmj.message_id ' +
+      'JOIN chat c ON cmj.chat_id = c.ROWID ' +
+      'WHERE (m.text IS NOT NULL OR m.cache_has_attachments = 1)' + dateCond + ' GROUP BY c.chat_identifier'
+    ).all();
+
+    // Initiation counts
+    const initRows = chatDb.prepare(
+      'SELECT c.chat_identifier as chat_name, COUNT(DISTINCT date(datetime(m.date/1000000000 + 978307200, \\'unixepoch\\', \\'localtime\\'))) as init_days ' +
+      'FROM message m JOIN chat_message_join cmj ON m.ROWID = cmj.message_id ' +
+      'JOIN chat c ON cmj.chat_id = c.ROWID WHERE m.is_from_me = 1' + dateCond + ' GROUP BY c.chat_identifier'
+    ).all();
+    const initMap = new Map(initRows.map(r => [r.chat_name, r.init_days]));
+
+    // Display name map
+    try {
+      const dnRows = chatDb.prepare("SELECT NULLIF(display_name, '') as dn, chat_identifier as ci FROM chat WHERE display_name IS NOT NULL AND display_name != ''").all();
+      for (const r of dnRows) if (r.dn) displayToIdentifier.set(r.dn, r.ci);
+    } catch {}
+
+    // Participant counts
+    try {
+      const partRows = chatDb.prepare(
+        'SELECT c.ROWID as chat_id, c.chat_identifier as chat_name, COUNT(DISTINCT chj.handle_id) as participant_count ' +
+        'FROM chat c LEFT JOIN chat_handle_join chj ON c.ROWID = chj.chat_id GROUP BY c.ROWID, c.chat_identifier'
+      ).all();
+      for (const row of partRows) participantMap.set(row.chat_name, row.participant_count > 1 ? 2 : 1);
+    } catch {}
+
+    // Laugh detection
+    const LAUGH_RE = /\\b(lol|lmao|lmfao|rofl|hehe|omg dead|im dead|i'm dead|i cant|i can't)\\b|ha{2,}|he{2,}/i;
+    const LAUGH_EMOJI = /[\\u{1F602}\\u{1F923}\\u{1F480}]/u;
+    const FIVE_MIN_NS = 300000000000;
+    const laughCache = new Map();
+    try {
+      const laughRows = chatDb.prepare(
+        "SELECT c.chat_identifier as chat_name, m.is_from_me, m.text, m.date, " +
+        "LAG(m.date) OVER (PARTITION BY cmj.chat_id ORDER BY m.date) as prev_date, " +
+        "LAG(m.is_from_me) OVER (PARTITION BY cmj.chat_id ORDER BY m.date) as prev_is_from_me " +
+        "FROM message m JOIN chat_message_join cmj ON m.ROWID = cmj.message_id " +
+        "JOIN chat c ON cmj.chat_id = c.ROWID WHERE m.text IS NOT NULL AND (" +
+        "m.text LIKE '%lol%' OR m.text LIKE '%lmao%' OR m.text LIKE '%haha%' OR m.text LIKE '%hehe%' " +
+        "OR m.text LIKE '%rofl%' OR m.text LIKE '%lmfao%' OR m.text LIKE '%im dead%' OR m.text LIKE '%i cant%' " +
+        "OR m.text LIKE '%\\xF0\\x9F\\x98\\x82%' OR m.text LIKE '%\\xF0\\x9F\\xA4\\xA3%' OR m.text LIKE '%\\xF0\\x9F\\x92\\x80%')"
+      ).all();
+      for (const row of laughRows) {
+        if (row.prev_date === null || row.prev_is_from_me === null) continue;
+        if (row.is_from_me === row.prev_is_from_me) continue;
+        if (row.date - row.prev_date > FIVE_MIN_NS) continue;
+        const isLaugh = LAUGH_RE.test(row.text) || LAUGH_EMOJI.test(row.text);
+        if (!isLaugh) continue;
+        if (!laughCache.has(row.chat_name)) laughCache.set(row.chat_name, { generated: 0, received: 0 });
+        const entry = laughCache.get(row.chat_name);
+        if (row.is_from_me === 0) entry.generated++; else entry.received++;
+      }
+    } catch {}
+
+    // Late night ratio
+    const lateNightCache = new Map();
+    try {
+      const lnRows = chatDb.prepare(
+        "SELECT c.chat_identifier as chat_name, COUNT(*) as total, " +
+        "SUM(CASE WHEN CAST(strftime('%H', datetime(m.date/1000000000 + 978307200, 'unixepoch', 'localtime')) AS INTEGER) >= 23 THEN 1 " +
+        "WHEN CAST(strftime('%H', datetime(m.date/1000000000 + 978307200, 'unixepoch', 'localtime')) AS INTEGER) < 4 THEN 1 ELSE 0 END) as late_night_count " +
+        "FROM message m JOIN chat_message_join cmj ON m.ROWID = cmj.message_id " +
+        "JOIN chat c ON cmj.chat_id = c.ROWID WHERE (m.text IS NOT NULL OR m.cache_has_attachments = 1)" + dateCond + " GROUP BY c.chat_identifier"
+      ).all();
+      for (const r of lnRows) { if (r.total > 0 && r.late_night_count > 0) lateNightCache.set(r.chat_name, Math.round((r.late_night_count / r.total) * 100)); }
+    } catch {}
+
+    // Reply latency
+    const replyCache = new Map();
+    try {
+      const latRows = chatDb.prepare(
+        "WITH ordered AS (SELECT c.chat_identifier as chat_name, m.date, m.is_from_me, " +
+        "LAG(m.date) OVER (PARTITION BY cmj.chat_id ORDER BY m.date) as prev_date, " +
+        "LAG(m.is_from_me) OVER (PARTITION BY cmj.chat_id ORDER BY m.date) as prev_from_me " +
+        "FROM message m JOIN chat_message_join cmj ON m.ROWID = cmj.message_id " +
+        "JOIN chat c ON cmj.chat_id = c.ROWID WHERE m.is_from_me IN (0, 1) AND m.date > 0) " +
+        "SELECT chat_name, AVG(CAST(date - prev_date AS REAL) / 1000000000.0 / 60.0) as avg_minutes " +
+        "FROM ordered WHERE is_from_me = 1 AND prev_from_me = 0 AND (date - prev_date) > 0 " +
+        "AND (date - prev_date) < 86400000000000 GROUP BY chat_name HAVING COUNT(*) >= 3"
+      ).all();
+      for (const row of latRows) replyCache.set(row.chat_name, Math.round(row.avg_minutes));
+    } catch {}
+
+    // Peak hour/weekday
+    try {
+      const phr = chatDb.prepare("SELECT CAST(strftime('%H', datetime(m.date / 1000000000 + 978307200, 'unixepoch', 'localtime')) AS INTEGER) as hr, COUNT(*) as c FROM message m WHERE (m.text IS NOT NULL OR m.cache_has_attachments = 1) AND m.is_from_me = 1" + dateCond + " GROUP BY hr ORDER BY c DESC LIMIT 1").get();
+      if (phr) globalPeakHour = phr.hr;
+      const pdw = chatDb.prepare("SELECT CAST(strftime('%w', datetime(m.date / 1000000000 + 978307200, 'unixepoch', 'localtime')) AS INTEGER) as dow, COUNT(*) as c FROM message m WHERE (m.text IS NOT NULL OR m.cache_has_attachments = 1) AND m.is_from_me = 1" + dateCond + " GROUP BY dow ORDER BY c DESC LIMIT 1").get();
+      if (pdw) globalPeakWeekday = pdw.dow;
+    } catch {}
+
+    for (const r of rows) {
+      const laughs = laughCache.get(r.chat_name);
+      msgStats.set(r.chat_name, {
+        messageCount: r.message_count, sentCount: r.sent_count, receivedCount: r.received_count,
+        initiationCount: initMap.get(r.chat_name) || 0,
+        laughsGenerated: laughs ? laughs.generated : 0, laughsReceived: laughs ? laughs.received : 0,
+        lateNightRatio: lateNightCache.get(r.chat_name) || 0,
+        avgReplyMinutes: replyCache.get(r.chat_name) || 0
+      });
+    }
+    chatDb.close();
+  }
+
+  // Build chatNames
+  const chatNames = chatDetails.map(r => {
+    let ms = msgStats.get(r.chat_name);
+    if (!ms) { const bridged = displayToIdentifier.get(r.chat_name); if (bridged) ms = msgStats.get(bridged); }
+    const pCount = participantMap.get(r.chat_name) || 1;
+    let isGroup = pCount > 1;
+    if (!isGroup) { const bridged = displayToIdentifier.get(r.chat_name); if (bridged) isGroup = (participantMap.get(bridged) || 1) > 1; }
+    return {
+      rawName: r.chat_name, attachmentCount: r.attachment_count, lastMessageDate: r.last_message_date || '',
+      messageCount: ms ? ms.messageCount : 0, sentCount: ms ? ms.sentCount : 0, receivedCount: ms ? ms.receivedCount : 0,
+      initiationCount: ms ? ms.initiationCount : 0, laughsGenerated: ms ? ms.laughsGenerated : 0, laughsReceived: ms ? ms.laughsReceived : 0,
+      isGroup: isGroup, lateNightRatio: ms ? ms.lateNightRatio : 0, avgReplyMinutes: ms ? ms.avgReplyMinutes : 0
+    };
+  });
+
+  d.close();
+  parentPort.postMessage({ result: { total, images, videos, documents, audio, unavailable, chatNames, globalPeakHour, globalPeakWeekday } });
+} catch (err) {
+  parentPort.postMessage({ error: String(err) });
+}
+`)
+  return workerPath
+}
+
+function runStatsInWorker(chatNameFilter?: string, dateFrom?: string, dateTo?: string): Promise<ReturnType<typeof getStats>> {
+  return new Promise((resolve, reject) => {
+    const t0 = Date.now()
+    const workerPath = getStatsWorkerPath()
+    const stashDbPath = join(app.getPath('appData'), 'Stash', 'stash.db')
+    const worker = new Worker(workerPath, {
+      workerData: { stashDbPath, chatNameFilter: chatNameFilter || null, dateFrom: dateFrom || null, dateTo: dateTo || null }
+    })
+    worker.on('message', (msg: { result?: unknown; error?: string }) => {
+      console.log(`[PERF][WORKER] getStats: ${Date.now()-t0}ms`)
+      if (msg.error) { console.error('[WORKER] getStats error:', msg.error); reject(new Error(msg.error)) }
+      else resolve(msg.result as ReturnType<typeof getStats>)
+      worker.terminate()
+    })
+    worker.on('error', (err) => { console.error('[WORKER] getStats crash:', err); reject(err) })
+    worker.on('exit', (code) => { if (code !== 0) reject(new Error(`Worker exited with code ${code}`)) })
+  })
+}
+
 function setupIpc(): void {
   ipcMain.handle('check-disk-access', () => checkFullDiskAccess())
 
@@ -150,45 +367,56 @@ function setupIpc(): void {
   })
 
   ipcMain.handle('get-stats', async (_event, chatNameFilter?: string, dateFrom?: string, dateTo?: string) => {
-    const cacheKey = `stats:${chatNameFilter || 'all'}:${dateFrom || ''}:${dateTo || ''}`
+    const cacheKey = 'getStats_' + `stats:${chatNameFilter || 'all'}:${dateFrom || ''}:${dateTo || ''}`.replace(/[^a-z0-9]/gi, '_')
     const signal = getMessageCountSignal()
-    const cached = getCachedAnalytics<unknown>('getStats_' + cacheKey.replace(/[^a-z0-9]/gi, '_'), signal)
+    const cached = getCachedAnalytics<unknown>(cacheKey, signal)
     if (cached) { console.log(`[PERF][CACHE HIT] getStats`); return cached }
 
-    await yieldEventLoop()
-    const t0 = Date.now()
-    const stats = getStats(chatNameFilter, dateFrom, dateTo)
-    console.log(`[PERF][COMPUTE] getStats (SQL): ${Date.now()-t0}ms`)
-
-    await yieldEventLoop()
-    const t1 = Date.now()
-    const chatNameMap: Record<string, string> = {}
-    try {
-      compileContactsHelper()
-      const handles = stats.chatNames.map((c) => c.rawName).filter((n) => n && (n.startsWith('+') || n.includes('@')))
-      if (handles.length > 0) resolveContactsBatch(handles)
-
-      for (const chat of stats.chatNames) {
-        const name = chat.rawName
-        if (!name) continue
-        if (name.startsWith('+') || name.includes('@')) {
-          const resolved = resolveContact(name)
-          chatNameMap[name] = (resolved && resolved !== name) ? resolved : name
-        } else if (/^chat\d+/i.test(name) || name.includes(';')) {
-          chatNameMap[name] = chat.isGroup ? `Group · ${name.length > 20 ? 'chat' : name}` : 'Group chat'
-        } else {
-          chatNameMap[name] = name.startsWith('#') ? 'Group chat' : name
-        }
-      }
-    } catch {
-      for (const c of stats.chatNames) chatNameMap[c.rawName] = c.rawName
+    // Deduplicate: if a worker is already running, wait for it
+    if (statsWorkerPromise) {
+      console.log('[PERF] getStats: reusing in-flight worker')
+      return statsWorkerPromise
     }
-    console.log(`[PERF][COMPUTE] getStats (contacts): ${Date.now()-t1}ms`)
-    console.log(`[PERF][COMPUTE] getStats total: ${Date.now()-t0}ms`)
 
-    const result = { ...stats, chatNameMap }
-    setCachedAnalytics('getStats_' + cacheKey.replace(/[^a-z0-9]/gi, '_'), signal, result)
-    return result
+    console.log('[PERF] getStats: spawning worker thread (cold launch)')
+    const workerPromise = (async () => {
+      try {
+        const stats = await runStatsInWorker(chatNameFilter, dateFrom, dateTo)
+
+        // Contact resolution runs on main thread (needs compiled Swift binary, fast ~200ms)
+        const t1 = Date.now()
+        const chatNameMap: Record<string, string> = {}
+        try {
+          compileContactsHelper()
+          const handles = (stats.chatNames as { rawName: string }[]).map(c => c.rawName).filter(n => n && (n.startsWith('+') || n.includes('@')))
+          if (handles.length > 0) resolveContactsBatch(handles)
+          for (const chat of stats.chatNames as { rawName: string; isGroup: boolean }[]) {
+            const name = chat.rawName
+            if (!name) continue
+            if (name.startsWith('+') || name.includes('@')) {
+              const resolved = resolveContact(name)
+              chatNameMap[name] = (resolved && resolved !== name) ? resolved : name
+            } else if (/^chat\d+/i.test(name) || name.includes(';')) {
+              chatNameMap[name] = chat.isGroup ? `Group · ${name.length > 20 ? 'chat' : name}` : 'Group chat'
+            } else {
+              chatNameMap[name] = name.startsWith('#') ? 'Group chat' : name
+            }
+          }
+        } catch {
+          for (const c of stats.chatNames as { rawName: string }[]) chatNameMap[c.rawName] = c.rawName
+        }
+        console.log(`[PERF][MAIN] getStats contacts: ${Date.now()-t1}ms`)
+
+        const result = { ...stats, chatNameMap }
+        setCachedAnalytics(cacheKey, signal, result)
+        return result
+      } finally {
+        statsWorkerPromise = null
+      }
+    })()
+
+    statsWorkerPromise = workerPromise
+    return workerPromise
   })
   ipcMain.handle('get-today-in-history', () => getTodayInHistory())
   ipcMain.handle('get-usage-stats', (_event, dateFrom?: string, dateTo?: string) => getUsageStats(dateFrom, dateTo))

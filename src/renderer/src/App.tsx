@@ -172,9 +172,17 @@ export default function App(): JSX.Element {
     } finally { setIsStatsLoading(false) }
   }, [dateRange])
 
-  useEffect(() => { if (appState === 'main' && startupComplete.current) loadStats() }, [dateRange])
-  useEffect(() => { if (appState === 'main') loadStats() }, [appState])
-  useEffect(() => { if (!isIndexing && appState === 'main') loadStats() }, [isIndexing])
+  // Only refetch stats when dateRange changes AFTER initial startup (Phase 2 handles the first call)
+  const dateRangeInitial = useRef(true)
+  useEffect(() => {
+    if (dateRangeInitial.current) { dateRangeInitial.current = false; return }
+    if (appState === 'main' && startupComplete.current) loadStats()
+  }, [dateRange])
+  // Do NOT re-call loadStats on appState change — Phase 2 (line 103) handles it
+  // Only refetch after indexing completes
+  useEffect(() => {
+    if (!isIndexing && appState === 'main' && startupComplete.current) loadStats()
+  }, [isIndexing])
 
   useEffect(() => { setInsightSurface('relationship') }, [scopedPerson])
 
