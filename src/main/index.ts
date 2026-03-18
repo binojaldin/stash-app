@@ -8,6 +8,7 @@ import { compileContactsHelper, resolveContact, resolveContactsBatch } from './c
 import { generateWrapped, getAvailableYears } from './wrapped'
 import { setApiKey, getAIStatus, searchConversationsAI, enrichTopicEras, enrichTopicErasV2, enrichMemoryMoments, interpretSearchQuery } from './ai'
 import type { TopicEraSummaryInput, TopicEraContextInput, MemoryMomentSummaryInput } from './ai'
+import { getCachedAnalytics, setCachedAnalytics, getMessageCountSignal, yieldEventLoop } from './analyticsCache'
 import { copyFileSync, existsSync, readFileSync } from 'fs'
 import { extname } from 'path'
 
@@ -189,11 +190,52 @@ function setupIpc(): void {
     writeFileSync(result.filePath, Buffer.from(dataUrl.replace(/^data:image\/png;base64,/, ''), 'base64'))
     return true
   })
-  ipcMain.handle('get-messaging-network', () => getMessagingNetwork())
+  // ── Heavy analytics: cached + event-loop-yielding ──
+  ipcMain.handle('get-messaging-network', async () => {
+    const signal = getMessageCountSignal()
+    const cached = getCachedAnalytics<ReturnType<typeof getMessagingNetwork>>('messagingNetwork', signal)
+    if (cached) return cached
+    await yieldEventLoop()
+    const t0 = Date.now()
+    const result = getMessagingNetwork()
+    console.log(`[PERF][COMPUTE] getMessagingNetwork: ${Date.now()-t0}ms`)
+    setCachedAnalytics('messagingNetwork', signal, result)
+    return result
+  })
   ipcMain.handle('get-relationship-timeline', (_event, chatIdentifier: string) => getRelationshipTimeline(chatIdentifier))
-  ipcMain.handle('get-social-gravity', () => getSocialGravity())
-  ipcMain.handle('get-topic-eras', () => getTopicEras())
-  ipcMain.handle('get-memory-moments', () => getMemoryMoments())
+  ipcMain.handle('get-social-gravity', async () => {
+    const signal = getMessageCountSignal()
+    const cached = getCachedAnalytics<ReturnType<typeof getSocialGravity>>('socialGravity', signal)
+    if (cached) return cached
+    await yieldEventLoop()
+    const t0 = Date.now()
+    const result = getSocialGravity()
+    console.log(`[PERF][COMPUTE] getSocialGravity: ${Date.now()-t0}ms`)
+    setCachedAnalytics('socialGravity', signal, result)
+    return result
+  })
+  ipcMain.handle('get-topic-eras', async () => {
+    const signal = getMessageCountSignal()
+    const cached = getCachedAnalytics<ReturnType<typeof getTopicEras>>('topicEras', signal)
+    if (cached) return cached
+    await yieldEventLoop()
+    const t0 = Date.now()
+    const result = getTopicEras()
+    console.log(`[PERF][COMPUTE] getTopicEras: ${Date.now()-t0}ms`)
+    setCachedAnalytics('topicEras', signal, result)
+    return result
+  })
+  ipcMain.handle('get-memory-moments', async () => {
+    const signal = getMessageCountSignal()
+    const cached = getCachedAnalytics<ReturnType<typeof getMemoryMoments>>('memoryMoments', signal)
+    if (cached) return cached
+    await yieldEventLoop()
+    const t0 = Date.now()
+    const result = getMemoryMoments()
+    console.log(`[PERF][COMPUTE] getMemoryMoments: ${Date.now()-t0}ms`)
+    setCachedAnalytics('memoryMoments', signal, result)
+    return result
+  })
   ipcMain.handle('get-fast-stats', (_event, chatNameFilter?: string, dateFrom?: string, dateTo?: string) => {
     return { ...getFastStats(chatNameFilter, dateFrom, dateTo), chatNameMap: {} }
   })
@@ -244,8 +286,16 @@ function setupIpc(): void {
     console.log('[IPC] enrich-topic-eras result:', result ? result.length + ' items' : 'null')
     return result
   })
-  ipcMain.handle('get-topic-era-context', (_event, chapters: { startYear: number; endYear: number; topicLabel: string; keywords: string[] }[]) => {
-    return getTopicEraContext(chapters)
+  ipcMain.handle('get-topic-era-context', async (_event, chapters: { startYear: number; endYear: number; topicLabel: string; keywords: string[] }[]) => {
+    const signal = getMessageCountSignal() + ':' + JSON.stringify(chapters.map(c => `${c.startYear}-${c.endYear}`))
+    const cached = getCachedAnalytics<ReturnType<typeof getTopicEraContext>>('topicEraContext', signal)
+    if (cached) return cached
+    await yieldEventLoop()
+    const t0 = Date.now()
+    const result = getTopicEraContext(chapters)
+    console.log(`[PERF][COMPUTE] getTopicEraContext: ${Date.now()-t0}ms`)
+    setCachedAnalytics('topicEraContext', signal, result)
+    return result
   })
   ipcMain.handle('enrich-topic-eras-v2', async (_event, contexts: TopicEraContextInput[]) => {
     console.log('[IPC] enrich-topic-eras-v2 called, contexts:', contexts.length)
