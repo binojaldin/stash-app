@@ -105,6 +105,13 @@ const api = {
   searchConversationsAi: (description: string, conversations: { display: string; identifier: string }[]): Promise<{ error: string | null; results: string[] | null }> =>
     ipcRenderer.invoke('search-conversations-ai', description, conversations),
   setAnthropicKey: (key: string): Promise<void> => ipcRenderer.invoke('set-anthropic-key', key),
+  getAIStatus: (): Promise<{ configured: boolean; provider: 'anthropic' | 'none' }> => ipcRenderer.invoke('get-ai-status'),
+  enrichTopicEras: (eras: { startYear: number; endYear: number; heuristicLabel: string; keywords: string[]; strengthScore: number }[]): Promise<{
+    originalLabel: string; enrichedLabel: string | null; summary: string | null; suppress: boolean
+  }[] | null> => ipcRenderer.invoke('enrich-topic-eras', eras),
+  enrichMemoryMoments: (moments: { type: string; title: string; subtitle: string; dateLabel: string; contactName: string | null; metric: number | null }[]): Promise<{
+    originalTitle: string; enrichedTitle: string | null; enrichedSubtitle: string | null
+  }[] | null> => ipcRenderer.invoke('enrich-memory-moments', moments),
   getConversationStats: (chatIdentifier: string, isGroup: boolean): Promise<unknown> => ipcRenderer.invoke('get-conversation-stats', chatIdentifier, isGroup),
   getRelationshipTimeline: (chatIdentifier: string): Promise<{
     events: { timestamp: string; type: string; description: string; metric?: number }[]

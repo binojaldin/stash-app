@@ -1111,6 +1111,39 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
   const [memoryMoments, setMemoryMoments] = useState<MemoryMoment[]>([])
   useEffect(() => { window.api.getMemoryMoments().then(r => setMemoryMoments(r.moments)).catch(() => {}) }, [])
 
+  // ── AI enrichment (non-blocking, layered on top of deterministic data) ──
+  useEffect(() => {
+    if (topicEras.length === 0) return
+    window.api.getAIStatus().then(status => {
+      if (!status.configured) return
+      const input = topicEras.map(e => ({ startYear: e.startYear, endYear: e.endYear, heuristicLabel: e.topicLabel, keywords: e.keywords, strengthScore: e.strengthScore }))
+      window.api.enrichTopicEras(input).then(enrichments => {
+        if (!enrichments) return
+        setTopicEras(prev => prev.map((era, i) => {
+          const e = enrichments.find(en => en.originalLabel === era.topicLabel)
+          if (!e || e.suppress) return e?.suppress ? null! : era
+          return { ...era, topicLabel: e.enrichedLabel || era.topicLabel }
+        }).filter(Boolean))
+      }).catch(() => {})
+    }).catch(() => {})
+  }, [topicEras.length])
+
+  useEffect(() => {
+    if (memoryMoments.length === 0) return
+    window.api.getAIStatus().then(status => {
+      if (!status.configured) return
+      const input = memoryMoments.map(m => ({ type: m.type, title: m.title, subtitle: m.subtitle, dateLabel: m.dateLabel, contactName: m.chatName, metric: m.metric }))
+      window.api.enrichMemoryMoments(input).then(enrichments => {
+        if (!enrichments) return
+        setMemoryMoments(prev => prev.map((moment, i) => {
+          const e = enrichments.find(en => en.originalTitle === moment.title)
+          if (!e) return moment
+          return { ...moment, title: e.enrichedTitle || moment.title, subtitle: e.enrichedSubtitle || moment.subtitle }
+        }))
+      }).catch(() => {})
+    }).catch(() => {})
+  }, [memoryMoments.length])
+
   const topFunny = byLaughsReceived[0]
   const topChat = byMessages[0]
   const topAttach = byAttachments[0]

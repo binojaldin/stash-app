@@ -6,6 +6,8 @@ import { initDb, searchAttachments, getStats, getFastStats, getTodayInHistory, g
 import { startIndexing, getIndexingProgress, fetchChatSummaries, saveChatPriorities, getSavedPriorityChats, resetIndexing, recoverAttachment, resolveNamesInBackground } from './indexer'
 import { compileContactsHelper, resolveContact, resolveContactsBatch } from './contacts'
 import { generateWrapped, getAvailableYears } from './wrapped'
+import { setApiKey, getAIStatus, searchConversationsAI, enrichTopicEras, enrichMemoryMoments } from './ai'
+import type { TopicEraSummaryInput, MemoryMomentSummaryInput } from './ai'
 import { copyFileSync, existsSync, readFileSync } from 'fs'
 import { extname } from 'path'
 
@@ -230,70 +232,14 @@ function setupIpc(): void {
   ipcMain.handle('recover-from-icloud', async (_event, id: number) => recoverAttachment(id))
   ipcMain.handle('get-conversation-stats', (_event, chatIdentifier: string, isGroup: boolean) => getConversationStats(chatIdentifier, isGroup))
 
-  ipcMain.handle('set-anthropic-key', (_event, key: string) => {
-    const keyPath = join(app.getPath('userData'), 'anthropic-key.txt')
-    const { writeFileSync } = require('fs')
-    writeFileSync(keyPath, key.trim())
-    console.log('[AI Search] API key saved to', keyPath)
-  })
-
+  // ── AI service layer (centralized in ai.ts) ──
+  ipcMain.handle('set-anthropic-key', (_event, key: string) => setApiKey(key))
+  ipcMain.handle('get-ai-status', () => getAIStatus())
   ipcMain.handle('search-conversations-ai', async (_event, description: string, conversations: { display: string; identifier: string }[]) => {
-    let apiKey = process.env.ANTHROPIC_API_KEY || ''
-    if (!apiKey) {
-      const keyPath = join(app.getPath('userData'), 'anthropic-key.txt')
-      if (existsSync(keyPath)) {
-        apiKey = readFileSync(keyPath, 'utf-8').trim()
-      }
-    }
-    if (!apiKey) {
-      console.warn('[AI Search] No API key found')
-      return { error: 'NO_KEY', results: null }
-    }
-    try {
-      const https = require('https')
-      const chatList = conversations.map((c) => `- "${c.display}" (identifier: ${c.identifier})`).join('\n')
-      const postData = JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 500,
-        system: 'You are helping a user find a specific iMessage conversation. You will be given a list of conversations and the user\'s description. Return ONLY a JSON array of identifier strings for the conversations that best match the description, ranked by confidence, max 5 results. No explanation, just the JSON array.',
-        messages: [{ role: 'user', content: `Conversations:\n${chatList}\n\nFind: ${description}` }]
-      })
-
-      const response = await new Promise<{ status: number; body: string }>((resolve, reject) => {
-        const req = https.request({
-          hostname: 'api.anthropic.com',
-          path: '/v1/messages',
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': apiKey,
-            'anthropic-version': '2023-06-01',
-            'Content-Length': Buffer.byteLength(postData)
-          }
-        }, (res: any) => {
-          let body = ''
-          res.on('data', (chunk: string) => { body += chunk })
-          res.on('end', () => resolve({ status: res.statusCode, body }))
-        })
-        req.on('error', reject)
-        req.write(postData)
-        req.end()
-      })
-
-      if (response.status !== 200) {
-        console.error('[AI Search] API error:', response.status, response.body)
-        return { error: `API error: ${response.status}`, results: null }
-      }
-      const data = JSON.parse(response.body)
-      const text = data.content?.[0]?.text || '[]'
-      const matches = JSON.parse(text) as string[]
-      console.log('[AI Search] Found', matches.length, 'matches')
-      return { error: null, results: matches }
-    } catch (err) {
-      console.error('[AI Search] Error:', err)
-      return { error: String(err), results: null }
-    }
+    return searchConversationsAI(description, conversations)
   })
+  ipcMain.handle('enrich-topic-eras', async (_event, eras: TopicEraSummaryInput[]) => enrichTopicEras(eras))
+  ipcMain.handle('enrich-memory-moments', async (_event, moments: MemoryMomentSummaryInput[]) => enrichMemoryMoments(moments))
   ipcMain.handle('refresh-reactions', () => { updateReactionCounts() })
   ipcMain.handle('hide-chat', (_event, chatIdentifier: string) => { hideChat(chatIdentifier) })
   ipcMain.handle('get-hidden-chats', () => getHiddenChats())
