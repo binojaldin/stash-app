@@ -1885,7 +1885,25 @@ export interface TopicEraContext {
   topAttachments: { type: string; count: number }[]
   repeatedPhrases: string[]
   summaryHint: string
+  // Signal hierarchy fields
+  totalMessages: number
+  relationshipScore: number
+  groupScore: number
+  mediaScore: number
+  primarySignalType: 'relationship' | 'activity' | 'social' | 'mixed'
+  primaryActors: string[]
+  attachmentSummary: string
 }
+
+// Artifact/system words to aggressively filter from phrases and keywords
+const PHRASE_BLACKLIST = new Set([
+  'image','images','loved','render','rendered','renderedimage','renderedvideo',
+  'video','videos','photo','photos','screenshot','screenshots','file','files',
+  'link','links','http','https','www','com','net','org','tkk','preview',
+  'code','tiktok','instagram','youtube','fullsizerender','fullsizeoutput',
+  'img','mov','jpeg','heic','png','gif','mp4','pdf','attachment','tmp','temp',
+  'screen','shot','pic','pics','null','undefined','error','nan','inf',
+])
 
 export function getTopicEraContext(chapters: { startYear: number; endYear: number; topicLabel: string; keywords: string[] }[]): { contexts: TopicEraContext[] } {
   const contexts: TopicEraContext[] = []
@@ -1958,7 +1976,7 @@ export function getTopicEraContext(chapters: { startYear: number; endYear: numbe
         for (const r of attTypeRows) if (r.cnt > 0) topAttachments.push({ type: r.atype, count: r.cnt })
       } catch { /* ignore */ }
 
-      // ── Repeated phrases: bigrams/trigrams, filtered aggressively ──
+      // ── Repeated phrases: bigrams/trigrams, aggressively filtered ──
       const phraseMap = new Map<string, number>()
       const phraseMsgs = d.prepare(`
         SELECT body FROM messages
@@ -1966,41 +1984,77 @@ export function getTopicEraContext(chapters: { startYear: number; endYear: numbe
         ORDER BY RANDOM() LIMIT 5000
       `).all(fromDate, toDate) as { body: string }[]
 
+      const isCleanWord = (w: string): boolean => w.length >= 3 && !TOPIC_STOPS.has(w) && !PHRASE_BLACKLIST.has(w) && !/\d/.test(w)
+
       for (const r of phraseMsgs) {
-        const words = r.body.toLowerCase().replace(/[^a-z\s'-]/g, ' ').split(/\s+/).filter(w => w.length >= 3 && !TOPIC_STOPS.has(w))
+        const words = r.body.toLowerCase().replace(/[^a-z\s'-]/g, ' ').split(/\s+/).filter(isCleanWord)
         for (let j = 0; j < words.length - 1; j++) phraseMap.set(`${words[j]} ${words[j + 1]}`, (phraseMap.get(`${words[j]} ${words[j + 1]}`) || 0) + 1)
         for (let j = 0; j < words.length - 2; j++) {
           const tri = `${words[j]} ${words[j + 1]} ${words[j + 2]}`
           phraseMap.set(tri, (phraseMap.get(tri) || 0) + 1)
         }
       }
-      // Only keep phrases where ALL words are non-stop, 8+ occurrences
+      // ALL words must be clean, 10+ occurrences, no blacklisted words anywhere in phrase
       const repeatedPhrases = [...phraseMap.entries()]
-        .filter(([phrase, count]) => count >= 8 && phrase.split(' ').every(w => w.length >= 3 && !TOPIC_STOPS.has(w)))
+        .filter(([phrase, count]) => {
+          if (count < 10) return false
+          const words = phrase.split(' ')
+          return words.every(isCleanWord) && !words.some(w => PHRASE_BLACKLIST.has(w))
+        })
         .sort((a, b) => b[1] - a[1])
         .slice(0, 10)
         .map(([phrase, count]) => `${phrase} (${count}x)`)
 
-      // ── Summary hint: deterministic behavioral summary ──
+      // ── Signal hierarchy scoring ──
       const totalMsgs = (d.prepare(`SELECT COUNT(*) as c FROM messages WHERE sent_at >= ? AND sent_at <= ?`).get(fromDate, toDate) as { c: number }).c
+      const top3PeopleCount = topPeople.slice(0, 3).reduce((s, p) => s + p.count, 0)
       const groupMsgs = topGroupRows.reduce((s, r) => s + r.cnt, 0)
-      const groupPct = totalMsgs > 0 ? Math.round((groupMsgs / totalMsgs) * 100) : 0
-      const linkMsgs = (d.prepare(`SELECT COUNT(*) as c FROM messages WHERE sent_at >= ? AND sent_at <= ? AND body LIKE '%http%'`).get(fromDate, toDate) as { c: number }).c
-      const linkPct = totalMsgs > 0 ? Math.round((linkMsgs / totalMsgs) * 100) : 0
       const totalAtt = topAttachments.reduce((s, a) => s + a.count, 0)
 
+      const relationshipScore = totalMsgs > 0 ? Math.round((top3PeopleCount / totalMsgs) * 100) / 100 : 0
+      const groupScore = totalMsgs > 0 ? Math.round((groupMsgs / totalMsgs) * 100) / 100 : 0
+      const mediaScore = totalMsgs > 0 ? Math.round((totalAtt / totalMsgs) * 100) / 100 : 0
+
+      let primarySignalType: 'relationship' | 'activity' | 'social' | 'mixed' = 'mixed'
+      if (relationshipScore >= 0.45) primarySignalType = 'relationship'
+      else if (mediaScore >= 0.10) primarySignalType = 'activity'
+      else if (groupScore >= 0.30) primarySignalType = 'social'
+
+      const primaryActors = topPeople.slice(0, 3).map(p => p.name)
+
+      // ── Attachment summary (human-readable) ──
+      const attTypes = topAttachments.filter(a => a.count > 0)
+      let attachmentSummary = ''
+      if (attTypes.length > 0) {
+        const dominant = attTypes[0]
+        if (dominant.count > totalAtt * 0.6) attachmentSummary = `Mostly ${dominant.type}s`
+        else attachmentSummary = attTypes.map(a => `${a.type}s`).join(', ')
+        if (totalAtt > 100) attachmentSummary += ` (${totalAtt} total)`
+      }
+
+      // ── Summary hint: behavior-led, stronger ──
+      const groupPct = totalMsgs > 0 ? Math.round((groupMsgs / totalMsgs) * 100) : 0
       const hints: string[] = []
-      if (topPeople.length > 0) hints.push(`Frequent conversations with ${topPeople.slice(0, 3).map(p => p.name).join(', ')}`)
-      if (groupPct > 30) hints.push(`High group chat activity (${groupPct}% of messages)`)
-      else if (groupPct < 10 && topPeople.length > 0) hints.push('Mostly 1-on-1 conversations')
-      if (linkPct > 5) hints.push(`Shared links in ${linkPct}% of messages`)
-      if (totalAtt > 50) hints.push(`${totalAtt} attachments shared`)
+      if (topPeople.length > 0) {
+        const names = topPeople.slice(0, 3).map(p => p.name).join(', ')
+        const pct = Math.round(relationshipScore * 100)
+        hints.push(`Frequent conversations with ${names} (${pct}% of messages)`)
+      }
+      if (primarySignalType === 'relationship' && topPeople.length > 0) hints.push(`Dominated by ${topPeople[0].name}`)
+      if (groupPct > 30) hints.push(`Heavy group activity (${groupPct}%)`)
+      else if (groupPct < 10) hints.push('Mostly 1-on-1 conversations')
+      if (attachmentSummary) hints.push(attachmentSummary)
       const summaryHint = hints.length > 0 ? hints.join('. ') + '.' : `${totalMsgs} messages across this period.`
+
+      // Clean keywords: remove blacklisted
+      const cleanKeywords = ch.keywords.filter(kw => !kw.split(' ').some(w => PHRASE_BLACKLIST.has(w.toLowerCase())))
 
       contexts.push({
         startYear: ch.startYear, endYear: ch.endYear,
-        heuristicLabel: ch.topicLabel, keywords: ch.keywords,
-        topPeople, topGroups, sampleMessages, topAttachments, repeatedPhrases, summaryHint
+        heuristicLabel: ch.topicLabel, keywords: cleanKeywords,
+        topPeople, topGroups, sampleMessages, topAttachments, repeatedPhrases, summaryHint,
+        totalMessages: totalMsgs, relationshipScore, groupScore, mediaScore,
+        primarySignalType, primaryActors, attachmentSummary
       })
     }
   } catch (err) { console.error('[TopicEraContext] Error:', err) }

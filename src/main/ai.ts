@@ -273,18 +273,22 @@ export async function enrichTopicErasV2(contexts: TopicEraContextInput[]): Promi
 
   // Build rich prompt from structured context
   const blocks = contexts.map(c => {
+    const ctx = c as any
     const lines = [
       `## ${c.startYear}${c.endYear !== c.startYear ? '–' + c.endYear : ''}`,
-      `Behavioral summary: ${(c as any).summaryHint || 'No summary available'}`,
-      `Heuristic label: "${c.heuristicLabel}"`,
-      `Keywords: ${c.keywords.join(', ')}`,
-      c.topPeople.length > 0 ? `Top people (by message count): ${(typeof c.topPeople[0] === 'string' ? c.topPeople : (c.topPeople as { name: string; count: number }[]).map(p => `${p.name} (${p.count})`)).join(', ')}` : null,
-      c.topGroups.length > 0 ? `Top groups: ${(typeof c.topGroups[0] === 'string' ? c.topGroups : (c.topGroups as { name: string; count: number }[]).map(g => `${g.name} (${g.count})`)).join(', ')}` : null,
+      ctx.summaryHint ? `Behavioral summary: ${ctx.summaryHint}` : null,
+      ctx.primarySignalType ? `Primary signal: ${ctx.primarySignalType} (relationship=${ctx.relationshipScore?.toFixed(2)}, group=${ctx.groupScore?.toFixed(2)}, media=${ctx.mediaScore?.toFixed(2)})` : null,
+      ctx.primaryActors?.length > 0 ? `Primary actors: ${ctx.primaryActors.join(', ')}` : null,
+      ctx.totalMessages ? `Total messages: ${ctx.totalMessages}` : null,
+      c.topPeople.length > 0 ? `Top people: ${(c.topPeople as { name: string; count: number }[]).map(p => `${p.name} (${p.count})`).join(', ')}` : null,
+      c.topGroups.length > 0 ? `Top groups: ${(c.topGroups as { name: string; count: number }[]).map(g => `${g.name} (${g.count})`).join(', ')}` : null,
       c.repeatedPhrases.length > 0 ? `Repeated phrases: ${c.repeatedPhrases.join('; ')}` : null,
-      c.topAttachments.length > 0 ? `Media shared: ${(typeof c.topAttachments[0] === 'string' ? c.topAttachments : (c.topAttachments as { type: string; count: number }[]).map(a => `${a.type}: ${a.count}`)).join(', ')}` : null,
+      ctx.attachmentSummary ? `Media: ${ctx.attachmentSummary}` : null,
+      `Heuristic label: "${c.heuristicLabel}" (keywords are supporting evidence only, not primary source of truth)`,
+      c.keywords.length > 0 ? `Supporting keywords: ${c.keywords.join(', ')}` : null,
       c.sampleMessages.length > 0 ? `Sample messages:\n${(c.sampleMessages as { text: string; hasLink: boolean; hasMedia: boolean }[]).map(m => {
         const flags = [m.hasLink ? '[link]' : '', m.hasMedia ? '[media]' : ''].filter(Boolean).join(' ')
-        return `  - "${(m as any).text || m}"${flags ? ' ' + flags : ''}`
+        return `  - "${m.text}"${flags ? ' ' + flags : ''}`
       }).join('\n')}` : null,
     ]
     return lines.filter(Boolean).join('\n')
@@ -293,18 +297,29 @@ export async function enrichTopicErasV2(contexts: TopicEraContextInput[]): Promi
 
   const system = `You are analyzing someone's messaging history to identify what life phases they were going through.
 
-PRIORITY ORDER for inference:
-1. PEOPLE and RELATIONSHIPS — who they talked to most, relationship dynamics
-2. ACTIVITIES and LIFESTYLE — hobbies, sports, creative pursuits mentioned in messages
-3. LIFE EVENTS — job changes, moves, milestones implied by conversation patterns
-4. SOCIAL CIRCLES — group chat activity, recurring friend groups
+CRITICAL: Keywords are SUPPORTING EVIDENCE only. They are NOT the primary source of truth. Look at the people, behavioral summary, repeated phrases, and sample messages first.
 
-For each period, identify the DOMINANT THEME. Examples:
-- A hobby: "Golf Season", "Music Production", "Cycling"
-- A life event: "Wedding Planning", "New Job", "Moving to NYC"
-- A social circle: "College Friends Era", "Work Team"
-- A relationship: "The Ash Era", "Long Distance Phase"
-- A project: "Startup Mode", "Fitness Journey"
+LABEL FORMAT — you MUST choose one of these styles:
+
+1. RELATIONSHIP-DRIVEN (when one person clearly dominates the period)
+   Format: "[Name] Era"
+   Example: "Ash Era", "Philippe Era"
+   Use when: primarySignalType is "relationship" or one person has >40% of messages
+
+2. ACTIVITY-DRIVEN (when repeated phrases/messages suggest a hobby or project)
+   Format: "[Activity]"
+   Example: "Golf", "Cycling", "Music Production"
+   Use when: strong activity signal in phrases and sample messages
+
+3. LIFE-PHASE (when messages suggest a life transition)
+   Format: "[Event]"
+   Example: "New Job", "Moving", "Rootstrap"
+   Use when: sample messages imply work/life change
+
+4. SOCIAL (when group chat activity dominates)
+   Format: "[Group Name]" or "Social Peak"
+   Use when: primarySignalType is "social" and a group clearly dominates
+   Only use a group name if it is truly dominant, not just present
 
 Return a JSON array with one object per period:
 {
@@ -314,11 +329,14 @@ Return a JSON array with one object per period:
   "suppress": true if this period has no meaningful theme
 }
 
-Rules:
-- Prioritize people, relationships, and activities over generic keywords
-- Use sample messages to infer what they were ACTUALLY doing, not just word frequency
-- Include people's names in labels when a relationship defines the era (e.g. "The Ash Era")
-- Labels must be short (1-3 words) and instantly recognizable
+RULES:
+- DO NOT repeat the word "Era" in the label (the UI already appends "Era")
+- DO NOT use system/artifact words in labels: image, render, video, screenshot, preview, http
+- DO NOT use labels like "Wordle" or "Conversation Shift" unless evidence is overwhelming
+- PREFER a person-name label if one person clearly dominates the time period
+- PREFER a real activity if repeated phrases/messages clearly suggest a hobby
+- If evidence is genuinely weak, use "Social Shift" as a last resort
+- Labels must be 1-3 words maximum
 - suppress=true ONLY for periods with truly no discernible theme
 - Return ONLY the JSON array, no other text`
 
@@ -327,8 +345,31 @@ Rules:
   console.log('[AI] Topic Eras v2 raw response:', text.slice(0, 300))
 
   try {
-    const result = JSON.parse(text.trim().replace(/^```json?\n?/, '').replace(/\n?```$/, '')) as TopicEraEnrichment[]
+    let result = JSON.parse(text.trim().replace(/^```json?\n?/, '').replace(/\n?```$/, '')) as TopicEraEnrichment[]
     console.log('[AI] Topic Eras v2 parsed:', result.length, 'enrichments')
+
+    // ── Post-processing guardrails ──
+    const LABEL_BLACKLIST = /\b(image|render|rendered|video|preview|http|https|www|screenshot|fullsize|renderedimage|renderedvideo)\b/i
+    result = result.map((e, i) => {
+      if (!e.enrichedLabel) return e
+      // Collapse repeated "Era"
+      let label = e.enrichedLabel.replace(/\bEra\s+Era\b/gi, 'Era').replace(/\bEra$/i, '').trim()
+      // Reject labels with artifact words
+      if (LABEL_BLACKLIST.test(label)) {
+        const ctx = contexts[i] as any
+        const actors = ctx?.primaryActors
+        if (actors?.length > 0) label = actors[0]
+        else label = 'Social Shift'
+      }
+      // Reject empty labels
+      if (!label || label.length < 2) {
+        const ctx = contexts[i] as any
+        const actors = ctx?.primaryActors
+        label = actors?.length > 0 ? actors[0] : 'Social Shift'
+      }
+      return { ...e, enrichedLabel: label }
+    })
+
     setCache('topic-eras-v2', contexts, result)
     return result
   } catch (err) {
