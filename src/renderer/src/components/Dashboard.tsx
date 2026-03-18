@@ -438,8 +438,8 @@ function LoquaciousnessCard({ myAvg, theirAvg, theirName, onShare, span }: {
 type TimelineEvent = { timestamp: string; type: string; description: string; metric?: number }
 type GravityYear = { year: number; dominant: { name: string; count: number; pct: number }; top5: { name: string; count: number; pct: number }[]; clusterContacts: string[]; clusterLabel: string | null }
 
-function SocialGravityCard({ years, chatNameMap, onSelectYear }: {
-  years: GravityYear[]; chatNameMap: Record<string, string>; onSelectYear?: (year: string) => void
+function SocialGravityCard({ years, chatNameMap, onSelectYear, highlightedYears }: {
+  years: GravityYear[]; chatNameMap: Record<string, string>; onSelectYear?: (year: string) => void; highlightedYears?: Set<number>
 }): JSX.Element | null {
   const [hoveredYear, setHoveredYear] = useState<number | null>(null)
   if (years.length < 2) return null
@@ -464,7 +464,7 @@ function SocialGravityCard({ years, chatNameMap, onSelectYear }: {
 
         {years.map((y, i) => {
           const barH = Math.max(8, Math.round((y.dominant.pct / Math.max(maxPct, 1)) * 48))
-          const isHov = hoveredYear === y.year
+          const isHov = hoveredYear === y.year || (highlightedYears?.has(y.year) ?? false)
           return (
             <div key={y.year} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', position: 'relative', cursor: 'pointer', minWidth: 0 }}
               onMouseEnter={() => setHoveredYear(y.year)} onMouseLeave={() => setHoveredYear(null)}
@@ -511,6 +511,89 @@ function SocialGravityCard({ years, chatNameMap, onSelectYear }: {
                   )}
                 </div>
               )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+type LifeChapter = { startYear: number; endYear: number; dominantContact: string; supportingContacts: string[] }
+
+function computeChapters(years: GravityYear[]): LifeChapter[] {
+  if (years.length === 0) return []
+  const chapters: LifeChapter[] = []
+  let cur: { startYear: number; endYear: number; dominant: string; allTop5: Set<string> } = {
+    startYear: years[0].year, endYear: years[0].year,
+    dominant: years[0].dominant.name,
+    allTop5: new Set(years[0].top5.map(c => c.name))
+  }
+
+  for (let i = 1; i < years.length; i++) {
+    const y = years[i]
+    const sameDominant = y.dominant.name === cur.dominant
+    const overlap = y.top5.filter(c => cur.allTop5.has(c.name)).length
+    if (sameDominant || overlap >= 2) {
+      cur.endYear = y.year
+      for (const c of y.top5) cur.allTop5.add(c.name)
+    } else {
+      chapters.push({ startYear: cur.startYear, endYear: cur.endYear, dominantContact: cur.dominant, supportingContacts: [...cur.allTop5].filter(n => n !== cur.dominant).slice(0, 4) })
+      cur = { startYear: y.year, endYear: y.year, dominant: y.dominant.name, allTop5: new Set(y.top5.map(c => c.name)) }
+    }
+  }
+  chapters.push({ startYear: cur.startYear, endYear: cur.endYear, dominantContact: cur.dominant, supportingContacts: [...cur.allTop5].filter(n => n !== cur.dominant).slice(0, 4) })
+  return chapters
+}
+
+function LifeChaptersCard({ chapters, chatNameMap, onHoverChapter }: {
+  chapters: LifeChapter[]; chatNameMap: Record<string, string>; onHoverChapter?: (years: Set<number> | null) => void
+}): JSX.Element | null {
+  if (chapters.length < 2) return null
+
+  const getName = (raw: string) => {
+    const n = (chatNameMap[raw] || raw).replace(/^#/, '').replace(/^\+/, '')
+    const first = n.split(' ')[0]
+    return first.length > 12 ? first.slice(0, 11) + '\u2026' : first
+  }
+  const getFullName = (raw: string) => (chatNameMap[raw] || raw).replace(/^#/, '')
+
+  const yearSet = (ch: LifeChapter): Set<number> => {
+    const s = new Set<number>()
+    for (let y = ch.startYear; y <= ch.endYear; y++) s.add(y)
+    return s
+  }
+
+  return (
+    <div style={{ gridColumn: 'span 12', borderRadius: 18, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', padding: '22px 24px 18px', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}>
+      <div style={{ fontSize: 10, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#E8604A', marginBottom: 4, fontFamily: "'DM Sans'", fontWeight: 600 }}>Life chapters</div>
+      <div style={{ fontSize: 13, color: '#9a948f', marginBottom: 18, fontFamily: "'DM Sans'" }}>The eras that defined your messaging life.</div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+        {chapters.map((ch, i) => {
+          const span = ch.startYear === ch.endYear ? String(ch.startYear) : `${ch.startYear}\u2013${ch.endYear}`
+          const isLast = i === chapters.length - 1
+          return (
+            <div key={i} style={{ display: 'flex', gap: 16, position: 'relative', paddingBottom: isLast ? 0 : 20, cursor: 'default' }}
+              onMouseEnter={() => onHoverChapter?.(yearSet(ch))}
+              onMouseLeave={() => onHoverChapter?.(null)}>
+              {/* Timeline spine */}
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 12, flexShrink: 0, paddingTop: 4 }}>
+                <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#E8604A', flexShrink: 0 }} />
+                {!isLast && <div style={{ width: 1, flex: 1, background: 'rgba(232,96,74,0.15)', marginTop: 4 }} />}
+              </div>
+              {/* Content */}
+              <div style={{ flex: 1, minWidth: 0, paddingTop: 0 }}>
+                <div style={{ fontFamily: "'Unbounded', sans-serif", fontWeight: 200, fontSize: 16, color: '#1A1A1A', lineHeight: 1.3, marginBottom: 2 }}>
+                  {getFullName(ch.dominantContact)} Era
+                </div>
+                <div style={{ fontSize: 12, color: '#E8604A', fontFamily: "'DM Sans'", fontWeight: 500, marginBottom: 4 }}>{span}</div>
+                {ch.supportingContacts.length > 0 && (
+                  <div style={{ fontSize: 12, color: '#9a948f', fontFamily: "'DM Sans'" }}>
+                    with {ch.supportingContacts.slice(0, 3).map(c => getName(c)).join(', ')}
+                  </div>
+                )}
+              </div>
             </div>
           )
         })}
@@ -917,6 +1000,7 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
   useEffect(() => { window.api.getMessagingNetwork().then(setNetworkData).catch(() => {}) }, [])
   const [gravityData, setGravityData] = useState<GravityYear[] | null>(null)
   useEffect(() => { window.api.getSocialGravity().then(r => setGravityData(r.years)).catch(() => {}) }, [])
+  const [chapterHighlight, setChapterHighlight] = useState<Set<number> | null>(null)
 
   const topFunny = byLaughsReceived[0]
   const topChat = byMessages[0]
@@ -1430,9 +1514,12 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
           )
         })()}
 
-        {/* ── TIER 1.5: SOCIAL GRAVITY ── */}
+        {/* ── TIER 1.5: SOCIAL GRAVITY + LIFE CHAPTERS ── */}
         {gravityData && gravityData.length >= 2 && (
-          <SocialGravityCard years={gravityData} chatNameMap={chatNameMap} onSelectYear={(y) => onSurfaceChange?.('relationship')} />
+          <SocialGravityCard years={gravityData} chatNameMap={chatNameMap} onSelectYear={(y) => onSurfaceChange?.('relationship')} highlightedYears={chapterHighlight ?? undefined} />
+        )}
+        {gravityData && gravityData.length >= 2 && (
+          <LifeChaptersCard chapters={computeChapters(gravityData)} chatNameMap={chatNameMap} onHoverChapter={setChapterHighlight} />
         )}
 
         {/* ── TIER 2: IDENTITY SPECTRUMS ── */}
