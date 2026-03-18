@@ -448,6 +448,7 @@ function SocialGravityCard({ individualYears, groupYears, chatNameMap, onSelectY
 
   const getName = (raw: string) => {
     const n = (chatNameMap[raw] || raw).replace(/^#/, '').replace(/^\+/, '')
+    if (mode === 'groups') return n.length > 14 ? n.slice(0, 13) + '\u2026' : n
     const first = n.split(' ')[0]
     return first.length > 10 ? first.slice(0, 9) + '\u2026' : first
   }
@@ -565,6 +566,7 @@ function LifeChaptersCard({ personChapters, groupChapters, chatNameMap, onHoverC
 
   const getName = (raw: string) => {
     const n = (chatNameMap[raw] || raw).replace(/^#/, '').replace(/^\+/, '')
+    if (mode === 'groups') return n.length > 18 ? n.slice(0, 17) + '\u2026' : n
     const first = n.split(' ')[0]
     return first.length > 12 ? first.slice(0, 11) + '\u2026' : first
   }

@@ -1214,6 +1214,48 @@ export function getSocialGravity(): { individualYears: SocialGravityYear[]; grou
       }
 
       // ── Build group years ──
+      // Resolve group names: display_name > derived from top participants
+      const grpMsgByHandle = chatDb.prepare(`
+        SELECT c.chat_identifier as chat_id, h.id as handle_id, COUNT(*) as cnt
+        FROM message m
+        JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
+        JOIN chat c ON cmj.chat_id = c.ROWID
+        LEFT JOIN handle h ON m.handle_id = h.ROWID
+        WHERE (SELECT COUNT(DISTINCT chj.handle_id) FROM chat_handle_join chj WHERE chj.chat_id = c.ROWID) > 1
+          AND m.is_from_me = 0 AND h.id IS NOT NULL
+        GROUP BY c.chat_identifier, h.id
+      `).all() as { chat_id: string; handle_id: string; cnt: number }[]
+
+      const chatTopParticipants = new Map<string, string[]>()
+      {
+        const chatHandleCounts = new Map<string, { handle: string; cnt: number }[]>()
+        for (const r of grpMsgByHandle) {
+          if (!chatHandleCounts.has(r.chat_id)) chatHandleCounts.set(r.chat_id, [])
+          chatHandleCounts.get(r.chat_id)!.push({ handle: r.handle_id, cnt: r.cnt })
+        }
+        for (const [chatId, handles] of chatHandleCounts) {
+          handles.sort((a, b) => b.cnt - a.cnt)
+          chatTopParticipants.set(chatId, handles.slice(0, 3).map(h => h.handle))
+        }
+      }
+
+      const resolveGroupName = (chatId: string): string => {
+        const display = chatNameDb.get(chatId)
+        if (display && display.length > 1 && !display.startsWith('+')) return display
+        const participants = chatTopParticipants.get(chatId)
+        if (participants && participants.length > 0) {
+          return participants.length <= 2
+            ? participants.join(' + ')
+            : participants.slice(0, 3).join(', ')
+        }
+        const members = chatToHandles.get(chatId)
+        if (members && members.size > 0) {
+          const arr = [...members].slice(0, 3)
+          return arr.length <= 2 ? arr.join(' + ') : arr.join(', ')
+        }
+        return chatId
+      }
+
       const grpMap = new Map<string, number>()
       for (const r of grpRecv) grpMap.set(`${r.year}|||${r.chat_id}`, (grpMap.get(`${r.year}|||${r.chat_id}`) || 0) + r.cnt)
       for (const r of grpSent) grpMap.set(`${r.year}|||${r.chat_id}`, (grpMap.get(`${r.year}|||${r.chat_id}`) || 0) + r.cnt)
@@ -1229,12 +1271,13 @@ export function getSocialGravity(): { individualYears: SocialGravityYear[]; grou
         chats.sort((a, b) => b.cnt - a.cnt)
         const total = chats.reduce((s, c) => s + c.cnt, 0)
         if (total < 10) continue
-        const top5 = chats.slice(0, 5).map(c => ({ name: c.handle, count: c.cnt, pct: Math.round((c.cnt / total) * 100) }))
+        const top5 = chats.slice(0, 5).map(c => ({ name: resolveGroupName(c.handle), count: c.cnt, pct: Math.round((c.cnt / total) * 100) }))
         const dominant = top5[0]
-        // For groups, cluster = members of the dominant group chat
-        const members = chatToHandles.get(dominant.name)
-        const clusterContacts = members ? [...members].slice(0, 5) : []
-        const clusterLabel = chatNameDb.get(dominant.name) || null
+        // For groups, cluster = participants of the dominant group chat
+        const rawDomId = chats[0].handle
+        const members = chatTopParticipants.get(rawDomId) || (chatToHandles.has(rawDomId) ? [...chatToHandles.get(rawDomId)!].slice(0, 5) : [])
+        const clusterContacts = members.slice(0, 5)
+        const clusterLabel = chatNameDb.get(rawDomId) || null
         groupYears.push({ year, dominant, top5, clusterContacts, clusterLabel })
       }
     } finally {
