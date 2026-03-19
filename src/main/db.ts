@@ -2699,6 +2699,139 @@ export function getWordOrigins(chatName?: string, limit = 5): { word: string; fi
   } catch { return [] }
 }
 
+export interface RelationshipDynamics {
+  myTotalWords: number; theirTotalWords: number; effortRatio: number
+  myQuestions: number; theirQuestions: number
+  myPositiveRate: number; theirPositiveRate: number; myNegativeRate: number; theirNegativeRate: number
+  myAvgReplyMinutes: number; theirAvgReplyMinutes: number
+  monthlyVolume: { month: string; count: number }[]; trajectoryDirection: 'growing' | 'declining' | 'stable'
+  myInitiations: number; totalDays: number
+  marathonDays: number; silentGaps: number; avgDailyWhenActive: number
+  lateNightMessages: number; totalLateNightAcrossAll: number; lateNightExclusivity: number
+  myMediaCount: number; theirMediaCount: number
+  heatByHour: { hour: number; avgHeat: number }[]; peakHeatHour: number
+}
+
+export function getRelationshipDynamics(chatIdentifier: string): RelationshipDynamics {
+  const result: RelationshipDynamics = {
+    myTotalWords: 0, theirTotalWords: 0, effortRatio: 0.5,
+    myQuestions: 0, theirQuestions: 0,
+    myPositiveRate: 0, theirPositiveRate: 0, myNegativeRate: 0, theirNegativeRate: 0,
+    myAvgReplyMinutes: 0, theirAvgReplyMinutes: 0,
+    monthlyVolume: [], trajectoryDirection: 'stable',
+    myInitiations: 0, totalDays: 0,
+    marathonDays: 0, silentGaps: 0, avgDailyWhenActive: 0,
+    lateNightMessages: 0, totalLateNightAcrossAll: 0, lateNightExclusivity: 0,
+    myMediaCount: 0, theirMediaCount: 0,
+    heatByHour: [], peakHeatHour: 0
+  }
+
+  const d = initDb()
+
+  // 1-3: Word count, questions, sentiment per side from message_signals
+  try {
+    const sideRows = d.prepare(`SELECT is_from_me, SUM(word_count) as total_words, SUM(has_question) as questions, SUM(CASE WHEN sentiment > 0 THEN 1 ELSE 0 END) as pos, SUM(CASE WHEN sentiment < 0 THEN 1 ELSE 0 END) as neg, COUNT(*) as total FROM message_signals WHERE chat_identifier = ? GROUP BY is_from_me`).all(chatIdentifier) as { is_from_me: number; total_words: number; questions: number; pos: number; neg: number; total: number }[]
+    for (const r of sideRows) {
+      if (r.is_from_me === 1) {
+        result.myTotalWords = r.total_words; result.myQuestions = r.questions
+        result.myPositiveRate = r.total > 0 ? Math.round((r.pos / r.total) * 100) : 0
+        result.myNegativeRate = r.total > 0 ? Math.round((r.neg / r.total) * 100) : 0
+      } else {
+        result.theirTotalWords = r.total_words; result.theirQuestions = r.questions
+        result.theirPositiveRate = r.total > 0 ? Math.round((r.pos / r.total) * 100) : 0
+        result.theirNegativeRate = r.total > 0 ? Math.round((r.neg / r.total) * 100) : 0
+      }
+    }
+    const totalW = result.myTotalWords + result.theirTotalWords
+    result.effortRatio = totalW > 0 ? result.myTotalWords / totalW : 0.5
+  } catch { /* ignore */ }
+
+  // 4: Response time from chat.db
+  try {
+    const { homedir: hd } = require('os'); const { join: jn } = require('path'); const { existsSync: ex } = require('fs')
+    const chatDbPath = jn(hd(), 'Library/Messages/chat.db')
+    if (ex(chatDbPath)) {
+      const chatDb = new Database(chatDbPath, { readonly: true })
+      const msgs = chatDb.prepare(`SELECT m.is_from_me, m.date FROM message m JOIN chat_message_join cmj ON m.ROWID=cmj.message_id JOIN chat c ON cmj.chat_id=c.ROWID WHERE c.chat_identifier=? AND m.text IS NOT NULL ORDER BY m.date DESC LIMIT 500`).all(chatIdentifier) as { is_from_me: number; date: number }[]
+      const NS = 1000000000
+      const myGaps: number[] = [], theirGaps: number[] = []
+      for (let i = msgs.length - 2; i >= 0; i--) {
+        if (msgs[i].is_from_me !== msgs[i + 1].is_from_me) {
+          const diffMin = (msgs[i].date - msgs[i + 1].date) / NS / 60
+          if (diffMin > 0 && diffMin < 1440) {
+            if (msgs[i].is_from_me === 1) myGaps.push(diffMin)
+            else theirGaps.push(diffMin)
+          }
+        }
+      }
+      result.myAvgReplyMinutes = myGaps.length > 0 ? Math.round(myGaps.reduce((a, b) => a + b, 0) / myGaps.length) : 0
+      result.theirAvgReplyMinutes = theirGaps.length > 0 ? Math.round(theirGaps.reduce((a, b) => a + b, 0) / theirGaps.length) : 0
+      chatDb.close()
+    }
+  } catch { /* ignore */ }
+
+  // 5: Volume trajectory (last 6 months)
+  try {
+    result.monthlyVolume = d.prepare(`SELECT strftime('%Y-%m', sent_at) as month, COUNT(*) as count FROM message_signals WHERE chat_identifier = ? GROUP BY month ORDER BY month DESC LIMIT 6`).all(chatIdentifier) as { month: string; count: number }[]
+    if (result.monthlyVolume.length >= 4) {
+      const recent = result.monthlyVolume.slice(0, 2).reduce((s, m) => s + m.count, 0) / 2
+      const earlier = result.monthlyVolume.slice(3).reduce((s, m) => s + m.count, 0) / Math.max(result.monthlyVolume.length - 3, 1)
+      if (earlier > 0) {
+        const change = (recent - earlier) / earlier
+        result.trajectoryDirection = change > 0.2 ? 'growing' : change < -0.2 ? 'declining' : 'stable'
+      }
+    }
+  } catch { /* ignore */ }
+
+  // 6: Initiation
+  try {
+    const initRow = d.prepare(`SELECT COUNT(*) as cnt FROM message_signals WHERE chat_identifier = ? AND is_from_me = 1`).get(chatIdentifier) as { cnt: number }
+    result.myInitiations = initRow?.cnt || 0
+    const daysRow = d.prepare(`SELECT COUNT(DISTINCT date(sent_at)) as cnt FROM message_signals WHERE chat_identifier = ?`).get(chatIdentifier) as { cnt: number }
+    result.totalDays = daysRow?.cnt || 0
+  } catch { /* ignore */ }
+
+  // 7: Burst pattern
+  try {
+    const dailyCounts = d.prepare(`SELECT date(sent_at) as d, COUNT(*) as cnt FROM message_signals WHERE chat_identifier = ? GROUP BY d ORDER BY d`).all(chatIdentifier) as { d: string; cnt: number }[]
+    result.marathonDays = dailyCounts.filter(r => r.cnt >= 100).length
+    const activeDays = dailyCounts.filter(r => r.cnt > 0)
+    result.avgDailyWhenActive = activeDays.length > 0 ? Math.round(activeDays.reduce((s, r) => s + r.cnt, 0) / activeDays.length) : 0
+    let gaps = 0
+    for (let i = 1; i < dailyCounts.length; i++) {
+      const diff = (new Date(dailyCounts[i].d).getTime() - new Date(dailyCounts[i - 1].d).getTime()) / 86400000
+      if (diff >= 3) gaps++
+    }
+    result.silentGaps = gaps
+  } catch { /* ignore */ }
+
+  // 8: Late night exclusivity
+  try {
+    const lnThis = (d.prepare(`SELECT COUNT(*) as cnt FROM message_signals WHERE chat_identifier = ? AND CAST(strftime('%H', sent_at) AS INTEGER) >= 23`).get(chatIdentifier) as { cnt: number }).cnt
+    const lnAll = (d.prepare(`SELECT COUNT(*) as cnt FROM message_signals WHERE CAST(strftime('%H', sent_at) AS INTEGER) >= 23`).get() as { cnt: number }).cnt
+    result.lateNightMessages = lnThis
+    result.totalLateNightAcrossAll = lnAll
+    result.lateNightExclusivity = lnAll > 0 ? Math.round((lnThis / lnAll) * 100) : 0
+  } catch { /* ignore */ }
+
+  // 9: Media sharing
+  try {
+    const mediaRow = d.prepare(`SELECT SUM(CASE WHEN sender_handle IS NULL OR sender_handle = '' THEN 1 ELSE 0 END) as my_media, SUM(CASE WHEN sender_handle IS NOT NULL AND sender_handle != '' THEN 1 ELSE 0 END) as their_media FROM attachments WHERE chat_name = ? AND (is_image = 1 OR is_video = 1)`).get(chatIdentifier) as { my_media: number; their_media: number } | undefined
+    if (mediaRow) { result.myMediaCount = mediaRow.my_media || 0; result.theirMediaCount = mediaRow.their_media || 0 }
+  } catch { /* ignore */ }
+
+  // 10: Heat by hour
+  try {
+    result.heatByHour = d.prepare(`SELECT CAST(strftime('%H', sent_at) AS INTEGER) as hour, ROUND(AVG(heat_score), 2) as avgHeat FROM message_signals WHERE chat_identifier = ? AND heat_score > 0 GROUP BY hour ORDER BY hour`).all(chatIdentifier) as { hour: number; avgHeat: number }[]
+    if (result.heatByHour.length > 0) {
+      const peak = result.heatByHour.reduce((best, h) => h.avgHeat > best.avgHeat ? h : best, result.heatByHour[0])
+      result.peakHeatHour = peak.hour
+    }
+  } catch { /* ignore */ }
+
+  return result
+}
+
 export function getSignificantPhotos(chatIdentifier: string, limit = 5): { id: number; filename: string; thumbnail_path: string; created_at: string; original_path: string }[] {
   const d = initDb()
   try {

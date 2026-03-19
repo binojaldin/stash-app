@@ -1453,6 +1453,13 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
   const formatTier = (tier: string): string => tier === 'inner_circle' ? 'Inner Circle' : tier.charAt(0).toUpperCase() + tier.slice(1)
   const tierColor = (tier: string): string => tier === 'inner_circle' ? '#2EC4A0' : tier === 'close' ? 'rgba(46,196,160,0.6)' : tier === 'regular' ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.3)'
 
+  // ── Relationship dynamics (must be before early return) ──
+  const [dynamics, setDynamics] = useState<{ myTotalWords: number; theirTotalWords: number; effortRatio: number; myQuestions: number; theirQuestions: number; myPositiveRate: number; theirPositiveRate: number; myNegativeRate: number; theirNegativeRate: number; myAvgReplyMinutes: number; theirAvgReplyMinutes: number; monthlyVolume: { month: string; count: number }[]; trajectoryDirection: string; myInitiations: number; totalDays: number; marathonDays: number; silentGaps: number; avgDailyWhenActive: number; lateNightMessages: number; totalLateNightAcrossAll: number; lateNightExclusivity: number; myMediaCount: number; theirMediaCount: number; heatByHour: { hour: number; avgHeat: number }[]; peakHeatHour: number } | null>(null)
+  useEffect(() => {
+    if (!scopedPerson) { setDynamics(null); return }
+    window.api.getRelationshipDynamics(scopedPerson).then(setDynamics).catch(() => {})
+  }, [scopedPerson])
+
   // ── Relationship hero AI state (must be before early return) ──
   const [heroPhoto, setHeroPhoto] = useState<{ id: number; thumbnail_path: string; created_at: string; filename: string } | null>(null)
   const [heroPhotoUrl, setHeroPhotoUrl] = useState<string | null>(null)
@@ -1843,6 +1850,147 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
                     : ''}
                   accent="#2EC4A0" span={6} />
               )}
+              {/* ── DYNAMICS SECTION ── */}
+              {dynamics && (() => {
+                const dy = dynamics
+                const cards: JSX.Element[] = []
+                const SplitBar = ({ leftPct, leftLabel, rightLabel, leftColor, rightColor }: { leftPct: number; leftLabel: string; rightLabel: string; leftColor: string; rightColor: string }) => (
+                  <div style={{ display: 'flex', borderRadius: 6, overflow: 'hidden', height: 24, marginBottom: 8 }}>
+                    <div style={{ width: `${Math.max(leftPct, 5)}%`, background: leftColor, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, color: '#fff', fontWeight: 600 }}>{leftLabel}</div>
+                    <div style={{ width: `${Math.max(100 - leftPct, 5)}%`, background: rightColor, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, color: '#fff', fontWeight: 600 }}>{rightLabel}</div>
+                  </div>
+                )
+
+                // 1. Who carries it
+                if (dy.effortRatio > 0.6 || dy.effortRatio < 0.4) {
+                  const youPct = Math.round(dy.effortRatio * 100)
+                  cards.push(
+                    <div key="effort" style={{ gridColumn: 'span 6', ...tileBase }}>
+                      <div style={{ fontSize: 10, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#E8604A', marginBottom: 8, fontWeight: 600 }}>Who carries it</div>
+                      <SplitBar leftPct={youPct} leftLabel={`You ${youPct}%`} rightLabel={`${firstName} ${100 - youPct}%`} leftColor="#E8604A" rightColor="#2EC4A0" />
+                      <div style={{ fontSize: 12, color: '#6f6a65' }}>{dy.effortRatio > 0.6 ? "You're doing most of the heavy lifting." : `${firstName} puts in more effort.`}</div>
+                    </div>
+                  )
+                }
+
+                // 2. Question asymmetry
+                const qTotal = dy.myQuestions + dy.theirQuestions
+                if (qTotal > 20 && (dy.myQuestions > dy.theirQuestions * 2 || dy.theirQuestions > dy.myQuestions * 2)) {
+                  const ratio = dy.theirQuestions > dy.myQuestions ? (dy.theirQuestions / Math.max(dy.myQuestions, 1)).toFixed(1) : (dy.myQuestions / Math.max(dy.theirQuestions, 1)).toFixed(1)
+                  cards.push(
+                    <div key="questions" style={{ gridColumn: 'span 4', ...tileBase }}>
+                      <div style={{ fontSize: 10, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#2EC4A0', marginBottom: 8, fontWeight: 600 }}>The Interviewer</div>
+                      <div style={{ fontSize: 12, color: '#6f6a65', marginBottom: 4 }}>You: {dy.myQuestions} questions · {firstName}: {dy.theirQuestions}</div>
+                      <div style={{ fontSize: 12, color: '#1A1A1A', fontWeight: 500 }}>{dy.theirQuestions > dy.myQuestions ? `${firstName} asks ${ratio}x more. You're the storyteller.` : `You ask ${ratio}x more questions.`}</div>
+                    </div>
+                  )
+                }
+
+                // 3. Response time
+                if (dy.myAvgReplyMinutes > 0 && dy.theirAvgReplyMinutes > 0 && (dy.myAvgReplyMinutes > dy.theirAvgReplyMinutes * 2 || dy.theirAvgReplyMinutes > dy.myAvgReplyMinutes * 2)) {
+                  const faster = dy.myAvgReplyMinutes < dy.theirAvgReplyMinutes ? 'You' : firstName
+                  const ratio = dy.myAvgReplyMinutes < dy.theirAvgReplyMinutes ? (dy.theirAvgReplyMinutes / dy.myAvgReplyMinutes).toFixed(1) : (dy.myAvgReplyMinutes / dy.theirAvgReplyMinutes).toFixed(1)
+                  cards.push(
+                    <div key="reply" style={{ gridColumn: 'span 4', ...tileBase }}>
+                      <div style={{ fontSize: 10, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#2EC4A0', marginBottom: 8, fontWeight: 600 }}>Who replies faster</div>
+                      <div style={{ fontSize: 12, color: '#6f6a65', marginBottom: 4 }}>You: avg {dy.myAvgReplyMinutes} min · {firstName}: avg {dy.theirAvgReplyMinutes} min</div>
+                      <div style={{ fontSize: 12, color: '#1A1A1A', fontWeight: 500 }}>{faster} respond{faster === 'You' ? '' : 's'} {ratio}x faster.</div>
+                    </div>
+                  )
+                }
+
+                // 5. Volume trajectory (always show if data)
+                if (dy.monthlyVolume.length >= 3) {
+                  const vols = [...dy.monthlyVolume].reverse()
+                  const maxVol = Math.max(...vols.map(m => m.count), 1)
+                  const arrow = dy.trajectoryDirection === 'growing' ? '📈' : dy.trajectoryDirection === 'declining' ? '📉' : '➡️'
+                  const desc = dy.trajectoryDirection === 'growing' ? 'Growing — you two are talking more.' : dy.trajectoryDirection === 'declining' ? 'Declining — conversations are slowing.' : 'Steady pace.'
+                  cards.push(
+                    <div key="trajectory" style={{ gridColumn: 'span 6', ...tileBase }}>
+                      <div style={{ fontSize: 10, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#2EC4A0', marginBottom: 8, fontWeight: 600 }}>{arrow} Trajectory</div>
+                      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 3, height: 40, marginBottom: 8 }}>
+                        {vols.map((m, i) => <div key={i} style={{ flex: 1, background: '#2EC4A0', borderRadius: 2, height: `${Math.max((m.count / maxVol) * 100, 4)}%`, minHeight: 2 }} />)}
+                      </div>
+                      <div style={{ fontSize: 12, color: '#1A1A1A', fontWeight: 500 }}>{desc}</div>
+                    </div>
+                  )
+                }
+
+                // 6. Burst pattern
+                if (dy.marathonDays > 3 || dy.silentGaps > 3) {
+                  cards.push(
+                    <div key="burst" style={{ gridColumn: 'span 4', ...tileBase }}>
+                      <div style={{ fontSize: 10, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#E8604A', marginBottom: 8, fontWeight: 600 }}>Your rhythm</div>
+                      <div style={{ fontSize: 12, color: '#6f6a65', marginBottom: 4 }}>{dy.marathonDays} marathon day{dy.marathonDays !== 1 ? 's' : ''} · {dy.silentGaps} silent gap{dy.silentGaps !== 1 ? 's' : ''}</div>
+                      <div style={{ fontSize: 12, color: '#6f6a65', marginBottom: 4 }}>Avg: {dy.avgDailyWhenActive} msgs/day when active</div>
+                      <div style={{ fontSize: 12, color: '#1A1A1A', fontWeight: 500 }}>You talk in bursts. Intense then quiet.</div>
+                    </div>
+                  )
+                }
+
+                // 7. Late night exclusivity
+                if (dy.lateNightExclusivity > 15) {
+                  cards.push(
+                    <div key="latenight" style={{ gridColumn: 'span 4', ...tileBase, background: '#1E2826', border: 'none' }}>
+                      <div style={{ fontSize: 10, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#7F77DD', marginBottom: 8, fontWeight: 600 }}>After midnight</div>
+                      <div style={{ fontFamily: "'Unbounded', sans-serif", fontWeight: 200, fontSize: 24, color: '#7F77DD', marginBottom: 6 }}>{dy.lateNightExclusivity}%</div>
+                      <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)' }}>of your late-night texting goes to {firstName}.</div>
+                    </div>
+                  )
+                }
+
+                // 8. Media sharing
+                const totalMedia = dy.myMediaCount + dy.theirMediaCount
+                const mediaRatio = totalMedia > 0 ? Math.max(dy.myMediaCount, dy.theirMediaCount) / Math.max(Math.min(dy.myMediaCount, dy.theirMediaCount), 1) : 0
+                if (totalMedia > 20 && mediaRatio > 1.5) {
+                  const more = dy.theirMediaCount > dy.myMediaCount ? firstName : 'You'
+                  cards.push(
+                    <div key="media" style={{ gridColumn: 'span 4', ...tileBase }}>
+                      <div style={{ fontSize: 10, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#E8604A', marginBottom: 8, fontWeight: 600 }}>Who sends more</div>
+                      <div style={{ fontSize: 12, color: '#6f6a65', marginBottom: 4 }}>You: {dy.myMediaCount} · {firstName}: {dy.theirMediaCount}</div>
+                      <div style={{ fontSize: 12, color: '#1A1A1A', fontWeight: 500 }}>{more} share{more === 'You' ? '' : 's'} {mediaRatio.toFixed(1)}x more media.</div>
+                    </div>
+                  )
+                }
+
+                // 9. Emotional temperature
+                if (Math.abs(dy.myPositiveRate - dy.theirPositiveRate) > 5 || Math.abs(dy.myNegativeRate - dy.theirNegativeRate) > 5) {
+                  const warmer = dy.myPositiveRate > dy.theirPositiveRate ? 'You' : firstName
+                  cards.push(
+                    <div key="emotion" style={{ gridColumn: 'span 4', ...tileBase }}>
+                      <div style={{ fontSize: 10, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#2EC4A0', marginBottom: 8, fontWeight: 600 }}>Emotional temperature</div>
+                      <div style={{ fontSize: 11, color: '#6f6a65', marginBottom: 2 }}>You: {dy.myPositiveRate}% positive · {dy.myNegativeRate}% negative</div>
+                      <div style={{ fontSize: 11, color: '#6f6a65', marginBottom: 6 }}>{firstName}: {dy.theirPositiveRate}% positive · {dy.theirNegativeRate}% negative</div>
+                      <div style={{ fontSize: 12, color: '#1A1A1A', fontWeight: 500 }}>{warmer}{warmer === 'You' ? "'re" : ' is'} the warmer one.</div>
+                    </div>
+                  )
+                }
+
+                // 10. Heat clock
+                if (dy.heatByHour.length > 0 && dy.heatByHour.some(h => h.avgHeat > 2)) {
+                  const hr = dy.peakHeatHour
+                  const display = hr === 0 ? '12am' : hr < 12 ? `${hr}am` : hr === 12 ? '12pm' : `${hr - 12}pm`
+                  cards.push(
+                    <div key="heatclock" style={{ gridColumn: 'span 4', ...tileBase }}>
+                      <div style={{ fontSize: 10, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#E8604A', marginBottom: 8, fontWeight: 600 }}>When it gets intense</div>
+                      <div style={{ fontFamily: "'Unbounded', sans-serif", fontWeight: 200, fontSize: 24, color: '#E8604A', marginBottom: 6 }}>{display}</div>
+                      <div style={{ fontSize: 12, color: '#6f6a65' }}>Your most intense exchanges happen {hr >= 21 || hr < 5 ? 'late at night' : hr < 12 ? 'in the morning' : 'in the afternoon'}.</div>
+                    </div>
+                  )
+                }
+
+                if (cards.length === 0) return null
+                return (
+                  <>
+                    <div style={{ gridColumn: 'span 12', marginTop: 8 }}>
+                      <div style={{ fontSize: 10, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#2EC4A0', marginBottom: 4, fontFamily: "'DM Sans'", fontWeight: 600 }}>Dynamics</div>
+                      <div style={{ fontSize: 13, color: '#9a948f', marginBottom: 12, fontFamily: "'DM Sans'" }}>Patterns and power dynamics in this relationship.</div>
+                    </div>
+                    {cards}
+                  </>
+                )
+              })()}
+
               {vocabStats && vocabStats.theirAvgWordsPerMessage > 0 && (
                 <LoquaciousnessCard myAvg={vocabStats.avgWordsPerMessage} theirAvg={vocabStats.theirAvgWordsPerMessage} theirName={firstName}
                   onShare={() => generateShareCard('Word for word', String(vocabStats.avgWordsPerMessage), 'words per message', vocabStats.avgWordsPerMessage > vocabStats.theirAvgWordsPerMessage ? "Doesn't use 9 words when 47 will do." : `${firstName} doesn't use 9 words when 47 will do.`, firstName)} span={6} />

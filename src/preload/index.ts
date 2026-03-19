@@ -169,6 +169,18 @@ const api = {
   getAnalysisProgress: (): Promise<{
     totalMessages: number; analyzedMessages: number; lastRunAt: string | null; isRunning: boolean
   }> => ipcRenderer.invoke('get-analysis-progress'),
+  getRelationshipDynamics: (chatIdentifier: string): Promise<{
+    myTotalWords: number; theirTotalWords: number; effortRatio: number
+    myQuestions: number; theirQuestions: number
+    myPositiveRate: number; theirPositiveRate: number; myNegativeRate: number; theirNegativeRate: number
+    myAvgReplyMinutes: number; theirAvgReplyMinutes: number
+    monthlyVolume: { month: string; count: number }[]; trajectoryDirection: string
+    myInitiations: number; totalDays: number
+    marathonDays: number; silentGaps: number; avgDailyWhenActive: number
+    lateNightMessages: number; totalLateNightAcrossAll: number; lateNightExclusivity: number
+    myMediaCount: number; theirMediaCount: number
+    heatByHour: { hour: number; avgHeat: number }[]; peakHeatHour: number
+  }> => ipcRenderer.invoke('get-relationship-dynamics', chatIdentifier),
   getSignificantPhotos: (chatIdentifier: string): Promise<{ id: number; filename: string; thumbnail_path: string; created_at: string; original_path: string }[]> => ipcRenderer.invoke('get-significant-photos', chatIdentifier),
   getMessageSamples: (chatIdentifier: string): Promise<{
     recent: { body: string; is_from_me: number; sent_at: string }[]
