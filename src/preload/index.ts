@@ -169,6 +169,14 @@ const api = {
   getAnalysisProgress: (): Promise<{
     totalMessages: number; analyzedMessages: number; lastRunAt: string | null; isRunning: boolean
   }> => ipcRenderer.invoke('get-analysis-progress'),
+  getMessageSamples: (chatIdentifier: string): Promise<{
+    recent: { body: string; is_from_me: number; sent_at: string }[]
+    old: { body: string; is_from_me: number; sent_at: string }[]
+  }> => ipcRenderer.invoke('get-message-samples', chatIdentifier),
+  getAttachmentContext: (attachmentId: number): Promise<{ body: string; is_from_me: number; sent_at: string }[]> => ipcRenderer.invoke('get-attachment-context', attachmentId),
+  summarizeConversation: (chatIdentifier: string, contactName: string): Promise<{ summary: string; topics: string[]; tone: string } | null> => ipcRenderer.invoke('summarize-conversation', chatIdentifier, contactName),
+  generateRelationshipNarrative: (chatIdentifier: string, contactName: string, stats: Record<string, unknown>): Promise<{ narrative: string; headline: string } | null> => ipcRenderer.invoke('generate-relationship-narrative', chatIdentifier, contactName, stats),
+  generateAttachmentCaption: (chatIdentifier: string, contactName: string, attachmentInfo: Record<string, unknown>, surroundingMessages: Record<string, unknown>[]): Promise<{ caption: string } | null> => ipcRenderer.invoke('generate-attachment-caption', chatIdentifier, contactName, attachmentInfo, surroundingMessages),
   getClosenessScores: (chatIdentifier?: string): Promise<{
     chat_identifier: string; total_score: number; tier: string
     volume_score: number; balance_score: number; recency_score: number

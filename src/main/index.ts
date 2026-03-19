@@ -2,13 +2,13 @@ import { app, shell, BrowserWindow, ipcMain, dialog, Menu, Tray, nativeImage, po
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import { checkFullDiskAccess } from './messagesReader'
-import { initDb, searchAttachments, getStats, getFastStats, getTodayInHistory, getUsageStats, getMessagingNetwork, getAttachmentById, closeDb, hideChat, getHiddenChats, getConversationStats, getRelationshipTimeline, getSocialGravity, getTopicEras, getTopicEraContext, getMemoryMoments, searchMessagesAggregated, updateReactionCounts, invalidateLaughCache, searchMessages, getMessageIndexStatus, getVocabStats, getWordOrigins, detectSignalQuery, executeSearchIntent } from './db'
+import { initDb, searchAttachments, getStats, getFastStats, getTodayInHistory, getUsageStats, getMessagingNetwork, getAttachmentById, closeDb, hideChat, getHiddenChats, getConversationStats, getRelationshipTimeline, getSocialGravity, getTopicEras, getTopicEraContext, getMemoryMoments, searchMessagesAggregated, updateReactionCounts, invalidateLaughCache, searchMessages, getMessageIndexStatus, getVocabStats, getWordOrigins, detectSignalQuery, executeSearchIntent, getMessageSamples, getAttachmentContext } from './db'
 import { startIndexing, getIndexingProgress, fetchChatSummaries, saveChatPriorities, getSavedPriorityChats, resetIndexing, recoverAttachment, resolveNamesInBackground } from './indexer'
 import { compileContactsHelper, resolveContact, resolveContactsBatch } from './contacts'
 import { generateWrapped, getAvailableYears } from './wrapped'
 import { runMessageAnalysis, getConversationSignals, getAnalysisProgress } from './messageAnalysis'
 import { computeClosenessScores, getClosenessScores, getClosenessRank } from './closenessRank'
-import { setApiKey, getAIStatus, searchConversationsAI, enrichTopicEras, enrichTopicErasV2, enrichMemoryMoments, interpretSearchQuery } from './ai'
+import { setApiKey, getAIStatus, searchConversationsAI, enrichTopicEras, enrichTopicErasV2, enrichMemoryMoments, interpretSearchQuery, summarizeConversation, generateRelationshipNarrative, generateAttachmentCaption } from './ai'
 import type { TopicEraSummaryInput, TopicEraContextInput, MemoryMomentSummaryInput } from './ai'
 import { getCachedAnalytics, setCachedAnalytics, getMessageCountSignal, yieldEventLoop, invalidateSignalCache } from './analyticsCache'
 import { Worker } from 'worker_threads'
@@ -598,6 +598,18 @@ function setupIpc(): void {
   ipcMain.handle('get-hidden-chats', () => getHiddenChats())
   ipcMain.handle('get-conversation-signals', (_event, chatIdentifier?: string) => getConversationSignals(chatIdentifier))
   ipcMain.handle('get-analysis-progress', () => getAnalysisProgress())
+  ipcMain.handle('get-message-samples', (_event, chatIdentifier: string) => getMessageSamples(chatIdentifier))
+  ipcMain.handle('get-attachment-context', (_event, attachmentId: number) => getAttachmentContext(attachmentId))
+  ipcMain.handle('summarize-conversation', async (_event, chatIdentifier: string, contactName: string) => {
+    const samples = getMessageSamples(chatIdentifier)
+    return summarizeConversation(chatIdentifier, contactName, samples)
+  })
+  ipcMain.handle('generate-relationship-narrative', async (_event, chatIdentifier: string, contactName: string, stats: unknown) =>
+    generateRelationshipNarrative(chatIdentifier, contactName, stats as Parameters<typeof generateRelationshipNarrative>[2])
+  )
+  ipcMain.handle('generate-attachment-caption', async (_event, chatIdentifier: string, contactName: string, attachmentInfo: unknown, surroundingMessages: unknown[]) =>
+    generateAttachmentCaption(chatIdentifier, contactName, attachmentInfo as Parameters<typeof generateAttachmentCaption>[2], surroundingMessages as Parameters<typeof generateAttachmentCaption>[3])
+  )
   ipcMain.handle('get-closeness-scores', (_event, chatIdentifier?: string) => getClosenessScores(chatIdentifier))
   ipcMain.handle('get-closeness-rank', (_event, chatIdentifier: string) => getClosenessRank(chatIdentifier))
   ipcMain.handle('generate-wrapped', (_event, year: number) => generateWrapped(year))

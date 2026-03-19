@@ -478,6 +478,88 @@ Return ONLY the JSON object, no other text.`
   }
 }
 
+// ── Conversation Summarization ──
+
+export async function summarizeConversation(chatIdentifier: string, contactName: string, messages: { recent: { body: string; is_from_me: number; sent_at: string }[]; old: { body: string; is_from_me: number; sent_at: string }[] }): Promise<{ summary: string; topics: string[]; tone: string } | null> {
+  if (!getAIStatus().configured) return null
+  const cacheKey = `convo-summary:${chatIdentifier}:${messages.recent.length}`
+  const cached = getCached<{ summary: string; topics: string[]; tone: string }>('convo-summary', cacheKey)
+  if (cached) return cached
+
+  const formatMsgs = (msgs: { body: string; is_from_me: number; sent_at: string }[]) =>
+    msgs.map(m => `[${m.sent_at.slice(0, 10)}] ${m.is_from_me ? 'You' : 'Them'}: ${m.body}`).join('\n')
+
+  const userMsg = `Contact: ${contactName}\n\nRecent messages (last 2 weeks):\n${formatMsgs(messages.recent)}\n\n${messages.old.length > 0 ? `Older messages (6+ months ago):\n${formatMsgs(messages.old)}` : ''}`
+
+  const system = `You analyze iMessage conversations to generate a concise summary. Given message samples from a conversation between the user and a contact, return a JSON object:\n{\n  "summary": "2-3 sentence summary of what this relationship is about — the topics, dynamics, and feel of the conversation. Write in second person ('You and ${contactName}...'). Be warm and observational, not clinical.",\n  "topics": ["topic1", "topic2", "topic3"],\n  "tone": "one word describing the overall tone (e.g., playful, supportive, professional, chaotic, deep, casual)"\n}\nReturn ONLY the JSON object.`
+
+  const text = await callAnthropic(system, userMsg, 400)
+  if (!text) return null
+  try {
+    const result = JSON.parse(text.trim().replace(/^```json?\n?/, '').replace(/\n?```$/, '')) as { summary: string; topics: string[]; tone: string }
+    setCache('convo-summary', cacheKey, result)
+    return result
+  } catch { return null }
+}
+
+// ── Relationship Narrative ──
+
+export async function generateRelationshipNarrative(chatIdentifier: string, contactName: string, stats: {
+  messageCount: number; sentCount: number; receivedCount: number
+  firstMessageDate: string | null; lastMessageDate: string
+  peakYear: number | null; peakYearCount: number | null
+  longestStreak: number; closenessScore: number; closenessRank: number | null
+  tier: string; laughCount: number; avgHeat: number; positiveRate: number
+}): Promise<{ narrative: string; headline: string } | null> {
+  if (!getAIStatus().configured) return null
+  const inputHash = JSON.stringify(stats).slice(0, 50)
+  const cached = getCached<{ narrative: string; headline: string }>('rel-narrative', `${chatIdentifier}:${inputHash}`)
+  if (cached) return cached
+
+  const userMsg = `Contact: ${contactName}
+Messages: ${stats.messageCount.toLocaleString()} (sent: ${stats.sentCount}, received: ${stats.receivedCount})
+First message: ${stats.firstMessageDate || 'unknown'}
+Last message: ${stats.lastMessageDate}
+Peak year: ${stats.peakYear || 'unknown'} (${stats.peakYearCount?.toLocaleString() || '?'} messages)
+Longest streak: ${stats.longestStreak} days
+Closeness: ${stats.closenessScore}/100 (${stats.tier}${stats.closenessRank ? `, #${stats.closenessRank}` : ''})
+Laughs: ${stats.laughCount}
+Heat: ${stats.avgHeat}/10
+Positive sentiment: ${stats.positiveRate}%`
+
+  const system = `You write warm, editorial-style relationship narratives for a messaging analytics app called Stash. Given stats about a user's relationship with a contact, write:\n{\n  "headline": "A punchy 3-6 word headline that captures the essence of this relationship (e.g., 'The one who gets it', 'Your 3am person', 'Chaos partners since 2019')",\n  "narrative": "A 2-4 sentence narrative paragraph. Second person. Warm, observational, slightly poetic. Reference specific stats naturally (don't just list them). Make the reader feel something about this relationship."\n}\n\nRules:\n- Never frame relationship decline as failure\n- Never be judgmental about communication patterns\n- Be genuine, not cheesy\n- If the data shows a fading relationship, be gentle and hopeful\n- Reference the closeness tier naturally if relevant\n\nReturn ONLY the JSON object.`
+
+  const text = await callAnthropic(system, userMsg, 300)
+  if (!text) return null
+  try {
+    const result = JSON.parse(text.trim().replace(/^```json?\n?/, '').replace(/\n?```$/, '')) as { narrative: string; headline: string }
+    setCache('rel-narrative', `${chatIdentifier}:${inputHash}`, result)
+    return result
+  } catch { return null }
+}
+
+// ── Attachment Context Caption ──
+
+export async function generateAttachmentCaption(chatIdentifier: string, contactName: string, attachmentInfo: { filename: string; created_at: string; is_image: boolean }, surroundingMessages: { body: string; is_from_me: number; sent_at: string }[]): Promise<{ caption: string } | null> {
+  if (!getAIStatus().configured) return null
+  const cacheKey = `${chatIdentifier}:${attachmentInfo.filename}:${attachmentInfo.created_at}`
+  const cached = getCached<{ caption: string }>('att-caption', cacheKey)
+  if (cached) return cached
+
+  const msgContext = surroundingMessages.map(m => `[${m.sent_at.slice(0, 10)}] ${m.is_from_me ? 'You' : 'Them'}: ${m.body}`).join('\n')
+  const userMsg = `Contact: ${contactName}\nFile: ${attachmentInfo.filename}\nDate: ${attachmentInfo.created_at}\nType: ${attachmentInfo.is_image ? 'Photo/Image' : 'Attachment'}\n\nSurrounding messages:\n${msgContext || '(no context available)'}`
+
+  const system = `You write concise, warm captions for photos and attachments shared in iMessage conversations. Given the attachment metadata and surrounding messages, write:\n{\n  "caption": "A one-sentence caption that gives this moment context. Reference who sent it, when, and what the conversation was about. Be warm and specific."\n}\n\nExamples:\n- "A sunset photo Tyler sent you during your road trip to Joshua Tree, June 2024."\n- "The screenshot that started a 45-minute debate about restaurant picks."\n- "A selfie from Ash, right after you made plans to meet up."\n\nReturn ONLY the JSON object.`
+
+  const text = await callAnthropic(system, userMsg, 150)
+  if (!text) return null
+  try {
+    const result = JSON.parse(text.trim().replace(/^```json?\n?/, '').replace(/\n?```$/, '')) as { caption: string }
+    setCache('att-caption', cacheKey, result)
+    return result
+  } catch { return null }
+}
+
 // ── Conversation search (migrated from index.ts) ──
 
 export async function searchConversationsAI(

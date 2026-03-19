@@ -2699,6 +2699,32 @@ export function getWordOrigins(chatName?: string, limit = 5): { word: string; fi
   } catch { return [] }
 }
 
+export interface MessageSample { body: string; is_from_me: number; sent_at: string }
+
+export function getMessageSamples(chatIdentifier: string, recentLimit = 50, oldLimit = 20): { recent: MessageSample[]; old: MessageSample[] } {
+  const d = initDb()
+  try {
+    const recentRaw = d.prepare(`SELECT body, is_from_me, sent_at FROM messages WHERE chat_name = ? ORDER BY apple_date DESC LIMIT ?`).all(chatIdentifier, recentLimit) as MessageSample[]
+    const sixMonthsAgo = new Date(Date.now() - 180 * 86400000).toISOString().slice(0, 10)
+    const oldRaw = d.prepare(`SELECT body, is_from_me, sent_at FROM messages WHERE chat_name = ? AND sent_at < ? ORDER BY RANDOM() LIMIT ?`).all(chatIdentifier, sixMonthsAgo, oldLimit) as MessageSample[]
+    const filter = (msgs: MessageSample[]) => msgs
+      .filter(m => m.body && !(/^(Liked|Loved|Laughed at|Emphasized|Questioned|Disliked)\s/i.test(m.body)))
+      .map(m => ({ body: m.body.slice(0, 100), is_from_me: m.is_from_me, sent_at: m.sent_at }))
+    return { recent: filter(recentRaw).reverse(), old: filter(oldRaw) }
+  } catch { return { recent: [], old: [] } }
+}
+
+export function getAttachmentContext(attachmentId: number, messageCount = 5): MessageSample[] {
+  const d = initDb()
+  try {
+    const att = d.prepare('SELECT chat_name, created_at FROM attachments WHERE id = ?').get(attachmentId) as { chat_name: string; created_at: string } | undefined
+    if (!att || !att.chat_name) return []
+    return (d.prepare(`SELECT body, is_from_me, sent_at FROM messages WHERE chat_name = ? AND ABS(julianday(sent_at) - julianday(?)) < 0.5 ORDER BY sent_at LIMIT ?`).all(att.chat_name, att.created_at, messageCount) as MessageSample[])
+      .filter(m => m.body)
+      .map(m => ({ body: m.body.slice(0, 100), is_from_me: m.is_from_me, sent_at: m.sent_at }))
+  } catch { return [] }
+}
+
 export function closeDb(): void {
   if (db) { db.close(); db = null }
 }
