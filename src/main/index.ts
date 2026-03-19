@@ -241,31 +241,40 @@ try {
       for (const row of partRows) participantMap.set(row.chat_name, row.participant_count > 1 ? 2 : 1);
     } catch {}
 
-    // Laugh detection
-    const LAUGH_RE = /\\b(lol|lmao|lmfao|rofl|hehe|omg dead|im dead|i'm dead|i cant|i can't)\\b|ha{2,}|he{2,}/i;
-    const LAUGH_EMOJI = /[\\u{1F602}\\u{1F923}\\u{1F480}]/u;
-    const FIVE_MIN_NS = 300000000000;
+    // Laugh detection — Method 1: Text-based (no time window, no sequential check)
+    const LAUGH_RE = /\\b(lol|lmao|lmfao|rofl|hehe|omg dead|im dead|i'm dead|i cant|i can't|dying|i'm dying|im dying)\\b|ha{2,}|he{2,}/i;
+    const LAUGH_EMOJI = /[\\u{1F602}\\u{1F923}\\u{1F480}\\u{2620}]/u;
     const laughCache = new Map();
     try {
       const laughRows = chatDb.prepare(
-        "SELECT c.chat_identifier as chat_name, m.is_from_me, m.text, m.date, " +
-        "LAG(m.date) OVER (PARTITION BY cmj.chat_id ORDER BY m.date) as prev_date, " +
-        "LAG(m.is_from_me) OVER (PARTITION BY cmj.chat_id ORDER BY m.date) as prev_is_from_me " +
+        "SELECT c.chat_identifier as chat_name, m.is_from_me, m.text " +
         "FROM message m JOIN chat_message_join cmj ON m.ROWID = cmj.message_id " +
         "JOIN chat c ON cmj.chat_id = c.ROWID WHERE m.text IS NOT NULL AND (" +
         "m.text LIKE '%lol%' OR m.text LIKE '%lmao%' OR m.text LIKE '%haha%' OR m.text LIKE '%hehe%' " +
         "OR m.text LIKE '%rofl%' OR m.text LIKE '%lmfao%' OR m.text LIKE '%im dead%' OR m.text LIKE '%i cant%' " +
-        "OR m.text LIKE '%\\xF0\\x9F\\x98\\x82%' OR m.text LIKE '%\\xF0\\x9F\\xA4\\xA3%' OR m.text LIKE '%\\xF0\\x9F\\x92\\x80%')"
+        "OR m.text LIKE '%dying%' " +
+        "OR m.text LIKE '%\\xF0\\x9F\\x98\\x82%' OR m.text LIKE '%\\xF0\\x9F\\xA4\\xA3%' OR m.text LIKE '%\\xF0\\x9F\\x92\\x80%' OR m.text LIKE '%\\xE2\\x98\\xA0%')"
       ).all();
       for (const row of laughRows) {
-        if (row.prev_date === null || row.prev_is_from_me === null) continue;
-        if (row.is_from_me === row.prev_is_from_me) continue;
-        if (row.date - row.prev_date > FIVE_MIN_NS) continue;
         const isLaugh = LAUGH_RE.test(row.text) || LAUGH_EMOJI.test(row.text);
         if (!isLaugh) continue;
         if (!laughCache.has(row.chat_name)) laughCache.set(row.chat_name, { generated: 0, received: 0 });
         const entry = laughCache.get(row.chat_name);
-        if (row.is_from_me === 0) entry.generated++; else entry.received++;
+        if (row.is_from_me === 1) entry.received++; else entry.generated++;
+      }
+    } catch {}
+
+    // Method 2: Tapback "Laughed at" reactions (associated_message_type 2003)
+    try {
+      const tapbackRows = chatDb.prepare(
+        "SELECT c.chat_identifier as chat_name, m.is_from_me " +
+        "FROM message m JOIN chat_message_join cmj ON m.ROWID = cmj.message_id " +
+        "JOIN chat c ON cmj.chat_id = c.ROWID WHERE m.associated_message_type = 2003"
+      ).all();
+      for (const row of tapbackRows) {
+        if (!laughCache.has(row.chat_name)) laughCache.set(row.chat_name, { generated: 0, received: 0 });
+        const entry = laughCache.get(row.chat_name);
+        if (row.is_from_me === 1) entry.received++; else entry.generated++;
       }
     } catch {}
 
@@ -374,19 +383,21 @@ function setupIpc(): void {
   })
 
   ipcMain.handle('get-stats', async (_event, chatNameFilter?: string, dateFrom?: string, dateTo?: string) => {
+    const ipcStart = Date.now()
     await dbReady
+    console.log(`[PERF] getStats: dbReady after ${Date.now()-ipcStart}ms`)
     const cacheKey = 'getStats_' + `stats:${chatNameFilter || 'all'}:${dateFrom || ''}:${dateTo || ''}`.replace(/[^a-z0-9]/gi, '_')
     const signal = getMessageCountSignal()
     const cached = getCachedAnalytics<unknown>(cacheKey, signal)
-    if (cached) { console.log(`[PERF][CACHE HIT] getStats`); return cached }
+    if (cached) { console.log(`[PERF][CACHE HIT] getStats (${Date.now()-ipcStart}ms total)`); return cached }
 
     // Deduplicate: if a worker is already running, wait for it
     if (statsWorkerPromise) {
-      console.log('[PERF] getStats: reusing in-flight worker')
+      console.log(`[PERF] getStats: joining in-flight worker (${Date.now()-ipcStart}ms since request)`)
       return statsWorkerPromise
     }
 
-    console.log('[PERF] getStats: spawning worker thread (cold launch)')
+    console.log(`[PERF] getStats: spawning worker thread (cold, ${Date.now()-ipcStart}ms since request)`)
     const workerPromise = (async () => {
       try {
         const stats = await runStatsInWorker(chatNameFilter, dateFrom, dateTo)

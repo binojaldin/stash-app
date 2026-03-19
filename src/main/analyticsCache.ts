@@ -20,7 +20,7 @@ const CACHE_DIR = (): string => {
 }
 
 // Bump this when analytics logic changes to invalidate all caches
-const LOGIC_VERSION = 4
+const LOGIC_VERSION = 5
 
 interface CacheMeta {
   version: number
