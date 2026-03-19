@@ -1312,7 +1312,7 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
     const isGroupChat = pd?.isGroup ?? false
     const firstName = isGroupChat ? pn : pn.split(' ')[0]
     const dateLabel = dateRange === 'all' ? 'All time' : dateRange === 'month' ? 'This month' : dateRange === 'year' ? 'This year' : dateRange === '30days' ? 'Last 30 days' : 'Last 7 days'
-    const initPct = pd ? Math.min(99, Math.round((pd.initiationCount / Math.max(pd.messageCount * 0.1, 1)) * 100)) : 0
+    const initPct = pd ? Math.min(99, Math.round((pd.initiationCount / Math.max(pd.sentCount, 1)) * 100)) : 0
     const sentPct = pd ? Math.round((pd.sentCount / Math.max(pd.messageCount, 1)) * 100) : 50
 
     const trophies: { emoji: string; label: string; sublabel: string }[] = []
@@ -1339,13 +1339,8 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
       const daysSince = pd.lastMessageDate ? Math.floor((Date.now() - new Date(pd.lastMessageDate).getTime()) / 86400000) : 0
       if (pd.messageCount > 200 && daysSince > 60)
         trophies.push({ emoji: '👻', label: 'The Ghost', sublabel: `${daysSince} days of silence` })
-      if (convStats?.firstMessageDate) {
-        const earliestChat = [...individuals].filter(c => c.lastMessageDate).sort((a, b) =>
-          new Date(a.lastMessageDate).getTime() - new Date(b.lastMessageDate).getTime()
-        )[0]
-        if (earliestChat?.rawName === pd.rawName)
-          trophies.push({ emoji: '🏛', label: 'Longest Standing', sublabel: 'Known you the longest' })
-      }
+      // TODO: Longest Standing trophy needs firstMessageDate on ChatNameEntry
+      // Cannot be computed correctly from lastMessageDate (which shows most dormant, not oldest)
     }
 
     const RelCard = ({ emoji, title, metric, sentence, flavor, span }: { emoji: string; title: string; metric: string; sentence: string; flavor: string; span: number }): JSX.Element => (
@@ -1489,16 +1484,21 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
                     { label: 'You made them laugh', value: `${pd.laughsGenerated.toLocaleString()} times` },
                     { label: 'Laugh rate', value: `${Math.round((pd.laughsReceived / Math.max(pd.messageCount, 1)) * 100)}% of messages got a laugh` },
                   ])}>
-                  <WinnerCard award="Comedy advantage" name={pd.laughsReceived > pd.laughsGenerated ? 'You win' : `${firstName} wins`}
-                    stat={`You got ${pd.laughsGenerated.toLocaleString()} laughs out of them`}
-                    flavor={pd.laughsReceived > pd.laughsGenerated ? 'You win. They have no defense against you.' : 'They get you every time. Keep them close.'}
-                    emoji="🎭" accentColor="#2EC4A0" span={12} />
-                  <button onClick={(e) => { e.stopPropagation(); generateShareCard('Comedy record', pd.laughsReceived.toLocaleString(), 'laughs received', `${firstName} makes me laugh more than anyone.`, firstName) }}
-                    style={{ position: 'absolute', top: 10, right: 36, width: 26, height: 26, background: 'rgba(232,96,74,0.08)', border: '0.5px solid rgba(232,96,74,0.25)', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1 }}>
-                    <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><path d="M7 1l3 3-3 3M10 4H4a3 3 0 000 6h1" stroke="#E8604A" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                  <WinnerCard award="Jester"
+                    name={pd.laughsGenerated > pd.laughsReceived ? 'You' : pd.laughsReceived > pd.laughsGenerated ? firstName : 'Tied'}
+                    stat={`You: ${pd.laughsGenerated.toLocaleString()} laughs · ${firstName}: ${pd.laughsReceived.toLocaleString()} laughs`}
+                    flavor={pd.laughsGenerated > pd.laughsReceived * 1.5 ? `Not even close. ${firstName} doesn't stand a chance.`
+                      : pd.laughsReceived > pd.laughsGenerated * 1.5 ? `${firstName} owns you. Accept it.`
+                      : pd.laughsGenerated > pd.laughsReceived ? 'You edge it — but they put up a fight.'
+                      : pd.laughsReceived > pd.laughsGenerated ? `${firstName} has the edge. Barely.`
+                      : 'Perfectly matched humor. Rare.'}
+                    emoji="🃏" accentColor="#2EC4A0" span={12} />
+                  <button onClick={(e) => { e.stopPropagation(); generateShareCard('Jester', pd.laughsGenerated.toLocaleString(), 'laughs from you', `You've made ${firstName} laugh ${pd.laughsGenerated.toLocaleString()} times.`, firstName) }}
+                    style={{ position: 'absolute', top: 10, right: 36, width: 26, height: 26, background: 'rgba(46,196,160,0.1)', border: '0.5px solid rgba(46,196,160,0.3)', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1 }}>
+                    <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><path d="M7 1l3 3-3 3M10 4H4a3 3 0 000 6h1" stroke="#2EC4A0" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>
                   </button>
-                  <div style={{ position: 'absolute', top: 8, right: 8, width: 18, height: 18, background: 'rgba(232,96,74,0.1)', borderRadius: 5, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
-                    <svg width="7" height="10" viewBox="0 0 7 10" fill="none"><path d="M1.5 1.5l4 3.5-4 3.5" stroke="#E8604A" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                  <div style={{ position: 'absolute', top: 8, right: 8, width: 18, height: 18, background: 'rgba(46,196,160,0.15)', borderRadius: 5, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+                    <svg width="7" height="10" viewBox="0 0 7 10" fill="none"><path d="M1.5 1.5l4 3.5-4 3.5" stroke="#2EC4A0" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
                   </div>
                 </div>
                 <WinnerCard award="Your comedian" name={firstName}
@@ -1507,9 +1507,9 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
                   emoji="😂" accentColor="#2EC4A0" span={4} />
                 <SplitCard eyebrow="Who reaches first"
                   leftValue={`${initPct}%`} leftLabel="You initiate"
-                  leftSub={initPct > 60 ? 'You keep this alive.' : initPct < 30 ? 'You wait for them.' : 'You share it.'}
+                  leftSub={initPct > 50 ? 'You keep this alive.' : initPct < 30 ? 'You wait for them.' : 'You share it.'}
                   rightValue={`${100 - initPct}%`} rightLabel={firstName}
-                  rightSub={initPct > 60 ? 'They show up when you call.' : initPct < 30 ? 'They drive this.' : 'Pretty even.'}
+                  rightSub={initPct > 50 ? 'They show up when you call.' : initPct < 30 ? 'They drive this.' : 'Pretty even.'}
                   leftPct={initPct} accent="#2EC4A0" span={4} />
                 <SplitCard eyebrow="Message balance"
                   leftValue={`${sentPct}%`} leftLabel="You"
