@@ -139,6 +139,49 @@ export function initDb(): Database.Database {
     `)
   }
 
+  // ── V3: message analysis pipeline tables ──
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS message_signals (
+      message_id INTEGER PRIMARY KEY,
+      chat_identifier TEXT NOT NULL,
+      is_from_me INTEGER NOT NULL,
+      sent_at TEXT NOT NULL,
+      has_laugh INTEGER DEFAULT 0,
+      has_question INTEGER DEFAULT 0,
+      has_link INTEGER DEFAULT 0,
+      has_emoji INTEGER DEFAULT 0,
+      exclamation_count INTEGER DEFAULT 0,
+      is_all_caps INTEGER DEFAULT 0,
+      word_count INTEGER DEFAULT 0,
+      char_count INTEGER DEFAULT 0,
+      heat_score INTEGER DEFAULT 0,
+      sentiment INTEGER DEFAULT 0,
+      analyzed_version INTEGER DEFAULT 1
+    );
+    CREATE INDEX IF NOT EXISTS idx_msgsig_chat ON message_signals(chat_identifier);
+    CREATE INDEX IF NOT EXISTS idx_msgsig_sent ON message_signals(sent_at);
+
+    CREATE TABLE IF NOT EXISTS message_analysis_progress (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS conversation_signals (
+      chat_identifier TEXT PRIMARY KEY,
+      total_analyzed INTEGER DEFAULT 0,
+      laugh_count INTEGER DEFAULT 0,
+      question_count INTEGER DEFAULT 0,
+      link_count INTEGER DEFAULT 0,
+      emoji_rate REAL DEFAULT 0,
+      avg_word_count REAL DEFAULT 0,
+      avg_heat REAL DEFAULT 0,
+      positive_rate REAL DEFAULT 0,
+      negative_rate REAL DEFAULT 0,
+      all_caps_rate REAL DEFAULT 0,
+      updated_at TEXT NOT NULL DEFAULT ''
+    );
+  `)
+
   // Backfill null chat_name from Messages chat.db
   // Skip if a previous attempt found 0 fixable records
   try {

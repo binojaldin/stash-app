@@ -151,6 +151,20 @@ const api = {
     const handler = (_event: unknown, data: unknown[]): void => callback(data)
     ipcRenderer.on('chat-names-resolved', handler)
     return () => ipcRenderer.removeListener('chat-names-resolved', handler)
+  },
+  getConversationSignals: (chatIdentifier?: string): Promise<{
+    chat_identifier: string; total_analyzed: number; laugh_count: number
+    question_count: number; link_count: number; emoji_rate: number
+    avg_word_count: number; avg_heat: number; positive_rate: number
+    negative_rate: number; all_caps_rate: number; updated_at: string
+  }[]> => ipcRenderer.invoke('get-conversation-signals', chatIdentifier),
+  getAnalysisProgress: (): Promise<{
+    totalMessages: number; analyzedMessages: number; lastRunAt: string | null; isRunning: boolean
+  }> => ipcRenderer.invoke('get-analysis-progress'),
+  onAnalysisProgress: (callback: (data: { analyzed: number; total: number }) => void): (() => void) => {
+    const handler = (_event: unknown, data: { analyzed: number; total: number }): void => callback(data)
+    ipcRenderer.on('analysis-progress', handler)
+    return () => ipcRenderer.removeListener('analysis-progress', handler)
   }
 }
 
