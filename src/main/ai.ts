@@ -560,6 +560,38 @@ export async function generateAttachmentCaption(chatIdentifier: string, contactN
   } catch { return null }
 }
 
+// ── Relationship Dynamics AI Analysis ──
+
+export interface AIRelationshipDynamics {
+  conflictPattern: string | null; supportPattern: string | null
+  insideJokes: string[] | null; relationshipPhase: string | null
+  communicationStyleMatch: number | null
+  topicEvolution: { then: string; now: string } | null
+  vulnerabilityBalance: string | null
+}
+
+export async function analyzeRelationshipDynamics(chatIdentifier: string, contactName: string, messageSamples: { body: string; is_from_me: number; sent_at: string }[], stats: { messageCount: number; myWords: number; theirWords: number; myQuestions: number; theirQuestions: number; myPositiveRate: number; theirPositiveRate: number }): Promise<AIRelationshipDynamics | null> {
+  if (!getAIStatus().configured) return null
+  const cacheKey = `${chatIdentifier}:${stats.messageCount}`
+  const cached = getCached<AIRelationshipDynamics>('rel-dynamics', cacheKey)
+  if (cached) return cached
+
+  const formatMsgs = (msgs: { body: string; is_from_me: number; sent_at: string }[]) =>
+    msgs.slice(0, 40).map(m => `[${m.sent_at.slice(0, 10)}] ${m.is_from_me ? 'You' : 'Them'}: ${m.body.slice(0, 100)}`).join('\n')
+
+  const userMsg = `Contact: ${contactName}\nStats: ${stats.messageCount} messages, you wrote ${stats.myWords} words, they wrote ${stats.theirWords} words. You asked ${stats.myQuestions} questions, they asked ${stats.theirQuestions}. Your positive rate: ${stats.myPositiveRate}%, theirs: ${stats.theirPositiveRate}%.\n\nMessages:\n${formatMsgs(messageSamples)}`
+
+  const system = `You analyze iMessage conversation dynamics. Given message samples and stats, return a JSON object. For any field where you don't have enough data, use null.\n\n{\n  "conflictPattern": "One sentence about any conflict/tension pattern. Null if none.",\n  "supportPattern": "One sentence about emotional support dynamics. Null if unclear.",\n  "insideJokes": ["phrase1", "phrase2"] or null. Max 3 repeated unique phrases/references.",\n  "relationshipPhase": "One sentence about the current phase. Null if unclear.",\n  "communicationStyleMatch": number 0-100 (style similarity) or null,\n  "topicEvolution": { "then": "1-3 words", "now": "1-3 words" } or null,\n  "vulnerabilityBalance": "One sentence about who opens up more. Null if unclear."\n}\n\nRules:\n- Observational, not judgmental\n- Never frame patterns as failures\n- Warm but honest\n- ONE sentence max per field\n- Use null freely\n- Return ONLY the JSON object.`
+
+  const text = await callAnthropic(system, userMsg, 600)
+  if (!text) return null
+  try {
+    const result = JSON.parse(text.trim().replace(/^```json?\n?/, '').replace(/\n?```$/, '')) as AIRelationshipDynamics
+    setCache('rel-dynamics', cacheKey, result)
+    return result
+  } catch { return null }
+}
+
 // ── Conversation search (migrated from index.ts) ──
 
 export async function searchConversationsAI(

@@ -8,7 +8,7 @@ import { compileContactsHelper, resolveContact, resolveContactsBatch } from './c
 import { generateWrapped, getAvailableYears } from './wrapped'
 import { runMessageAnalysis, getConversationSignals, getAnalysisProgress } from './messageAnalysis'
 import { computeClosenessScores, getClosenessScores, getClosenessRank } from './closenessRank'
-import { setApiKey, getAIStatus, searchConversationsAI, enrichTopicEras, enrichTopicErasV2, enrichMemoryMoments, interpretSearchQuery, summarizeConversation, generateRelationshipNarrative, generateAttachmentCaption } from './ai'
+import { setApiKey, getAIStatus, searchConversationsAI, enrichTopicEras, enrichTopicErasV2, enrichMemoryMoments, interpretSearchQuery, summarizeConversation, generateRelationshipNarrative, generateAttachmentCaption, analyzeRelationshipDynamics } from './ai'
 import type { TopicEraSummaryInput, TopicEraContextInput, MemoryMomentSummaryInput } from './ai'
 import { getCachedAnalytics, setCachedAnalytics, getMessageCountSignal, yieldEventLoop, invalidateSignalCache } from './analyticsCache'
 import { Worker } from 'worker_threads'
@@ -600,6 +600,11 @@ function setupIpc(): void {
   ipcMain.handle('get-analysis-progress', () => getAnalysisProgress())
   ipcMain.handle('get-significant-photos', (_event, chatIdentifier: string) => getSignificantPhotos(chatIdentifier))
   ipcMain.handle('get-relationship-dynamics', (_event, chatIdentifier: string) => getRelationshipDynamics(chatIdentifier))
+  ipcMain.handle('analyze-relationship-dynamics', async (_event, chatIdentifier: string, contactName: string, stats: unknown) => {
+    const samples = getMessageSamples(chatIdentifier)
+    const allSamples = [...samples.recent, ...samples.old]
+    return analyzeRelationshipDynamics(chatIdentifier, contactName, allSamples, stats as Parameters<typeof analyzeRelationshipDynamics>[3])
+  })
   ipcMain.handle('get-message-samples', (_event, chatIdentifier: string) => getMessageSamples(chatIdentifier))
   ipcMain.handle('get-attachment-context', (_event, attachmentId: number) => getAttachmentContext(attachmentId))
   ipcMain.handle('summarize-conversation', async (_event, chatIdentifier: string, contactName: string) => {

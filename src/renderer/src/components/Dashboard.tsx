@@ -1460,6 +1460,19 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
     window.api.getRelationshipDynamics(scopedPerson).then(setDynamics).catch(() => {})
   }, [scopedPerson])
 
+  const [aiDynamics, setAiDynamics] = useState<{ conflictPattern: string | null; supportPattern: string | null; insideJokes: string[] | null; relationshipPhase: string | null; communicationStyleMatch: number | null; topicEvolution: { then: string; now: string } | null; vulnerabilityBalance: string | null } | null>(null)
+  const [aiDynamicsLoading, setAiDynamicsLoading] = useState(false)
+  useEffect(() => {
+    if (!scopedPerson || !dynamics) { setAiDynamics(null); return }
+    setAiDynamicsLoading(true)
+    const pd2 = (stats.chatNames as { rawName: string; messageCount: number }[]).find(c => c.rawName === scopedPerson)
+    window.api.analyzeRelationshipDynamics(scopedPerson, resolveName(scopedPerson, chatNameMap), {
+      messageCount: pd2?.messageCount || 0, myWords: dynamics.myTotalWords, theirWords: dynamics.theirTotalWords,
+      myQuestions: dynamics.myQuestions, theirQuestions: dynamics.theirQuestions,
+      myPositiveRate: dynamics.myPositiveRate, theirPositiveRate: dynamics.theirPositiveRate
+    }).then(r => { setAiDynamics(r); setAiDynamicsLoading(false) }).catch(() => setAiDynamicsLoading(false))
+  }, [scopedPerson, dynamics?.myTotalWords])
+
   // ── Relationship hero AI state (must be before early return) ──
   const [heroPhoto, setHeroPhoto] = useState<{ id: number; thumbnail_path: string; created_at: string; filename: string } | null>(null)
   const [heroPhotoUrl, setHeroPhotoUrl] = useState<string | null>(null)
@@ -1979,7 +1992,74 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
                   )
                 }
 
-                if (cards.length === 0) return null
+                // ── AI-powered dynamics cards ──
+                const aiBadge = <span style={{ fontSize: 8, padding: '2px 6px', borderRadius: 4, background: 'rgba(127,119,221,0.12)', color: '#7F77DD', fontFamily: "'DM Sans'", letterSpacing: '0.08em', textTransform: 'uppercase' as const, fontWeight: 600, marginLeft: 6 }}>AI</span>
+
+                if (aiDynamics) {
+                  if (aiDynamics.conflictPattern) cards.push(
+                    <div key="ai-conflict" style={{ gridColumn: 'span 4', borderRadius: 14, background: 'linear-gradient(135deg, #2D1F1A 0%, #1E2826 100%)', padding: '18px 18px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}><span style={{ fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#E8604A', fontWeight: 600, fontFamily: "'DM Sans'" }}>Conflict pattern</span>{aiBadge}</div>
+                      <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)', lineHeight: 1.5, fontFamily: "'DM Sans'" }}>{aiDynamics.conflictPattern}</div>
+                    </div>
+                  )
+                  if (aiDynamics.supportPattern) cards.push(
+                    <div key="ai-support" style={{ gridColumn: 'span 4', borderRadius: 14, background: 'linear-gradient(135deg, #F8F4F0 0%, #FFF8F2 100%)', padding: '18px 18px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}><span style={{ fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#2EC4A0', fontWeight: 600, fontFamily: "'DM Sans'" }}>Support dynamic</span>{aiBadge}</div>
+                      <div style={{ fontSize: 13, color: '#4a4542', lineHeight: 1.5, fontFamily: "'DM Sans'" }}>{aiDynamics.supportPattern}</div>
+                    </div>
+                  )
+                  if (aiDynamics.insideJokes && aiDynamics.insideJokes.length > 0) cards.push(
+                    <div key="ai-jokes" style={{ gridColumn: 'span 4', ...tileBase }}>
+                      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}><span style={{ fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#2EC4A0', fontWeight: 600, fontFamily: "'DM Sans'" }}>Your inside language</span>{aiBadge}</div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                        {aiDynamics.insideJokes.map((j, i) => <span key={i} style={{ fontSize: 12, padding: '4px 10px', borderRadius: 20, background: 'rgba(46,196,160,0.08)', color: '#2EC4A0', fontFamily: "'DM Sans'" }}>"{j}"</span>)}
+                      </div>
+                    </div>
+                  )
+                  if (aiDynamics.relationshipPhase) cards.push(
+                    <div key="ai-phase" style={{ gridColumn: 'span 4', ...tileBase }}>
+                      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}><span style={{ fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#2EC4A0', fontWeight: 600, fontFamily: "'DM Sans'" }}>Where you are now</span>{aiBadge}</div>
+                      <div style={{ fontSize: 13, color: '#1A1A1A', lineHeight: 1.5, fontWeight: 500, fontFamily: "'DM Sans'" }}>{aiDynamics.relationshipPhase}</div>
+                    </div>
+                  )
+                  if (aiDynamics.communicationStyleMatch != null) cards.push(
+                    <div key="ai-style" style={{ gridColumn: 'span 4', ...tileBase }}>
+                      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}><span style={{ fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#2EC4A0', fontWeight: 600, fontFamily: "'DM Sans'" }}>Style match</span>{aiBadge}</div>
+                      <div style={{ fontFamily: "'Unbounded', sans-serif", fontWeight: 200, fontSize: 28, color: '#2EC4A0', marginBottom: 4 }}>{aiDynamics.communicationStyleMatch}%</div>
+                      <div style={{ fontSize: 12, color: '#6f6a65', fontFamily: "'DM Sans'" }}>{aiDynamics.communicationStyleMatch >= 75 ? 'You text alike — similar energy.' : aiDynamics.communicationStyleMatch >= 50 ? 'Different styles, but it works.' : 'Very different communication styles.'}</div>
+                    </div>
+                  )
+                  if (aiDynamics.topicEvolution) cards.push(
+                    <div key="ai-topics" style={{ gridColumn: 'span 6', ...tileBase }}>
+                      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 10 }}><span style={{ fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#2EC4A0', fontWeight: 600, fontFamily: "'DM Sans'" }}>Then vs now</span>{aiBadge}</div>
+                      <div style={{ display: 'flex', gap: 16 }}>
+                        <div style={{ flex: 1, padding: '10px 14px', borderRadius: 10, background: '#F5F0EA' }}>
+                          <div style={{ fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#9a948f', marginBottom: 4 }}>Then</div>
+                          <div style={{ fontSize: 14, color: '#6f6a65', fontWeight: 500, fontFamily: "'DM Sans'" }}>{aiDynamics.topicEvolution.then}</div>
+                        </div>
+                        <div style={{ flex: 1, padding: '10px 14px', borderRadius: 10, background: 'rgba(46,196,160,0.06)' }}>
+                          <div style={{ fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#2EC4A0', marginBottom: 4 }}>Now</div>
+                          <div style={{ fontSize: 14, color: '#1A1A1A', fontWeight: 500, fontFamily: "'DM Sans'" }}>{aiDynamics.topicEvolution.now}</div>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                  if (aiDynamics.vulnerabilityBalance) cards.push(
+                    <div key="ai-vuln" style={{ gridColumn: 'span 4', borderRadius: 14, background: 'linear-gradient(135deg, #F5F0EA 0%, #F8F4F0 100%)', padding: '18px 18px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}><span style={{ fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#9a948f', fontWeight: 600, fontFamily: "'DM Sans'" }}>Who opens up</span>{aiBadge}</div>
+                      <div style={{ fontSize: 13, color: '#4a4542', lineHeight: 1.5, fontFamily: "'DM Sans'" }}>{aiDynamics.vulnerabilityBalance}</div>
+                    </div>
+                  )
+                }
+
+                // Loading state for AI dynamics
+                if (aiDynamicsLoading && cards.length > 0) cards.push(
+                  <div key="ai-loading" style={{ gridColumn: 'span 12', padding: '8px 0' }}>
+                    <div style={{ fontSize: 11, color: '#7F77DD', fontFamily: "'DM Sans'", opacity: 0.6 }}>Analyzing deeper patterns...</div>
+                  </div>
+                )
+
+                if (cards.length === 0 && !aiDynamicsLoading) return null
                 return (
                   <>
                     <div style={{ gridColumn: 'span 12', marginTop: 8 }}>

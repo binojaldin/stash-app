@@ -169,6 +169,9 @@ const api = {
   getAnalysisProgress: (): Promise<{
     totalMessages: number; analyzedMessages: number; lastRunAt: string | null; isRunning: boolean
   }> => ipcRenderer.invoke('get-analysis-progress'),
+  analyzeRelationshipDynamics: (chatIdentifier: string, contactName: string, stats: Record<string, unknown>): Promise<{
+    conflictPattern: string | null; supportPattern: string | null; insideJokes: string[] | null; relationshipPhase: string | null; communicationStyleMatch: number | null; topicEvolution: { then: string; now: string } | null; vulnerabilityBalance: string | null
+  } | null> => ipcRenderer.invoke('analyze-relationship-dynamics', chatIdentifier, contactName, stats),
   getRelationshipDynamics: (chatIdentifier: string): Promise<{
     myTotalWords: number; theirTotalWords: number; effortRatio: number
     myQuestions: number; theirQuestions: number
