@@ -17,6 +17,11 @@ let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
 let isQuitting = false
 
+// DB readiness gate — IPC handlers that need the DB await this
+let dbReady: Promise<void>
+let dbReadyResolve: () => void
+dbReady = new Promise(r => { dbReadyResolve = r })
+
 function sendToRenderer(channel: string): void {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send(channel)
@@ -369,6 +374,7 @@ function setupIpc(): void {
   })
 
   ipcMain.handle('get-stats', async (_event, chatNameFilter?: string, dateFrom?: string, dateTo?: string) => {
+    await dbReady
     const cacheKey = 'getStats_' + `stats:${chatNameFilter || 'all'}:${dateFrom || ''}:${dateTo || ''}`.replace(/[^a-z0-9]/gi, '_')
     const signal = getMessageCountSignal()
     const cached = getCachedAnalytics<unknown>(cacheKey, signal)
@@ -420,8 +426,8 @@ function setupIpc(): void {
     statsWorkerPromise = workerPromise
     return workerPromise
   })
-  ipcMain.handle('get-today-in-history', () => getTodayInHistory())
-  ipcMain.handle('get-usage-stats', (_event, dateFrom?: string, dateTo?: string) => getUsageStats(dateFrom, dateTo))
+  ipcMain.handle('get-today-in-history', async () => { await dbReady; return getTodayInHistory() })
+  ipcMain.handle('get-usage-stats', async (_event, dateFrom?: string, dateTo?: string) => { await dbReady; return getUsageStats(dateFrom, dateTo) })
   ipcMain.handle('search-messages', (_event, query: string, chatName?: string, limit?: number) => searchMessages(query, chatName, limit))
   ipcMain.handle('get-message-index-status', () => getMessageIndexStatus())
   ipcMain.handle('get-vocab-stats', (_event, chatName?: string) => getVocabStats(chatName))
@@ -479,7 +485,8 @@ function setupIpc(): void {
     setCachedAnalytics('memoryMoments', signal, result)
     return result
   })
-  ipcMain.handle('get-fast-stats', (_event, chatNameFilter?: string, dateFrom?: string, dateTo?: string) => {
+  ipcMain.handle('get-fast-stats', async (_event, chatNameFilter?: string, dateFrom?: string, dateTo?: string) => {
+    await dbReady
     return { ...getFastStats(chatNameFilter, dateFrom, dateTo), chatNameMap: {} }
   })
   ipcMain.handle('get-attachment', (_event, id: number) => getAttachmentById(id))
@@ -645,23 +652,25 @@ function setupLoginItem(): void {
 app.whenReady().then(() => {
   const bootStart = Date.now()
   app.setName('Stash')
-  const t0 = Date.now()
-  initDb()
-  console.log(`[PERF][BOOT] initDb: ${Date.now()-t0}ms`)
-  // Force all stat caches to refresh on startup
-  invalidateLaughCache()
   createMenu()
   createTray()
   setupLoginItem()
-
-  // Compile contacts binary early
-  const t1 = Date.now()
-  compileContactsHelper()
-  console.log(`[PERF][BOOT] compileContactsHelper: ${Date.now()-t1}ms`)
-
   setupIpc()
   createWindow()
-  console.log(`[PERF][BOOT] Total boot to window created: ${Date.now()-bootStart}ms`)
+  console.log(`[PERF][BOOT] Window created: ${Date.now()-bootStart}ms`)
+
+  // DB init + contacts run AFTER window is visible (non-blocking for first paint)
+  setImmediate(() => {
+    const t0 = Date.now()
+    initDb()
+    console.log(`[PERF][BOOT] initDb: ${Date.now()-t0}ms`)
+    invalidateLaughCache()
+    const t1 = Date.now()
+    compileContactsHelper()
+    console.log(`[PERF][BOOT] compileContactsHelper: ${Date.now()-t1}ms`)
+    dbReadyResolve()
+    console.log(`[PERF][BOOT] DB ready: ${Date.now()-bootStart}ms total`)
+  })
 
   // Deferred reaction count sync
   setTimeout(() => { try { updateReactionCounts() } catch (e) { console.error('[Reactions]', e) } }, 3000)
