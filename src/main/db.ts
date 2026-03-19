@@ -2533,6 +2533,102 @@ export function getMessageIndexStatus(): { total: number; indexed: number } {
   } catch { return { total: 0, indexed: 0 } }
 }
 
+// ── Text Intelligence Utilities ──
+
+const TEXT_STOPWORDS = new Set([
+  // Articles, prepositions, conjunctions
+  'the','a','an','and','or','but','in','on','at','to','for','of','with',
+  'is','it','its','as','by','from','up','out','about','into','over',
+  'after','before','between','under','above','below','through','during',
+  'without','within','along','around','against','off','down',
+  // Pronouns
+  'i','me','my','mine','myself','you','your','yours','yourself',
+  'he','him','his','himself','she','her','hers','herself',
+  'we','us','our','ours','ourselves','they','them','their','theirs',
+  'themselves','this','that','these','those','which','who','whom',
+  'what','where','when','how','why','whose',
+  // Common verbs
+  'am','are','was','were','be','been','being','have','has','had',
+  'having','do','does','did','doing','will','would','could','should',
+  'shall','may','might','can','must','need',
+  'get','got','gets','getting','go','goes','going','gone','went',
+  'come','comes','coming','came','make','makes','making','made',
+  'take','takes','taking','took','taken','give','gave','given',
+  'say','says','said','saying','tell','told','telling',
+  'know','knows','knew','known','think','thinks','thought','thinking',
+  'see','sees','saw','seen','want','wants','wanted','wanting',
+  'let','lets','put','puts','keep','keeps','kept',
+  'find','found','seem','seems','seemed','feel','feels','felt',
+  'try','tries','tried','trying','leave','left',
+  'call','called','ask','asked','turn','use','used',
+  'look','looked','looking','run','running','show','start','started',
+  'move','moved','work','worked','play','set','help','talk','talked',
+  'open','close','read','write','bring','brought','hold','held',
+  'stand','sit','hear','heard','pay','meet','send','sent','wait',
+  'lose','lost','happen','happened','change','changed','live','believe',
+  // Common adverbs/adjectives
+  'not','no','nor','so','if','then','than','too','very','much',
+  'more','most','less','also','just','only','even','still','already',
+  'yet','never','always','often','ever','really','actually','probably',
+  'maybe','definitely','basically','literally','honestly','seriously',
+  'pretty','quite','rather','anyway','though','although','however',
+  'well','now','here','there','all','each','every','both','some',
+  'any','many','few','other','new','old','good','bad','big','little',
+  'long','great','right','same','different','last','first','next',
+  'sure','real','whole','hard','easy','best','worst',
+  // Low-value nouns appearing in every conversation
+  'thing','things','stuff','something','anything','nothing','everything',
+  'someone','anyone','everyone','people','person','man','woman','guy',
+  'girl','time','times','day','days','week','weeks','month','year',
+  'way','back','place','part','point','home','house','room','car',
+  'night','morning','lot','lots','bit','kind','type','end',
+  'hand','head','world','life','water','food',
+  // Texting/slang/chat noise
+  'lol','haha','hahaha','hahahaha','lmao','lmfao','omg','wtf','smh',
+  'tbh','ngl','imo','imho','btw','brb','ttyl','idk','irl','fyi',
+  'gonna','wanna','gotta','kinda','sorta','tryna','boutta',
+  'tho','rn','bc','cuz','cus','pls','plz','thx','ty','np',
+  'ok','okay','ooh','ahh','hmm','umm','ugh','mhm','huh','wow',
+  'yooo','loll','omgg','damnn','yeahh','okayy','yea','nah','nope',
+  'hey','hello','bye','sup','yo','dude','bro','man',
+  'yeah','yep','yes','sure',
+  // Contractions (split fragments)
+  'im','ive','ill','id','dont','didnt','doesnt','isnt','wasnt',
+  'werent','wont','cant','couldnt','shouldnt','wouldnt','havent',
+  'hasnt','hadnt','thats','theres','heres','whats','whos',
+  'youre','youve','youll','youd','theyre','theyve','theyll',
+  'weve','wed','hes','shes',
+  // URL/tech fragments that survive tokenization
+  'http','https','www','com','org','net','edu','gov','io','html',
+  'php','jpg','png','gif','pdf','mp4','mov','app','web',
+  // iMessage system artifacts
+  'liked','loved','laughed','emphasized','questioned','disliked',
+  'image','attachment','audio','message','sticker',
+])
+
+const DOMAIN_FRAGMENTS = new Set(['com','org','net','edu','gov','io','co','uk','ca','au','de','fr','app','dev','me','info','biz','us','tv'])
+
+function cleanMessageText(text: string): string {
+  let clean = text
+  clean = clean.replace(/https?:\/\/\S+/gi, '')
+  clean = clean.replace(/www\.\S+/gi, '')
+  clean = clean.replace(/\S+@\S+\.\S+/g, '')
+  clean = clean.replace(/\+?\d[\d\s\-().]{7,}/g, '')
+  clean = clean.replace(/^(Liked|Loved|Laughed at|Emphasized|Questioned|Disliked)\s+".*"$/i, '')
+  clean = clean.replace(/^(Liked|Loved|Laughed at|Emphasized|Questioned|Disliked)\s+an?\s+(image|attachment|audio message)/i, '')
+  clean = clean.replace(/@\w+/g, '')
+  return clean.trim()
+}
+
+function tokenizeWords(text: string): string[] {
+  const cleaned = cleanMessageText(text)
+  if (!cleaned) return []
+  const raw = cleaned.toLowerCase().match(/[a-z][a-z']{2,}/g) || []
+  return raw
+    .map(w => w.replace(/'+$/, '').replace(/^'+/, ''))
+    .filter(w => w.length >= 3 && !TEXT_STOPWORDS.has(w) && !DOMAIN_FRAGMENTS.has(w) && !/^(.)\1{2,}$/.test(w))
+}
+
 export function getVocabStats(chatName?: string): {
   uniqueWords: number; totalWords: number; avgWordsPerMessage: number; theirAvgWordsPerMessage: number; topWords: { word: string; count: number }[]
 } {
@@ -2543,16 +2639,15 @@ export function getVocabStats(chatName?: string): {
     const params: string[] = chatName ? [chatName] : []
     const myRows = d.prepare(`SELECT body FROM messages ${myFilter} LIMIT 100000`).all(...params) as { body: string }[]
     const theirRows = chatName ? d.prepare(`SELECT body FROM messages ${theirFilter} LIMIT 100000`).all(chatName) as { body: string }[] : []
-    const STOP = new Set(['the','a','an','and','or','but','in','on','at','to','for','of','with','is','it','i','you','he','she','we','they','this','that','was','are','be','been','have','has','had','do','did','will','would','could','should','may','might','not','no','so','if','as','up','out','about','what','when','where','how','all','my','your','his','her','our','their','me','him','us','them','its','from','by','just','like','get','got','can','go','know','think','say','said','want','see','make','good','one','more','also','then','than','really','yeah','ok','okay','yes','im','dont','thats','youre','were','ive','ill','id','ur','u','r','lol','haha','lmao'])
     const counts = new Map<string, number>()
     let totalWords = 0
     for (const { body } of myRows) {
-      const words = body.toLowerCase().match(/\b[a-z]{3,}\b/g) || []
+      const words = tokenizeWords(body)
       totalWords += words.length
-      for (const w of words) if (!STOP.has(w)) counts.set(w, (counts.get(w) || 0) + 1)
+      for (const w of words) counts.set(w, (counts.get(w) || 0) + 1)
     }
     let theirTotal = 0
-    for (const { body } of theirRows) { theirTotal += (body.toLowerCase().match(/\b[a-z]{3,}\b/g) || []).length }
+    for (const { body } of theirRows) { theirTotal += tokenizeWords(body).length }
     const topWords = Array.from(counts.entries()).sort((a, b) => b[1] - a[1]).slice(0, 15).map(([word, count]) => ({ word, count }))
     return { uniqueWords: counts.size, totalWords, avgWordsPerMessage: myRows.length > 0 ? Math.round(totalWords / myRows.length) : 0, theirAvgWordsPerMessage: theirRows.length > 0 ? Math.round(theirTotal / theirRows.length) : 0, topWords }
   } catch { return { uniqueWords: 0, totalWords: 0, avgWordsPerMessage: 0, theirAvgWordsPerMessage: 0, topWords: [] } }
@@ -2564,12 +2659,14 @@ export function getWordOrigins(chatName?: string, limit = 5): { word: string; fi
     const chatFilter = chatName ? 'AND chat_name = ?' : ''
     const params: string[] = chatName ? [chatName] : []
     const rows = d.prepare(`SELECT body, chat_name, sent_at FROM messages WHERE is_from_me = 1 ${chatFilter} ORDER BY apple_date ASC LIMIT 200000`).all(...params) as { body: string; chat_name: string; sent_at: string }[]
-    const STOP = new Set(['the','a','an','and','or','but','in','on','at','to','for','of','with','is','it','i','you','he','she','we','they','this','that','was','are','be','been','have','has','had','do','did','will','would','could','should','may','might','not','no','so','if','as','up','out','about','what','when','where','how','all','my','your','his','her','our','their','me','him','us','them','its','from','by','just','like','get','got','can','go','know','think','say','said','want','see','make','good','one','more','also','then','than','really','yeah','ok','okay','yes','im','dont','thats','youre','were','ive','ill','id','ur','u','r','lol','haha','lmao','gonna','wanna','gotta','kinda','sorta','tbh','ngl','imo','btw','omg','wtf','brb','ttyl'])
     const firstSeen = new Map<string, { sent_at: string; chat_name: string }>()
     const counts = new Map<string, number>()
     for (const { body, chat_name: cn, sent_at } of rows) {
-      const words = body.toLowerCase().match(/\b[a-z]{4,}\b/g) || []
-      for (const w of words) { if (STOP.has(w)) continue; counts.set(w, (counts.get(w) || 0) + 1); if (!firstSeen.has(w)) firstSeen.set(w, { sent_at, chat_name: cn }) }
+      const words = tokenizeWords(body).filter(w => w.length >= 4)
+      for (const w of words) {
+        counts.set(w, (counts.get(w) || 0) + 1)
+        if (!firstSeen.has(w)) firstSeen.set(w, { sent_at, chat_name: cn })
+      }
     }
     const cutoff = new Date('2018-01-01').toISOString()
     const candidates = Array.from(firstSeen.entries())
