@@ -417,44 +417,61 @@ export async function enrichMemoryMoments(moments: MemoryMomentSummaryInput[]): 
 // ── Semantic search intent interpretation ──
 
 export interface SearchIntent {
-  type: 'phrase_aggregation' | 'topic_search' | 'person_search' | 'literal'
+  type: 'phrase_count' | 'phrase_first' | 'phrase_timeline' | 'signal_rank' | 'behavior_query' | 'literal'
   phrase: string | null
-  groupBy: 'person' | 'time' | null
+  signal: string | null
+  groupBy: 'person' | 'time' | 'month' | null
   sort: 'desc' | 'asc'
+  limit: number
   explanation: string
 }
 
 export async function interpretSearchQuery(query: string): Promise<SearchIntent | null> {
   if (!getAIStatus().configured) return null
 
-  const cached = getCached<SearchIntent>('search-intent', query)
+  const cached = getCached<SearchIntent>('search-intent-v2', query)
   if (cached) return cached
 
   const system = `You interpret natural-language questions about someone's iMessage history into structured search intents.
 
 Return a JSON object:
 {
-  "type": "phrase_aggregation" | "topic_search" | "person_search" | "literal",
-  "phrase": the key phrase/words to search for (or null if not a phrase search),
-  "groupBy": "person" | "time" | null,
+  "type": "phrase_count" | "phrase_first" | "signal_rank" | "behavior_query" | "literal",
+  "phrase": key phrase to search for (or null),
+  "signal": for signal_rank type, one of: "laugh", "heat", "sentiment", "emoji", "question", "word_count", "all_caps", "link" (or null),
+  "groupBy": "person" | "time" | "month" | null,
   "sort": "desc" | "asc",
-  "explanation": a short sentence explaining what the user is asking
+  "limit": number (default 10),
+  "explanation": short sentence explaining the query
 }
 
+Types:
+- phrase_count: count how often a phrase appears, grouped by person. Use for "who do I say X to", "how often do I say X"
+- phrase_first: find the first/earliest occurrence of a phrase. Use for "when did I first mention X"
+- signal_rank: rank conversations by a pre-computed signal (laugh, heat, emoji, etc). Use for "who makes me laugh", "most heated", "most emoji"
+- behavior_query: time-based behavior patterns. Use for "what month do I text most", "busiest day"
+- literal: simple keyword search for browsing messages. Use for "show me messages about X"
+
+Available signals for signal_rank: laugh (laugh count), heat (conversation intensity 0-10), sentiment (positive rate), emoji (emoji usage rate), question (questions asked), word_count (avg message length), all_caps (shouting rate), link (links shared)
+
 Examples:
-- "who have I said I love you to the most" → { "type": "phrase_aggregation", "phrase": "I love you", "groupBy": "person", "sort": "desc", "explanation": "Finding who you've said 'I love you' to most frequently" }
-- "when did I first mention golf" → { "type": "phrase_aggregation", "phrase": "golf", "groupBy": "time", "sort": "asc", "explanation": "Finding the earliest mention of golf" }
-- "who do I talk about work with" → { "type": "phrase_aggregation", "phrase": "work", "groupBy": "person", "sort": "desc", "explanation": "Finding who you discuss work with most" }
-- "show me messages about moving" → { "type": "literal", "phrase": "moving", "groupBy": null, "sort": "desc", "explanation": "Searching for messages about moving" }
+- "who have I said I love you to the most" → { "type": "phrase_count", "phrase": "I love you", "signal": null, "groupBy": "person", "sort": "desc", "limit": 10, "explanation": "Finding who you've said 'I love you' to most" }
+- "when did I first mention golf" → { "type": "phrase_first", "phrase": "golf", "signal": null, "groupBy": null, "sort": "asc", "limit": 5, "explanation": "Finding earliest mention of golf" }
+- "who sends me the most emoji" → { "type": "signal_rank", "phrase": null, "signal": "emoji", "groupBy": "person", "sort": "desc", "limit": 10, "explanation": "Ranking conversations by emoji usage" }
+- "most heated conversations" → { "type": "signal_rank", "phrase": null, "signal": "heat", "groupBy": "person", "sort": "desc", "limit": 10, "explanation": "Ranking by conversation intensity" }
+- "who writes the longest messages" → { "type": "signal_rank", "phrase": null, "signal": "word_count", "groupBy": "person", "sort": "desc", "limit": 10, "explanation": "Ranking by average message length" }
+- "who makes me laugh the most" → { "type": "signal_rank", "phrase": null, "signal": "laugh", "groupBy": "person", "sort": "desc", "limit": 10, "explanation": "Ranking by laugh count" }
+- "show me messages about apartments" → { "type": "literal", "phrase": "apartments", "signal": null, "groupBy": null, "sort": "desc", "limit": 30, "explanation": "Searching for messages about apartments" }
+- "how often do I say sorry" → { "type": "phrase_count", "phrase": "sorry", "signal": null, "groupBy": "person", "sort": "desc", "limit": 10, "explanation": "Counting how often you say sorry" }
 
 Return ONLY the JSON object, no other text.`
 
-  const text = await callAnthropic(system, `Query: "${query}"`, 300)
+  const text = await callAnthropic(system, `Query: "${query}"`, 400)
   if (!text) return null
 
   try {
     const result = JSON.parse(text.trim().replace(/^```json?\n?/, '').replace(/\n?```$/, '')) as SearchIntent
-    setCache('search-intent', query, result)
+    setCache('search-intent-v2', query, result)
     return result
   } catch {
     return null

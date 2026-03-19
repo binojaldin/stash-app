@@ -2,7 +2,7 @@ import { app, shell, BrowserWindow, ipcMain, dialog, Menu, Tray, nativeImage, po
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import { checkFullDiskAccess } from './messagesReader'
-import { initDb, searchAttachments, getStats, getFastStats, getTodayInHistory, getUsageStats, getMessagingNetwork, getAttachmentById, closeDb, hideChat, getHiddenChats, getConversationStats, getRelationshipTimeline, getSocialGravity, getTopicEras, getTopicEraContext, getMemoryMoments, searchMessagesAggregated, updateReactionCounts, invalidateLaughCache, searchMessages, getMessageIndexStatus, getVocabStats, getWordOrigins } from './db'
+import { initDb, searchAttachments, getStats, getFastStats, getTodayInHistory, getUsageStats, getMessagingNetwork, getAttachmentById, closeDb, hideChat, getHiddenChats, getConversationStats, getRelationshipTimeline, getSocialGravity, getTopicEras, getTopicEraContext, getMemoryMoments, searchMessagesAggregated, updateReactionCounts, invalidateLaughCache, searchMessages, getMessageIndexStatus, getVocabStats, getWordOrigins, detectSignalQuery, executeSearchIntent } from './db'
 import { startIndexing, getIndexingProgress, fetchChatSummaries, saveChatPriorities, getSavedPriorityChats, resetIndexing, recoverAttachment, resolveNamesInBackground } from './indexer'
 import { compileContactsHelper, resolveContact, resolveContactsBatch } from './contacts'
 import { generateWrapped, getAvailableYears } from './wrapped'
@@ -573,6 +573,25 @@ function setupIpc(): void {
   ipcMain.handle('enrich-memory-moments', async (_event, moments: MemoryMomentSummaryInput[]) => enrichMemoryMoments(moments))
   ipcMain.handle('interpret-search-query', async (_event, query: string) => interpretSearchQuery(query))
   ipcMain.handle('search-messages-aggregated', (_event, phrase: string, chatName?: string) => searchMessagesAggregated(phrase, chatName))
+  ipcMain.handle('execute-search-intent', async (_event, query: string, chatName?: string) => {
+    // 1. Try local signal detection first (no AI needed)
+    const localSignal = detectSignalQuery(query)
+    if (localSignal) {
+      console.log(`[Search] Local signal detected: ${localSignal.signal}`)
+      return executeSearchIntent({ ...localSignal, limit: 10, sort: 'desc' }, chatName)
+    }
+    // 2. Try AI intent parsing
+    try {
+      const intent = await interpretSearchQuery(query)
+      if (intent && intent.type !== 'literal') {
+        console.log(`[Search] AI intent: ${intent.type}/${intent.signal || intent.phrase}`)
+        return executeSearchIntent(intent, chatName)
+      }
+    } catch { /* fall through */ }
+    // 3. Fallback: literal FTS search
+    const results = searchMessages(query, chatName, 30)
+    return { type: 'messages', explanation: `Showing messages matching "${query}"`, messages: results }
+  })
   ipcMain.handle('refresh-reactions', () => { updateReactionCounts() })
   ipcMain.handle('hide-chat', (_event, chatIdentifier: string) => { hideChat(chatIdentifier) })
   ipcMain.handle('get-hidden-chats', () => getHiddenChats())

@@ -2137,6 +2137,107 @@ export function getTopicEraContext(chapters: { startYear: number; endYear: numbe
   return { contexts }
 }
 
+// ── Search execution functions ──
+
+export interface SearchResult {
+  type: 'ranked_contacts' | 'messages' | 'aggregation' | 'timeline'
+  explanation: string
+  ranked?: { contact: string; value: number; label: string }[]
+  messages?: { id?: number; body: string; chat_name: string; sent_at: string; is_from_me: number; snippet: string; sender_handle?: string | null }[]
+  aggregation?: AggregatedSearchResult[]
+  timeline?: { period: string; value: number }[]
+}
+
+const SIGNAL_COLUMN_MAP: Record<string, { column: string; label: string }> = {
+  laugh: { column: 'laugh_count', label: 'laughs' },
+  heat: { column: 'avg_heat', label: 'avg heat' },
+  sentiment: { column: 'positive_rate', label: '% positive' },
+  emoji: { column: 'emoji_rate', label: '% emoji' },
+  question: { column: 'question_count', label: 'questions' },
+  word_count: { column: 'avg_word_count', label: 'avg words' },
+  all_caps: { column: 'all_caps_rate', label: '% all caps' },
+  link: { column: 'link_count', label: 'links' },
+}
+
+export function executeSignalRank(signal: string, sort: string, limit: number, chatName?: string): { contact: string; value: number; label: string }[] {
+  const d = initDb()
+  const mapping = SIGNAL_COLUMN_MAP[signal]
+  if (!mapping) return []
+  const chatFilter = chatName ? ` AND chat_identifier = '${chatName.replace(/'/g, "''")}'` : ''
+  try {
+    const rows = d.prepare(`SELECT chat_identifier as contact, ${mapping.column} as value, total_analyzed FROM conversation_signals WHERE total_analyzed > 10${chatFilter} ORDER BY ${mapping.column} ${sort === 'asc' ? 'ASC' : 'DESC'} LIMIT ?`).all(limit) as { contact: string; value: number; total_analyzed: number }[]
+    return rows.map(r => ({ contact: r.contact, value: Math.round(r.value * 100) / 100, label: mapping.label }))
+  } catch { return [] }
+}
+
+export function executePhraseFirst(phrase: string, chatName?: string): { body: string; chat_name: string; sent_at: string; is_from_me: number }[] {
+  const d = initDb()
+  const likeTerm = `%${phrase.trim().toLowerCase()}%`
+  const chatFilter = chatName ? ' AND chat_name = ?' : ''
+  const params: (string | number)[] = [likeTerm]
+  if (chatName) params.push(chatName)
+  try {
+    return d.prepare(`SELECT body, chat_name, sent_at, is_from_me FROM messages WHERE LOWER(body) LIKE ?${chatFilter} ORDER BY apple_date ASC LIMIT 5`).all(...params) as { body: string; chat_name: string; sent_at: string; is_from_me: number }[]
+  } catch { return [] }
+}
+
+export function executeBehaviorQuery(signal: string, groupBy: string, sort: string, limit: number): { period: string; value: number }[] {
+  const d = initDb()
+  try {
+    if (groupBy === 'month') {
+      return d.prepare(`SELECT strftime('%m', sent_at) as period, COUNT(*) as value FROM message_signals GROUP BY period ORDER BY value ${sort === 'asc' ? 'ASC' : 'DESC'} LIMIT ?`).all(limit) as { period: string; value: number }[]
+    }
+    return d.prepare(`SELECT strftime('%w', sent_at) as period, COUNT(*) as value FROM message_signals GROUP BY period ORDER BY value ${sort === 'asc' ? 'ASC' : 'DESC'} LIMIT ?`).all(limit) as { period: string; value: number }[]
+  } catch { return [] }
+}
+
+// Local signal detection — works without AI
+export function detectSignalQuery(query: string): { type: string; signal: string; explanation: string } | null {
+  const q = query.toLowerCase().trim()
+  if (/\b(laugh|funny|funniest|humor|comedian|comedy)\b/.test(q)) return { type: 'signal_rank', signal: 'laugh', explanation: 'Ranking by laugh count' }
+  if (/\b(emoji|emojis)\b/.test(q)) return { type: 'signal_rank', signal: 'emoji', explanation: 'Ranking by emoji usage' }
+  if (/\b(heat|heated|intense|intensity|argument)\b/.test(q)) return { type: 'signal_rank', signal: 'heat', explanation: 'Ranking by conversation intensity' }
+  if (/\b(question|questions|asks? me)\b/.test(q)) return { type: 'signal_rank', signal: 'question', explanation: 'Ranking by questions asked' }
+  if (/\b(long|longest|verbose|wordy|word count)\b/.test(q)) return { type: 'signal_rank', signal: 'word_count', explanation: 'Ranking by average message length' }
+  if (/\b(positive|happy|happiest|upbeat)\b/.test(q)) return { type: 'signal_rank', signal: 'sentiment', explanation: 'Ranking by positive sentiment' }
+  if (/\b(negative|angry|angriest|toxic|conflict)\b/.test(q)) return { type: 'signal_rank', signal: 'sentiment', explanation: 'Ranking by negative sentiment' }
+  if (/\b(link|links|url|urls|share.*link)\b/.test(q)) return { type: 'signal_rank', signal: 'link', explanation: 'Ranking by links shared' }
+  if (/\b(caps|yell|yelling|shout|shouting)\b/.test(q)) return { type: 'signal_rank', signal: 'all_caps', explanation: 'Ranking by all-caps messages' }
+  return null
+}
+
+export function executeSearchIntent(intent: { type: string; phrase?: string | null; signal?: string | null; groupBy?: string | null; sort?: string; limit?: number; explanation: string }, chatName?: string): SearchResult {
+  const sort = intent.sort || 'desc'
+  const limit = intent.limit || 10
+
+  switch (intent.type) {
+    case 'signal_rank': {
+      if (!intent.signal) return { type: 'ranked_contacts', explanation: intent.explanation, ranked: [] }
+      const ranked = executeSignalRank(intent.signal, sort, limit, chatName)
+      return { type: 'ranked_contacts', explanation: intent.explanation, ranked }
+    }
+    case 'phrase_count': {
+      if (!intent.phrase) return { type: 'aggregation', explanation: intent.explanation, aggregation: [] }
+      const agg = searchMessagesAggregated(intent.phrase, chatName, limit)
+      return { type: 'aggregation', explanation: intent.explanation, aggregation: agg }
+    }
+    case 'phrase_first': {
+      if (!intent.phrase) return { type: 'messages', explanation: intent.explanation, messages: [] }
+      const msgs = executePhraseFirst(intent.phrase, chatName)
+      return { type: 'messages', explanation: intent.explanation, messages: msgs.map(m => ({ ...m, snippet: m.body.slice(0, 200) })) }
+    }
+    case 'behavior_query': {
+      const timeline = executeBehaviorQuery(intent.signal || 'volume', intent.groupBy || 'month', sort, limit)
+      return { type: 'timeline', explanation: intent.explanation, timeline }
+    }
+    default: {
+      // Literal fallback
+      const results = searchMessages(intent.phrase || '', chatName, limit)
+      return { type: 'messages', explanation: intent.explanation || `Showing messages matching "${intent.phrase}"`, messages: results }
+    }
+  }
+}
+
 export function invalidateLaughCache(): void {
   laughCacheValid = false
   laughCache.clear()

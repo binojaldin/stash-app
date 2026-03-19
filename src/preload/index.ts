@@ -143,6 +143,14 @@ const api = {
   searchMessagesAggregated: (phrase: string, chatName?: string): Promise<{
     contact: string; count: number; samples: { body: string; sent_at: string; is_from_me: number }[]
   }[]> => ipcRenderer.invoke('search-messages-aggregated', phrase, chatName),
+  executeSearchIntent: (query: string, chatName?: string): Promise<{
+    type: 'ranked_contacts' | 'messages' | 'aggregation' | 'timeline'
+    explanation: string
+    ranked?: { contact: string; value: number; label: string }[]
+    messages?: { body: string; chat_name: string; sent_at: string; is_from_me: number; snippet: string }[]
+    aggregation?: { contact: string; count: number; samples: { body: string; sent_at: string; is_from_me: number }[] }[]
+    timeline?: { period: string; value: number }[]
+  }> => ipcRenderer.invoke('execute-search-intent', query, chatName),
   refreshReactions: (): Promise<void> => ipcRenderer.invoke('refresh-reactions'),
   getHiddenChats: (): Promise<string[]> => ipcRenderer.invoke('get-hidden-chats'),
   generateWrapped: (year: number): Promise<unknown> => ipcRenderer.invoke('generate-wrapped', year),

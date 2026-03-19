@@ -1261,42 +1261,43 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
     await window.api.saveShareCard(dataUrl, `stash-${slug}.png`)
   }
 
-  const [aiSearchResults, setAiSearchResults] = useState<{ contact: string; count: number; samples: { body: string; sent_at: string; is_from_me: number }[] }[] | null>(null)
-  const [aiSearchExplanation, setAiSearchExplanation] = useState<string | null>(null)
+  type SearchResultData = {
+    type: 'ranked_contacts' | 'messages' | 'aggregation' | 'timeline'
+    explanation: string
+    ranked?: { contact: string; value: number; label: string }[]
+    messages?: { body: string; chat_name: string; sent_at: string; is_from_me: number; snippet: string }[]
+    aggregation?: { contact: string; count: number; samples: { body: string; sent_at: string; is_from_me: number }[] }[]
+    timeline?: { period: string; value: number }[]
+  }
+  const [searchResult, setSearchResult] = useState<SearchResultData | null>(null)
 
   const isSemanticQuery = (q: string): boolean => {
     const lower = q.toLowerCase().trim()
     return /^(who|what|when|where|why|how|which)\b/.test(lower) ||
-      /\b(most|least|often|first|last|ever|never|always)\b/.test(lower) ||
+      /\b(most|least|often|first|last|ever|never|always|funniest|heated|longest|emoji)\b/.test(lower) ||
       /\b(how many|how much|do i|did i|have i)\b/.test(lower)
   }
 
   const handleMsgSearch = async (): Promise<void> => {
     if (!msgQuery.trim() || msgSearching) return
     setMsgSearching(true)
-    setAiSearchResults(null)
-    setAiSearchExplanation(null)
+    setSearchResult(null)
+    setMsgResults(null)
 
     const query = msgQuery.trim()
 
-    // Try AI semantic search for intent-based queries
     if (isSemanticQuery(query)) {
       try {
-        const intent = await window.api.interpretSearchQuery(query)
-        if (intent && intent.phrase && intent.type === 'phrase_aggregation') {
-          const results = await window.api.searchMessagesAggregated(intent.phrase, scopedPerson || undefined)
-          if (results.length > 0) {
-            setAiSearchExplanation(intent.explanation)
-            setAiSearchResults(results)
-            setMsgResults(null)
-            setMsgSearching(false)
-            return
-          }
+        const result = await window.api.executeSearchIntent(query, scopedPerson || undefined)
+        if (result && ((result.ranked && result.ranked.length > 0) || (result.aggregation && result.aggregation.length > 0) || (result.messages && result.messages.length > 0) || (result.timeline && result.timeline.length > 0))) {
+          setSearchResult(result)
+          setMsgSearching(false)
+          return
         }
-      } catch { /* fall through to literal */ }
+      } catch { /* fall through */ }
     }
 
-    // Fallback: literal search
+    // Fallback: literal FTS
     try { setMsgResults(await window.api.searchMessages(query, scopedPerson || undefined, 30)) }
     catch { setMsgResults([]) }
     finally { setMsgSearching(false) }
@@ -2114,32 +2115,98 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
         {isIndexed && <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', marginTop: 8, fontFamily: "'DM Sans'" }}>{msgIndexStatus!.indexed.toLocaleString()} messages indexed</div>}
       </div>
 
-      {/* AI aggregated results */}
-      {aiSearchResults !== null && (
+      {/* Structured search results */}
+      {searchResult !== null && (
         <div style={{ gridColumn: 'span 12' }}>
-          {aiSearchExplanation && (
-            <div style={{ fontSize: 12, color: '#E8604A', marginBottom: 10, fontFamily: "'DM Sans'", fontWeight: 500 }}>{aiSearchExplanation}</div>
+          <div style={{ fontSize: 12, color: '#E8604A', marginBottom: 10, fontFamily: "'DM Sans'", fontWeight: 500 }}>{searchResult.explanation}</div>
+
+          {/* Ranked contacts (signal_rank results) */}
+          {searchResult.type === 'ranked_contacts' && searchResult.ranked && (
+            searchResult.ranked.length === 0
+              ? <div style={{ textAlign: 'center', padding: 24, color: '#9a948f', fontSize: 13, fontFamily: "'DM Sans'" }}>No signal data yet. Analysis may still be running.</div>
+              : <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {(() => { const maxVal = Math.max(...searchResult.ranked!.map(r => r.value), 1); return searchResult.ranked!.map((r, i) => (
+                    <div key={r.contact} onClick={() => onSelectConversation(r.contact)}
+                      style={{ padding: '12px 16px', borderRadius: 12, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', cursor: 'pointer' }}
+                      onMouseEnter={e => (e.currentTarget.style.background = '#F8F4F0')} onMouseLeave={e => (e.currentTarget.style.background = '#fff')}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ fontSize: 12, color: i === 0 ? '#E8604A' : '#c8c0ba', fontWeight: 600, width: 18, fontFamily: "'DM Sans'" }}>{i + 1}</span>
+                          <span style={{ fontSize: 14, fontWeight: i === 0 ? 600 : 400, color: '#1A1A1A', fontFamily: "'DM Sans'" }}>{resolveName(r.contact, chatNameMap)}</span>
+                        </div>
+                        <span style={{ fontFamily: "'Unbounded', sans-serif", fontWeight: 200, fontSize: 15, color: i === 0 ? '#E8604A' : '#9a948f' }}>{r.value} <span style={{ fontSize: 10, fontWeight: 400 }}>{r.label}</span></span>
+                      </div>
+                      <div style={{ height: 3, borderRadius: 2, background: '#EAE5DF', overflow: 'hidden' }}>
+                        <div style={{ height: '100%', width: `${Math.round((r.value / maxVal) * 100)}%`, background: i === 0 ? '#E8604A' : '#D4CFC9', borderRadius: 2 }} />
+                      </div>
+                    </div>
+                  )) })()}
+                </div>
           )}
-          {aiSearchResults.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: 24, color: '#9a948f', fontSize: 13, fontFamily: "'DM Sans'" }}>No results found.</div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {aiSearchResults.map((r, i) => (
-                <div key={r.contact} onClick={() => onSelectConversation(r.contact)}
-                  style={{ padding: '14px 18px', borderRadius: 12, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', cursor: 'pointer', boxShadow: '0 2px 8px rgba(0,0,0,0.03)' }}
-                  onMouseEnter={e => (e.currentTarget.style.background = '#F8F4F0')} onMouseLeave={e => (e.currentTarget.style.background = '#fff')}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                    <span style={{ fontSize: 14, fontWeight: 600, color: '#1A1A1A', fontFamily: "'DM Sans'" }}>{resolveName(r.contact, chatNameMap)}</span>
-                    <span style={{ fontFamily: "'Unbounded', sans-serif", fontWeight: 200, fontSize: 16, color: '#E8604A' }}>{r.count}x</span>
-                  </div>
-                  {r.samples.slice(0, 2).map((s, j) => (
-                    <div key={j} style={{ fontSize: 12, color: '#6f6a65', lineHeight: 1.5, fontFamily: "'DM Sans'", padding: '3px 0', borderTop: j > 0 ? '1px solid rgba(0,0,0,0.04)' : 'none' }}>
-                      <span style={{ color: s.is_from_me ? '#E8604A' : '#2EC4A0', fontSize: 10, fontWeight: 500, marginRight: 6 }}>{s.is_from_me ? 'You' : 'Them'}</span>
-                      {s.body}
+
+          {/* Aggregation (phrase_count results) */}
+          {searchResult.type === 'aggregation' && searchResult.aggregation && (
+            searchResult.aggregation.length === 0
+              ? <div style={{ textAlign: 'center', padding: 24, color: '#9a948f', fontSize: 13, fontFamily: "'DM Sans'" }}>No results found.</div>
+              : <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {searchResult.aggregation.map(r => (
+                    <div key={r.contact} onClick={() => onSelectConversation(r.contact)}
+                      style={{ padding: '14px 18px', borderRadius: 12, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', cursor: 'pointer', boxShadow: '0 2px 8px rgba(0,0,0,0.03)' }}
+                      onMouseEnter={e => (e.currentTarget.style.background = '#F8F4F0')} onMouseLeave={e => (e.currentTarget.style.background = '#fff')}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                        <span style={{ fontSize: 14, fontWeight: 600, color: '#1A1A1A', fontFamily: "'DM Sans'" }}>{resolveName(r.contact, chatNameMap)}</span>
+                        <span style={{ fontFamily: "'Unbounded', sans-serif", fontWeight: 200, fontSize: 16, color: '#E8604A' }}>{r.count}x</span>
+                      </div>
+                      {r.samples.slice(0, 2).map((s, j) => (
+                        <div key={j} style={{ fontSize: 12, color: '#6f6a65', lineHeight: 1.5, fontFamily: "'DM Sans'", padding: '3px 0', borderTop: j > 0 ? '1px solid rgba(0,0,0,0.04)' : 'none' }}>
+                          <span style={{ color: s.is_from_me ? '#E8604A' : '#2EC4A0', fontSize: 10, fontWeight: 500, marginRight: 6 }}>{s.is_from_me ? 'You' : 'Them'}</span>
+                          {s.body}
+                        </div>
+                      ))}
                     </div>
                   ))}
                 </div>
-              ))}
+          )}
+
+          {/* Messages (phrase_first / literal results) */}
+          {searchResult.type === 'messages' && searchResult.messages && (
+            searchResult.messages.length === 0
+              ? <div style={{ textAlign: 'center', padding: 24, color: '#9a948f', fontSize: 13, fontFamily: "'DM Sans'" }}>No messages found.</div>
+              : <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {searchResult.messages.map((r, i) => (
+                    <div key={i} onClick={() => r.chat_name && onSelectConversation(r.chat_name)}
+                      style={{ padding: '12px 16px', borderRadius: 12, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', cursor: 'pointer' }}
+                      onMouseEnter={e => (e.currentTarget.style.background = '#F8F4F0')} onMouseLeave={e => (e.currentTarget.style.background = '#fff')}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                        <span style={{ fontSize: 11, color: r.is_from_me ? '#E8604A' : '#2EC4A0', fontWeight: 500, fontFamily: "'DM Sans'" }}>
+                          {r.is_from_me ? 'You' : 'Them'} · <span style={{ color: '#9a948f', fontWeight: 400 }}>{resolveName(r.chat_name, chatNameMap)}</span>
+                        </span>
+                        <span style={{ fontSize: 10, color: '#c8c0ba', fontFamily: "'DM Sans'" }}>{new Date(r.sent_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                      </div>
+                      <div style={{ fontSize: 13, color: '#4a4542', lineHeight: 1.5, fontFamily: "'DM Sans'" }}>{r.snippet || r.body?.slice(0, 200)}</div>
+                    </div>
+                  ))}
+                </div>
+          )}
+
+          {/* Timeline (behavior_query results) */}
+          {searchResult.type === 'timeline' && searchResult.timeline && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {searchResult.timeline.map(t => {
+                const MONTHS = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+                const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+                const label = MONTHS[parseInt(t.period)] || DAYS[parseInt(t.period)] || t.period
+                const maxVal = Math.max(...searchResult.timeline!.map(x => x.value), 1)
+                return (
+                  <div key={t.period} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '6px 0' }}>
+                    <span style={{ width: 36, fontSize: 12, color: '#6f6a65', fontFamily: "'DM Sans'", textAlign: 'right' }}>{label}</span>
+                    <div style={{ flex: 1, height: 6, borderRadius: 3, background: '#EAE5DF', overflow: 'hidden' }}>
+                      <div style={{ height: '100%', width: `${Math.round((t.value / maxVal) * 100)}%`, background: '#E8604A', borderRadius: 3 }} />
+                    </div>
+                    <span style={{ width: 50, fontSize: 11, color: '#9a948f', fontFamily: "'DM Sans'", textAlign: 'right' }}>{t.value.toLocaleString()}</span>
+                  </div>
+                )
+              })}
             </div>
           )}
         </div>
