@@ -1374,6 +1374,39 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
   const formatTier = (tier: string): string => tier === 'inner_circle' ? 'Inner Circle' : tier.charAt(0).toUpperCase() + tier.slice(1)
   const tierColor = (tier: string): string => tier === 'inner_circle' ? '#2EC4A0' : tier === 'close' ? 'rgba(46,196,160,0.6)' : tier === 'regular' ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.3)'
 
+  // ── Relationship hero AI state (must be before early return) ──
+  const [heroPhoto, setHeroPhoto] = useState<{ id: number; thumbnail_path: string; created_at: string; filename: string } | null>(null)
+  const [heroPhotoUrl, setHeroPhotoUrl] = useState<string | null>(null)
+  const [relNarrative, setRelNarrative] = useState<{ headline: string; narrative: string } | null>(null)
+  const [convoSummary, setConvoSummary] = useState<{ summary: string; topics: string[]; tone: string } | null>(null)
+  const [photoCaption, setPhotoCaption] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!scopedPerson) { setHeroPhoto(null); setHeroPhotoUrl(null); setRelNarrative(null); setConvoSummary(null); setPhotoCaption(null); return }
+    // Fetch photo
+    window.api.getSignificantPhotos(scopedPerson).then(photos => {
+      if (photos.length > 0) {
+        setHeroPhoto(photos[0])
+        window.api.getFileUrl(photos[0].thumbnail_path).then(url => setHeroPhotoUrl(url)).catch(() => {})
+      } else { setHeroPhoto(null); setHeroPhotoUrl(null) }
+    }).catch(() => {})
+    // Fetch AI narrative (non-blocking)
+    const contactName = resolveName(scopedPerson, chatNameMap)
+    const pd2 = (stats.chatNames as { rawName: string; messageCount: number; sentCount: number; receivedCount: number; lastMessageDate: string; attachmentCount: number }[]).find(c => c.rawName === scopedPerson)
+    const ce = closenessData.find(c => c.chat_identifier === scopedPerson)
+    const cr = closenessData.findIndex(c => c.chat_identifier === scopedPerson)
+    if (pd2) {
+      window.api.generateRelationshipNarrative(scopedPerson, contactName, {
+        messageCount: pd2.messageCount, sentCount: pd2.sentCount, receivedCount: pd2.receivedCount,
+        firstMessageDate: null, lastMessageDate: pd2.lastMessageDate,
+        peakYear: null, peakYearCount: null, longestStreak: 0,
+        closenessScore: ce?.total_score || 0, closenessRank: cr >= 0 ? cr + 1 : null,
+        tier: ce?.tier || 'unknown', laughCount: 0, avgHeat: 0, positiveRate: 0
+      }).then(r => { if (r) setRelNarrative(r) }).catch(() => {})
+    }
+    window.api.summarizeConversation(scopedPerson, contactName).then(r => { if (r) setConvoSummary(r) }).catch(() => {})
+  }, [scopedPerson])
+
   // ── Relationship view ──
   if (scopedPerson) {
     const pn = resolveName(scopedPerson, chatNameMap)
@@ -1444,44 +1477,77 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
             <span style={{ color: '#9a948f', letterSpacing: '0.2em', fontSize: 20 }}>•••</span>
           </div>
 
-          <div style={{ background: '#1E2826', borderRadius: 22, padding: 28, marginBottom: 20, position: 'relative', overflow: 'hidden' }}>
-            <div style={{ position: 'absolute', right: -80, bottom: -120, width: 320, height: 320, background: 'radial-gradient(circle, rgba(46,196,160,0.18) 0%, transparent 62%)', pointerEvents: 'none' }} />
-            <div style={{ position: 'relative', zIndex: 1 }}>
-              <div style={{ fontSize: 11, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'rgba(46,196,160,0.7)', marginBottom: 12 }}>THE DYNAMIC</div>
-              <div style={{ fontFamily: "'Unbounded', sans-serif", fontWeight: 200, fontSize: 28, color: 'white', letterSpacing: '0.02em', marginBottom: 10 }}>{isGroupChat ? `${pn}.` : `The ${firstName} Files.`}</div>
-              <div style={{ fontSize: 15, color: 'rgba(255,255,255,0.68)', lineHeight: 1.7 }}>
-                {pd ? `${pd.messageCount.toLocaleString()} messages exchanged.` : ''}
+          {/* ── CINEMATIC HERO ── */}
+          <div style={{ background: '#1E2826', borderRadius: 22, marginBottom: 20, position: 'relative', overflow: 'hidden' }}>
+            {/* Photo banner */}
+            {heroPhotoUrl && (
+              <div style={{ position: 'relative', height: 220, overflow: 'hidden' }}>
+                <img src={heroPhotoUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, transparent 30%, rgba(30,40,38,0.95) 100%)' }} />
+                {photoCaption && (
+                  <div style={{ position: 'absolute', bottom: 12, left: 20, right: 20, fontSize: 13, color: 'rgba(255,255,255,0.7)', fontFamily: "'DM Sans'", fontStyle: 'italic' }}>{photoCaption}</div>
+                )}
               </div>
-              {pd && pd.attachmentCount > 0 && (
-                <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)', marginTop: 2 }}>
-                  {pd.attachmentCount.toLocaleString()} attachments shared.
+            )}
+            {/* Content */}
+            <div style={{ padding: heroPhotoUrl ? '16px 28px 28px' : '28px', position: 'relative' }}>
+              <div style={{ position: 'absolute', right: -80, bottom: -120, width: 320, height: 320, background: 'radial-gradient(circle, rgba(46,196,160,0.18) 0%, transparent 62%)', pointerEvents: 'none' }} />
+              <div style={{ position: 'relative', zIndex: 1 }}>
+                {/* AI headline or fallback */}
+                <div style={{ fontSize: 12, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#2EC4A0', marginBottom: 6, fontFamily: "'DM Sans'", fontWeight: 600 }}>
+                  {relNarrative?.headline || (isGroupChat ? pn : `The ${firstName} Files`)}
                 </div>
-              )}
-              {convStats?.peakYear && (
-                <div style={{ fontSize: 13, color: 'rgba(46,196,160,0.55)', marginTop: 6, fontFamily: "'DM Sans'" }}>
-                  Peak year: {convStats.peakYear.year} · {convStats.peakYear.count.toLocaleString()} messages
-                </div>
-              )}
-              {closenessEntry && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8 }}>
-                  <span style={{ display: 'inline-block', padding: '3px 10px', borderRadius: 6, fontSize: 10, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', background: `${tierColor(closenessEntry.tier)}18`, color: tierColor(closenessEntry.tier), fontFamily: "'DM Sans'" }}>{formatTier(closenessEntry.tier)}</span>
-                  {closenessRank && <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', fontFamily: "'DM Sans'" }}>#{closenessRank} closest relationship</span>}
-                </div>
-              )}
-              {pd?.lastMessageDate && (
-                <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.45)', marginTop: 4 }}>
-                  {(() => {
-                    const days = Math.floor((new Date().getTime() - new Date(pd.lastMessageDate).getTime()) / 86400000)
-                    if (days === 0) return 'Last message today'
-                    if (days === 1) return 'Last message yesterday'
-                    if (days < 30) return `Last message ${days} days ago`
-                    if (days < 365) return `Last message ${Math.floor(days / 30)} months ago`
-                    return `Last message ${Math.floor(days / 365)} year${Math.floor(days / 365) > 1 ? 's' : ''} ago`
-                  })()}
-                </div>
-              )}
+                {/* Contact name */}
+                <div style={{ fontFamily: "'Unbounded', sans-serif", fontWeight: 200, fontSize: 32, color: 'white', letterSpacing: '0.01em', marginBottom: 8 }}>{pn}</div>
+                {/* Tier + rank */}
+                {closenessEntry && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                    <span style={{ display: 'inline-block', padding: '3px 10px', borderRadius: 6, fontSize: 10, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', background: `${tierColor(closenessEntry.tier)}18`, color: tierColor(closenessEntry.tier), fontFamily: "'DM Sans'" }}>{formatTier(closenessEntry.tier)}</span>
+                    {closenessRank && <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', fontFamily: "'DM Sans'" }}>#{closenessRank} closest</span>}
+                  </div>
+                )}
+                {/* AI narrative or stats fallback */}
+                {relNarrative ? (
+                  <div style={{ fontSize: 15, color: 'rgba(255,255,255,0.65)', lineHeight: 1.7, maxWidth: 540, fontStyle: 'italic' }}>{relNarrative.narrative}</div>
+                ) : (
+                  <div style={{ fontSize: 15, color: 'rgba(255,255,255,0.65)', lineHeight: 1.7 }}>
+                    {pd ? `${pd.messageCount.toLocaleString()} messages exchanged.` : ''}
+                    {pd && pd.attachmentCount > 0 ? ` ${pd.attachmentCount.toLocaleString()} attachments shared.` : ''}
+                  </div>
+                )}
+                {/* Compact stats bar */}
+                {pd && (
+                  <div style={{ display: 'flex', gap: 20, marginTop: 16 }}>
+                    {[
+                      { value: pd.messageCount.toLocaleString(), label: 'Messages' },
+                      { value: pd.attachmentCount > 0 ? pd.attachmentCount.toLocaleString() : null, label: 'Attachments' },
+                      { value: convStats?.peakYear ? String(convStats.peakYear.year) : null, label: 'Peak year' },
+                      { value: pd.lastMessageDate ? (() => { const d = Math.floor((Date.now() - new Date(pd.lastMessageDate).getTime()) / 86400000); return d === 0 ? 'Today' : d === 1 ? 'Yesterday' : `${d}d ago` })() : null, label: 'Last msg' },
+                    ].filter(s => s.value).map(s => (
+                      <div key={s.label}>
+                        <div style={{ fontFamily: "'Unbounded', sans-serif", fontWeight: 200, fontSize: 16, color: '#2EC4A0' }}>{s.value}</div>
+                        <div style={{ fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.35)', marginTop: 2 }}>{s.label}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
+
+          {/* ── CONVERSATION SUMMARY CARD (AI) ── */}
+          {convoSummary && (
+            <div style={{ background: '#fff', borderRadius: 16, padding: '18px 22px', marginBottom: 16, border: '1px solid rgba(0,0,0,0.06)', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}>
+              <div style={{ fontSize: 10, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#2EC4A0', marginBottom: 8, fontFamily: "'DM Sans'", fontWeight: 600 }}>Conversation summary</div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
+                {convoSummary.topics.map(t => (
+                  <span key={t} style={{ fontSize: 11, padding: '3px 10px', borderRadius: 20, background: 'rgba(46,196,160,0.08)', color: '#2EC4A0', fontFamily: "'DM Sans'" }}>{t}</span>
+                ))}
+                <span style={{ fontSize: 11, padding: '3px 10px', borderRadius: 20, background: 'rgba(127,119,221,0.08)', color: '#7F77DD', fontFamily: "'DM Sans'" }}>{convoSummary.tone}</span>
+              </div>
+              <div style={{ fontSize: 14, color: '#4a4542', lineHeight: 1.7, fontFamily: "'DM Sans'" }}>{convoSummary.summary}</div>
+            </div>
+          )}
 
           {!isStatsLoading && trophies.length > 0 && (
             <div style={{ marginBottom: 20 }}>

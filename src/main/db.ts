@@ -2699,6 +2699,13 @@ export function getWordOrigins(chatName?: string, limit = 5): { word: string; fi
   } catch { return [] }
 }
 
+export function getSignificantPhotos(chatIdentifier: string, limit = 5): { id: number; filename: string; thumbnail_path: string; created_at: string; original_path: string }[] {
+  const d = initDb()
+  try {
+    return d.prepare(`SELECT id, filename, original_path, thumbnail_path, created_at FROM attachments WHERE chat_name = ? AND is_image = 1 AND thumbnail_path IS NOT NULL AND is_available = 1 ORDER BY created_at DESC LIMIT ?`).all(chatIdentifier, limit) as { id: number; filename: string; thumbnail_path: string; created_at: string; original_path: string }[]
+  } catch { return [] }
+}
+
 export interface MessageSample { body: string; is_from_me: number; sent_at: string }
 
 export function getMessageSamples(chatIdentifier: string, recentLimit = 50, oldLimit = 20): { recent: MessageSample[]; old: MessageSample[] } {
