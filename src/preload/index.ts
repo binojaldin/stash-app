@@ -169,6 +169,13 @@ const api = {
   getAnalysisProgress: (): Promise<{
     totalMessages: number; analyzedMessages: number; lastRunAt: string | null; isRunning: boolean
   }> => ipcRenderer.invoke('get-analysis-progress'),
+  getClosenessScores: (chatIdentifier?: string): Promise<{
+    chat_identifier: string; total_score: number; tier: string
+    volume_score: number; balance_score: number; recency_score: number
+    consistency_score: number; reaction_score: number; sentiment_score: number
+    shared_group_score: number; updated_at: string
+  }[]> => ipcRenderer.invoke('get-closeness-scores', chatIdentifier),
+  getClosenessRank: (chatIdentifier: string): Promise<number | null> => ipcRenderer.invoke('get-closeness-rank', chatIdentifier),
   onAnalysisProgress: (callback: (data: { analyzed: number; total: number }) => void): (() => void) => {
     const handler = (_event: unknown, data: { analyzed: number; total: number }): void => callback(data)
     ipcRenderer.on('analysis-progress', handler)

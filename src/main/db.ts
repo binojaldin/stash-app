@@ -182,6 +182,24 @@ export function initDb(): Database.Database {
     );
   `)
 
+  // ── V4: closeness ranking ──
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS closeness_scores (
+      chat_identifier TEXT PRIMARY KEY,
+      volume_score REAL DEFAULT 0, balance_score REAL DEFAULT 0,
+      initiation_score REAL DEFAULT 0, recency_score REAL DEFAULT 0,
+      consistency_score REAL DEFAULT 0, reaction_score REAL DEFAULT 0,
+      reply_speed_score REAL DEFAULT 0,
+      emoji_score REAL DEFAULT 0, sentiment_score REAL DEFAULT 0,
+      question_balance_score REAL DEFAULT 0, word_match_score REAL DEFAULT 0,
+      shared_group_score REAL DEFAULT 0, late_night_score REAL DEFAULT 0,
+      streak_score REAL DEFAULT 0, heat_sentiment_score REAL DEFAULT 0,
+      total_score REAL DEFAULT 0,
+      tier TEXT DEFAULT 'distant',
+      updated_at TEXT NOT NULL DEFAULT ''
+    );
+  `)
+
   // Backfill null chat_name from Messages chat.db
   // Skip if a previous attempt found 0 fixable records
   try {
