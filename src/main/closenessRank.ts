@@ -34,10 +34,10 @@ export interface ClosenessScore {
 }
 
 function tier(score: number): string {
-  if (score >= 85) return 'inner_circle'
-  if (score >= 65) return 'close'
-  if (score >= 40) return 'regular'
-  if (score >= 20) return 'peripheral'
+  if (score >= 80) return 'inner_circle'
+  if (score >= 60) return 'close'
+  if (score >= 35) return 'regular'
+  if (score >= 15) return 'peripheral'
   return 'distant'
 }
 
@@ -104,8 +104,16 @@ export async function computeClosenessScores(_mainWindow?: BrowserWindow): Promi
         `).all() as { rawName: string; activeMonths: number }[]
         const consistencyMap = new Map(consistencyRows.map(r => [r.rawName, r.activeMonths]))
 
+        // First message date per contact (for proper monthsActive calculation)
+        const firstMsgRows = chatDb.prepare(`
+          SELECT c.chat_identifier as rawName,
+            MIN(datetime(m.date/${NS}+${APPLE_EPOCH}, 'unixepoch', 'localtime')) as firstMsg
+          FROM message m JOIN chat_message_join cmj ON m.ROWID=cmj.message_id
+          JOIN chat c ON cmj.chat_id=c.ROWID GROUP BY c.chat_identifier
+        `).all() as { rawName: string; firstMsg: string }[]
+        const firstMsgMap = new Map(firstMsgRows.map(r => [r.rawName, r.firstMsg]))
+
         // Laugh cache from stash.db (already computed by getStats worker)
-        // Read from the cached stats if available, otherwise skip
         const laughRows = stashDb.prepare(`
           SELECT chat_identifier, laugh_count FROM conversation_signals WHERE laugh_count > 0
         `).all() as { chat_identifier: string; laugh_count: number }[]
@@ -129,7 +137,8 @@ export async function computeClosenessScores(_mainWindow?: BrowserWindow): Promi
             _sharedGroups: sharedGroupMap.get(r.rawName) || 0,
             _consistencyMonths: consistencyMap.get(r.rawName) || 0,
             _laughCount: laughMap.get(r.rawName) || 0,
-          } as ChatNameEntry & { _sharedGroups: number; _consistencyMonths: number; _laughCount: number }
+            _firstMsgDate: firstMsgMap.get(r.rawName) || null,
+          } as ChatNameEntry & { _sharedGroups: number; _consistencyMonths: number; _laughCount: number; _firstMsgDate: string | null }
         }).filter(c => !c.isGroup && c.messageCount > 0)
 
         chatDb.close()
@@ -180,15 +189,14 @@ export async function computeClosenessScores(_mainWindow?: BrowserWindow): Promi
 
   const tx = stashDb.transaction(() => {
     for (const c of contacts) {
-      const ext = c as ChatNameEntry & { _sharedGroups: number; _consistencyMonths: number; _laughCount: number }
+      const ext = c as ChatNameEntry & { _sharedGroups: number; _consistencyMonths: number; _laughCount: number; _firstMsgDate: string | null }
 
       // ── Level 1: Heuristic signals ──
-      // Volume: messages per month, normalized
-      const firstMsgDate = c.lastMessageDate ? new Date(c.lastMessageDate) : new Date()
-      const monthsActive = Math.max(1, (now - firstMsgDate.getTime()) / (30 * 86400000))
-      // Actually monthsActive should be from first msg, not last. Use a rough estimate.
-      const msgsPerMonth = c.messageCount / Math.max(monthsActive, 1)
-      const volumeNorm = Math.min(msgsPerMonth / 200, 1.0)
+      // Volume: messages per month since FIRST message, normalized
+      const firstMsgTime = ext._firstMsgDate ? new Date(ext._firstMsgDate).getTime() : now
+      const monthsSinceFirst = Math.max(1, (now - firstMsgTime) / (30 * 86400000))
+      const msgsPerMonth = c.messageCount / monthsSinceFirst
+      const volumeNorm = Math.min(msgsPerMonth / 100, 1.0)
 
       // Balance
       const sentRatio = c.sentCount / Math.max(c.messageCount, 1)
@@ -209,7 +217,7 @@ export async function computeClosenessScores(_mainWindow?: BrowserWindow): Promi
       // Reaction
       const totalLaughs = ext._laughCount || (c.laughsGenerated + c.laughsReceived)
       const laughsPer100 = totalLaughs / Math.max(c.messageCount / 100, 1)
-      const reactionNorm = Math.min(laughsPer100 / 10, 1.0)
+      const reactionNorm = Math.min(laughsPer100 / 5, 1.0)
 
       // Reply speed (not available from this data path, use neutral)
       const replySpeedNorm = 0.5
@@ -222,17 +230,17 @@ export async function computeClosenessScores(_mainWindow?: BrowserWindow): Promi
 
       if (sig && sig.total_analyzed > 0) {
         level2Count++
-        emojiNorm = Math.min((sig.emoji_rate || 0) / 50, 1.0)
-        sentimentNorm = Math.min((sig.positive_rate || 0) / 30, 1.0)
+        emojiNorm = Math.min((sig.emoji_rate || 0) / 30, 1.0)
+        sentimentNorm = Math.min((sig.positive_rate || 0) / 20, 1.0)
         if ((sig.negative_rate || 0) > 20) sentimentNorm = Math.max(0, sentimentNorm - 0.3)
         const qRate = (sig.question_count || 0) / Math.max(sig.total_analyzed, 1)
-        questionNorm = Math.min(qRate / 0.3, 1.0)
+        questionNorm = Math.min(qRate / 0.2, 1.0)
         if (sig.avg_heat > 2 && (sig.positive_rate || 0) > (sig.negative_rate || 0)) {
           heatSentimentNorm = Math.min(sig.avg_heat / 5, 1.0)
         }
       }
 
-      sharedGroupNorm = Math.min((ext._sharedGroups || 0) / 10, 1.0)
+      sharedGroupNorm = Math.min((ext._sharedGroups || 0) / 5, 1.0)
       streakNorm = consistencyNorm * volumeNorm // proxy
 
       // ── Composite ──
@@ -244,7 +252,7 @@ export async function computeClosenessScores(_mainWindow?: BrowserWindow): Promi
         wordMatchNorm * 3 + sharedGroupNorm * 5 + lateNightNorm * 3 +
         streakNorm * 4 + heatSentimentNorm * 3
       )
-      const score = Math.min(100, Math.round((total / 70) * 100 * 10) / 10)
+      const score = Math.min(100, Math.round((total / 55) * 100 * 10) / 10)
       const t = tier(score)
       tierCounts[t] = (tierCounts[t] || 0) + 1
 
