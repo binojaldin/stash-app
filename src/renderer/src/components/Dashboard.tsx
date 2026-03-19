@@ -630,8 +630,10 @@ function LifeChaptersCard({ personChapters, groupChapters, chatNameMap, onHoverC
 type MemoryMoment = { type: string; title: string; subtitle: string; dateLabel: string; chatName: string | null; metric: number | null }
 
 const MEMORY_ICONS: Record<string, string> = {
-  on_this_day: '\u{1F4C5}', first_message: '\u{1F4AC}', biggest_day: '\u{1F525}',
-  biggest_month: '\u{1F4CA}', streak: '\u{26A1}', intensity_echo: '\u{1F300}'
+  on_this_day: '\u{1F4C5}', first_message: '\u{1F382}', biggest_day: '\u{1F525}',
+  biggest_month: '\u{1F4CA}', streak: '\u{26A1}', intensity_echo: '\u{1F4C8}',
+  comeback: '\u{1F504}', fading: '\u{1F305}', streak_anniversary: '\u{1F3AF}',
+  heat_peak: '\u{1F336}'
 }
 
 function MemoryCard({ moments, chatNameMap }: { moments: MemoryMoment[]; chatNameMap: Record<string, string> }): JSX.Element | null {

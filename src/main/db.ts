@@ -1733,7 +1733,7 @@ export function getTopicEras(): { chapters: TopicChapter[] } {
 }
 
 export interface MemoryMoment {
-  type: 'on_this_day' | 'first_message' | 'biggest_day' | 'biggest_month' | 'streak' | 'intensity_echo'
+  type: 'on_this_day' | 'first_message' | 'biggest_day' | 'biggest_month' | 'streak' | 'intensity_echo' | 'comeback' | 'fading' | 'streak_anniversary' | 'heat_peak'
   title: string
   subtitle: string
   dateLabel: string
@@ -1802,10 +1802,10 @@ export function getMemoryMoments(): { moments: MemoryMoment[] } {
         if (isNaN(d.getTime())) continue
         const year = d.getFullYear()
         if (year >= currentYear) continue
-        // Check if anniversary is within 3 days of today
+        // Check if anniversary is within 7 days of today
         const annivThisYear = new Date(currentYear, d.getMonth(), d.getDate())
         const diff = Math.abs(now.getTime() - annivThisYear.getTime()) / 86400000
-        if (diff <= 3 && (!bestAnniv || year < bestAnniv.year)) {
+        if (diff <= 7 && (!bestAnniv || year < bestAnniv.year)) {
           bestAnniv = { chat_id: r.chat_id, year, dayDiff: Math.round(diff) }
         }
       }
@@ -1835,12 +1835,18 @@ export function getMemoryMoments(): { moments: MemoryMoment[] } {
 
       if (biggestDay && biggestDay.cnt > 50) {
         const bd = new Date(biggestDay.d + 'T12:00:00')
+        // Find dominant contact for that day
+        let bigDayContact: string | null = null
+        try {
+          const dayContact = chatDb.prepare(`SELECT c.chat_identifier as chat_id, COUNT(*) as cnt FROM message m JOIN chat_message_join cmj ON m.ROWID = cmj.message_id JOIN chat c ON cmj.chat_id = c.ROWID WHERE date(datetime(m.date/${NS}+${APPLE_EPOCH}, 'unixepoch', 'localtime')) = ? GROUP BY c.chat_identifier ORDER BY cnt DESC LIMIT 1`).get(biggestDay.d) as { chat_id: string; cnt: number } | undefined
+          if (dayContact) bigDayContact = dayContact.chat_id
+        } catch { /* ignore */ }
         moments.push({
           type: 'biggest_day',
           title: 'Biggest Day',
           subtitle: `${biggestDay.cnt.toLocaleString()} messages exchanged in a single day.`,
           dateLabel: bd.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-          chatName: null,
+          chatName: bigDayContact,
           metric: biggestDay.cnt
         })
       }
@@ -1856,12 +1862,17 @@ export function getMemoryMoments(): { moments: MemoryMoment[] } {
 
       if (biggestMonth && biggestMonth.cnt > 200) {
         const [y, mo] = biggestMonth.ym.split('-').map(Number)
+        let bigMonthContact: string | null = null
+        try {
+          const monthContact = chatDb.prepare(`SELECT c.chat_identifier as chat_id, COUNT(*) as cnt FROM message m JOIN chat_message_join cmj ON m.ROWID = cmj.message_id JOIN chat c ON cmj.chat_id = c.ROWID WHERE strftime('%Y-%m', datetime(m.date/${NS}+${APPLE_EPOCH}, 'unixepoch', 'localtime')) = ? GROUP BY c.chat_identifier ORDER BY cnt DESC LIMIT 1`).get(biggestMonth.ym) as { chat_id: string; cnt: number } | undefined
+          if (monthContact) bigMonthContact = monthContact.chat_id
+        } catch { /* ignore */ }
         moments.push({
           type: 'biggest_month',
           title: 'Biggest Month',
           subtitle: `${biggestMonth.cnt.toLocaleString()} messages in your busiest month ever.`,
           dateLabel: `${MONTH_NAMES_MEM[mo - 1]} ${y}`,
-          chatName: null,
+          chatName: bigMonthContact,
           metric: biggestMonth.cnt
         })
       }
@@ -1944,9 +1955,137 @@ export function getMemoryMoments(): { moments: MemoryMoment[] } {
         }
       }
 
+      // ── 7. Comeback: someone silent for 60+ days who returned in last 14 days ──
+      try {
+        const fourteenDaysAgo = (Date.now() / 1000 - APPLE_EPOCH - 14 * 86400) * NS
+        const comebackCandidates = chatDb.prepare(`
+          SELECT c.chat_identifier as chat_id, COUNT(*) as total,
+            MAX(datetime(m.date/${NS}+${APPLE_EPOCH}, 'unixepoch', 'localtime')) as last_msg
+          FROM message m JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
+          JOIN chat c ON cmj.chat_id = c.ROWID
+          WHERE (SELECT COUNT(DISTINCT chj.handle_id) FROM chat_handle_join chj WHERE chj.chat_id = c.ROWID) = 1
+          GROUP BY c.chat_identifier HAVING total >= 50
+        `).all() as { chat_id: string; total: number; last_msg: string }[]
+
+        for (const c of comebackCandidates) {
+          // Check for recent activity
+          const recentCount = (chatDb.prepare(`SELECT COUNT(*) as cnt FROM message m JOIN chat_message_join cmj ON m.ROWID = cmj.message_id JOIN chat ch ON cmj.chat_id = ch.ROWID WHERE ch.chat_identifier = ? AND m.date >= ${fourteenDaysAgo}`).get(c.chat_id) as { cnt: number }).cnt
+          if (recentCount < 3) continue
+
+          // Find the largest gap in their conversation
+          const chatRowids = chatDb.prepare('SELECT ROWID FROM chat WHERE chat_identifier = ?').all(c.chat_id) as { ROWID: number }[]
+          if (chatRowids.length === 0) continue
+          const idList = chatRowids.map(r => r.ROWID).join(',')
+          const dates = chatDb.prepare(`SELECT DISTINCT date(datetime(m.date/${NS}+${APPLE_EPOCH}, 'unixepoch', 'localtime')) as d FROM message m JOIN chat_message_join cmj ON m.ROWID = cmj.message_id WHERE cmj.chat_id IN (${idList}) ORDER BY d`).all() as { d: string }[]
+
+          let maxGap = 0
+          for (let i = 1; i < dates.length; i++) {
+            const gap = (new Date(dates[i].d).getTime() - new Date(dates[i - 1].d).getTime()) / 86400000
+            if (gap > maxGap) maxGap = gap
+          }
+          if (maxGap >= 60) {
+            moments.push({
+              type: 'comeback',
+              title: 'Comeback',
+              subtitle: `${Math.round(maxGap)} days of silence, broken.`,
+              dateLabel: 'Recently reconnected',
+              chatName: c.chat_id,
+              metric: Math.round(maxGap)
+            })
+            break // only one comeback
+          }
+        }
+      } catch { /* ignore */ }
+
+      // ── 8. Fading: someone you used to talk to who's gone quiet ──
+      try {
+        const fadingCandidates = chatDb.prepare(`
+          SELECT c.chat_identifier as chat_id, COUNT(*) as total,
+            MAX(datetime(m.date/${NS}+${APPLE_EPOCH}, 'unixepoch', 'localtime')) as last_msg
+          FROM message m JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
+          JOIN chat c ON cmj.chat_id = c.ROWID
+          WHERE (SELECT COUNT(DISTINCT chj.handle_id) FROM chat_handle_join chj WHERE chj.chat_id = c.ROWID) = 1
+          GROUP BY c.chat_identifier HAVING total >= 200
+        `).all() as { chat_id: string; total: number; last_msg: string }[]
+
+        for (const c of fadingCandidates) {
+          const lastDate = new Date(c.last_msg)
+          if (isNaN(lastDate.getTime())) continue
+          const daysSince = Math.floor((now.getTime() - lastDate.getTime()) / 86400000)
+          if (daysSince >= 30 && daysSince <= 90) {
+            moments.push({
+              type: 'fading',
+              title: 'Gone Quiet',
+              subtitle: `It's been ${daysSince} days. Life shifts.`,
+              dateLabel: `Last heard ${lastDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`,
+              chatName: c.chat_id,
+              metric: daysSince
+            })
+            break // only one fading
+          }
+        }
+      } catch { /* ignore */ }
+
+      // ── 9. Streak Anniversary: anniversary of a long streak's start ──
+      if (bestStreak.length >= 30 && bestStreak.startDate) {
+        try {
+          const streakStart = new Date(bestStreak.startDate + 'T12:00:00')
+          const annivThisYear = new Date(currentYear, streakStart.getMonth(), streakStart.getDate())
+          const dayDiff = Math.abs(now.getTime() - annivThisYear.getTime()) / 86400000
+          if (dayDiff <= 7 && streakStart.getFullYear() < currentYear) {
+            const yearsAgo = currentYear - streakStart.getFullYear()
+            moments.push({
+              type: 'streak_anniversary',
+              title: 'Streak Anniversary',
+              subtitle: `${yearsAgo} year${yearsAgo !== 1 ? 's' : ''} ago, a ${bestStreak.length}-day streak began.`,
+              dateLabel: streakStart.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
+              chatName: bestStreak.chat,
+              metric: bestStreak.length
+            })
+          }
+        } catch { /* ignore */ }
+      }
+
       chatDb.close()
     } catch { /* queries failed */ }
+
+    // ── 10. Heat Peak: most intense conversation from conversation_signals ──
+    try {
+      const stashDb = initDb()
+      const heatRow = stashDb.prepare(`SELECT chat_identifier, avg_heat, total_analyzed FROM conversation_signals WHERE total_analyzed > 20 AND avg_heat > 3.0 ORDER BY avg_heat DESC LIMIT 1`).get() as { chat_identifier: string; avg_heat: number; total_analyzed: number } | undefined
+      if (heatRow) {
+        moments.push({
+          type: 'heat_peak',
+          title: 'Most Intense',
+          subtitle: `Your most intense conversation. Heat score: ${heatRow.avg_heat.toFixed(1)}/10.`,
+          dateLabel: `${heatRow.total_analyzed} messages analyzed`,
+          chatName: heatRow.chat_identifier,
+          metric: heatRow.avg_heat
+        })
+      }
+    } catch { /* conversation_signals may not exist yet */ }
   } catch { /* fallback */ }
+
+  // ── Quality scoring: sort by interestingness, return top 8 ──
+  const SCORE_WEIGHTS: Record<string, (m: MemoryMoment) => number> = {
+    on_this_day: m => (m.metric || 0),
+    first_message: m => (m.metric || 0) * 10,
+    biggest_day: m => (m.metric || 0),
+    biggest_month: m => (m.metric || 0) / 10,
+    streak: m => (m.metric || 0) * 5,
+    intensity_echo: m => (m.metric || 0),
+    comeback: () => 80,
+    fading: () => 60,
+    streak_anniversary: () => 70,
+    heat_peak: m => (m.metric || 0) * 20,
+  }
+  moments.sort((a, b) => {
+    const scoreA = (SCORE_WEIGHTS[a.type] || (() => 0))(a)
+    const scoreB = (SCORE_WEIGHTS[b.type] || (() => 0))(b)
+    return scoreB - scoreA
+  })
+  if (moments.length > 8) moments.splice(8)
+
   return { moments }
 }
 
