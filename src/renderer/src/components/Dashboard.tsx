@@ -790,6 +790,10 @@ function ConstellationCard({ network, chatNameMap, onSelectConversation }: {
     })
   }
 
+  const msgCountMap = new Map(sorted.map(n => [n.rawName, n.messageCount]))
+  const getName = (raw: string) => { const c = (chatNameMap[raw] || raw).replace(/^#/, '').replace(/^\+/, '').split(' ')[0]; return c.length > 9 ? c.slice(0, 8) + '\u2026' : c }
+  const getFullName = (raw: string) => (chatNameMap[raw] || raw).replace(/^#/, '')
+
   // Community clustering — union-find on primary edges
   const clusterMap = new Map<string, number>()
   const clusterColors = ['rgba(232,96,74,0.09)', 'rgba(46,196,160,0.09)', 'rgba(127,119,221,0.09)', 'rgba(186,117,23,0.07)', 'rgba(255,255,255,0.05)']
@@ -842,7 +846,6 @@ function ConstellationCard({ network, chatNameMap, onSelectConversation }: {
   const visibleEdges = network.edges.filter(e => positions.has(e.a) && positions.has(e.b))
   const primaryThreshold = 2
   const filteredEdges = visibleEdges
-  const msgCountMap = new Map(sorted.map(n => [n.rawName, n.messageCount]))
 
   const activeNode = focused || hovered
   const connectedSet = new Set<string>()
@@ -854,8 +857,6 @@ function ConstellationCard({ network, chatNameMap, onSelectConversation }: {
     }
   }
 
-  const getName = (raw: string) => { const c = (chatNameMap[raw] || raw).replace(/^#/, '').replace(/^\+/, '').split(' ')[0]; return c.length > 9 ? c.slice(0, 8) + '\u2026' : c }
-  const getFullName = (raw: string) => (chatNameMap[raw] || raw).replace(/^#/, '')
   const handleNodeClick = (rawName: string) => { if (!isPanning) setFocused(focused === rawName ? null : rawName) }
   const handleBgClick = () => { if (focused && !isPanning) setFocused(null) }
 
