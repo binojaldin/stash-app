@@ -1153,6 +1153,8 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
 
   const [todayMemories, setTodayMemories] = useState<MemoryItem[]>([])
   const [networkData, setNetworkData] = useState<NetworkData | null>(null)
+  const [closenessData, setClosenessData] = useState<{ chat_identifier: string; total_score: number; tier: string }[]>([])
+  useEffect(() => { window.api.getClosenessScores().then(d => setClosenessData(d as { chat_identifier: string; total_score: number; tier: string }[])).catch(() => {}) }, [])
   type UsageData = { totalMessages: number; sentMessages: number; receivedMessages: number; messagesPerYear: { year: number; count: number }[]; busiestDay: { date: string; count: number } | null; busiestYear: { year: number; count: number } | null; activeConversations: number }
   const [usageData, setUsageData] = useState<UsageData | null>(null)
   const [gravityIndiv, setGravityIndiv] = useState<GravityYear[]>([])
@@ -1369,10 +1371,16 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
   const isIndexed = msgIndexStatus && msgIndexStatus.indexed > 0
   const indexPct = msgIndexStatus && msgIndexStatus.total > 0 ? Math.round((msgIndexStatus.indexed / msgIndexStatus.total) * 100) : 0
 
+  const formatTier = (tier: string): string => tier === 'inner_circle' ? 'Inner Circle' : tier.charAt(0).toUpperCase() + tier.slice(1)
+  const tierColor = (tier: string): string => tier === 'inner_circle' ? '#2EC4A0' : tier === 'close' ? 'rgba(46,196,160,0.6)' : tier === 'regular' ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.3)'
+
   // ── Relationship view ──
   if (scopedPerson) {
     const pn = resolveName(scopedPerson, chatNameMap)
     const pd = chats.find((c) => c.rawName === scopedPerson)
+    const closenessEntry = closenessData.find(c => c.chat_identifier === scopedPerson)
+    const closenessRankIdx = closenessData.findIndex(c => c.chat_identifier === scopedPerson)
+    const closenessRank = closenessRankIdx >= 0 ? closenessRankIdx + 1 : null
     const isGroupChat = pd?.isGroup ?? false
     const firstName = isGroupChat ? pn : pn.split(' ')[0]
     const dateLabel = dateRange === 'all' ? 'All time' : dateRange === 'month' ? 'This month' : dateRange === 'year' ? 'This year' : dateRange === '30days' ? 'Last 30 days' : 'Last 7 days'
@@ -1452,6 +1460,12 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
               {convStats?.peakYear && (
                 <div style={{ fontSize: 13, color: 'rgba(46,196,160,0.55)', marginTop: 6, fontFamily: "'DM Sans'" }}>
                   Peak year: {convStats.peakYear.year} · {convStats.peakYear.count.toLocaleString()} messages
+                </div>
+              )}
+              {closenessEntry && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8 }}>
+                  <span style={{ display: 'inline-block', padding: '3px 10px', borderRadius: 6, fontSize: 10, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', background: `${tierColor(closenessEntry.tier)}18`, color: tierColor(closenessEntry.tier), fontFamily: "'DM Sans'" }}>{formatTier(closenessEntry.tier)}</span>
+                  {closenessRank && <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', fontFamily: "'DM Sans'" }}>#{closenessRank} closest relationship</span>}
                 </div>
               )}
               {pd?.lastMessageDate && (
@@ -2450,6 +2464,33 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
 
       {/* Global relationship insight grid */}
       <div data-surface="relationship" style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 14 }}>
+
+        {/* ZONE 0 — Inner Circle */}
+        {closenessData.length > 0 && (() => {
+          const inner = closenessData.filter(c => c.tier === 'inner_circle').length
+          const close = closenessData.filter(c => c.tier === 'close').length
+          const regular = closenessData.filter(c => c.tier === 'regular').length
+          const top5 = closenessData.slice(0, 5)
+          return (
+            <div style={{ gridColumn: 'span 6', borderRadius: 16, padding: '20px 22px', background: '#fff', border: '1px solid rgba(0,0,0,0.06)', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}>
+              <div style={{ fontSize: 10, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#2EC4A0', marginBottom: 12, fontFamily: "'DM Sans'", fontWeight: 600 }}>Your inner circle</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {top5.map((c, i) => (
+                  <div key={c.chat_identifier} onClick={() => onSelectConversation(c.chat_identifier)}
+                    style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', padding: '4px 0', borderBottom: i < top5.length - 1 ? '1px solid rgba(0,0,0,0.04)' : 'none' }}>
+                    <span style={{ width: 18, fontSize: 11, color: i === 0 ? '#2EC4A0' : '#c8c0ba', fontWeight: 600, fontFamily: "'DM Sans'" }}>{i + 1}</span>
+                    <span style={{ flex: 1, fontSize: 13, color: '#1A1A1A', fontWeight: i === 0 ? 600 : 400, fontFamily: "'DM Sans'", overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{resolveName(c.chat_identifier, chatNameMap)}</span>
+                    <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 4, background: `${tierColor(c.tier)}15`, color: tierColor(c.tier), fontFamily: "'DM Sans'", fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{formatTier(c.tier)}</span>
+                    <span style={{ fontSize: 11, color: '#9a948f', fontFamily: "'DM Sans'", minWidth: 28, textAlign: 'right' }}>{Math.round(c.total_score)}</span>
+                  </div>
+                ))}
+              </div>
+              <div style={{ fontSize: 10, color: '#9a948f', marginTop: 10, fontFamily: "'DM Sans'" }}>
+                {inner > 0 ? `${inner} inner circle` : ''}{inner > 0 && close > 0 ? ' · ' : ''}{close > 0 ? `${close} close` : ''}{(inner > 0 || close > 0) && regular > 0 ? ' · ' : ''}{regular > 0 ? `${regular} regular` : ''}
+              </div>
+            </div>
+          )
+        })()}
 
         {/* ZONE 1 — Identity: who you are as a communicator */}
         {(() => {
