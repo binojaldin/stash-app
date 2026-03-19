@@ -32,9 +32,20 @@ interface WrappedData {
 interface Props { onClose: () => void }
 
 const TOTAL_SLIDES = 11
-const ARC_COLORS: Record<string, string> = { new: 'bg-teal-500 text-white', growing: 'bg-teal-500 text-white', fading: 'bg-red-500 text-white', rekindled: 'bg-amber-500 text-white', steady: 'bg-[#333] text-[#a3a3a3]' }
-const ARC_LABELS: Record<string, string> = { new: 'New', growing: 'Growing', fading: 'Fading', rekindled: 'Rekindled', steady: 'Steady' }
-const MEMBER_COLORS = ['bg-teal-400', 'bg-blue-400', 'bg-purple-400', 'bg-amber-400', 'bg-pink-400', 'bg-green-400', 'bg-red-400', 'bg-cyan-400']
+const MEMBER_COLORS = ['#60a5fa', '#a78bfa', '#fbbf24', '#f472b6', '#34d399', '#f87171', '#22d3ee', '#fb923c']
+
+// ── Inline styles for cinematic slides ──
+const S = {
+  slide: { display: 'flex', flexDirection: 'column' as const, alignItems: 'center', justifyContent: 'center', height: '100%', padding: '40px 32px', textAlign: 'center' as const, position: 'relative' as const, overflow: 'hidden' as const },
+  year: { fontFamily: 'system-ui, sans-serif', fontWeight: 200, fontSize: 140, lineHeight: 1, color: '#fff', letterSpacing: '-0.03em' },
+  heroNum: { fontFamily: 'system-ui, sans-serif', fontWeight: 200, fontSize: 100, lineHeight: 1, color: '#fff' },
+  heroName: { fontFamily: 'system-ui, sans-serif', fontWeight: 300, fontSize: 72, lineHeight: 1.1, color: '#2EC4A0', letterSpacing: '-0.02em' },
+  headline: { fontFamily: 'system-ui, sans-serif', fontWeight: 300, fontSize: 36, lineHeight: 1.6, color: '#fff', maxWidth: 520 },
+  label: { fontSize: 11, letterSpacing: '0.2em', textTransform: 'uppercase' as const, color: 'rgba(255,255,255,0.25)' },
+  muted: { fontSize: 15, color: 'rgba(255,255,255,0.35)', lineHeight: 1.6 },
+  stat: { fontSize: 14, color: 'rgba(255,255,255,0.5)' },
+  tealLine: { width: 40, height: 1, background: '#2EC4A0', margin: '0 auto' },
+}
 
 export function WrappedView({ onClose }: Props): JSX.Element {
   const [years, setYears] = useState<number[]>([])
@@ -79,6 +90,18 @@ export function WrappedView({ onClose }: Props): JSX.Element {
       style={{ background: '#080808', zIndex: 200, WebkitAppRegion: 'no-drag' } as React.CSSProperties}
       onClick={() => go(1)}
     >
+      <style>{`
+        @keyframes wFadeUp { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes wFadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes wReveal { from { opacity: 0; transform: scale(0.92); } to { opacity: 1; transform: scale(1); } }
+        @keyframes wPulse { 0%, 100% { opacity: 0.3; } 50% { opacity: 0.8; } }
+        .anim-up { animation: wFadeUp 700ms ease-out both; }
+        .anim-in { animation: wFadeIn 500ms ease-out both; }
+        .anim-reveal { animation: wReveal 600ms ease-out both; }
+        .d0 { animation-delay: 0ms; } .d1 { animation-delay: 150ms; } .d2 { animation-delay: 300ms; }
+        .d3 { animation-delay: 450ms; } .d4 { animation-delay: 600ms; } .d5 { animation-delay: 800ms; }
+      `}</style>
+
       {/* Progress bar */}
       <div className="absolute top-0 left-0 right-0 h-[2px] bg-[#1a1a1a] z-50">
         <div className="h-full bg-teal-500 transition-all duration-300 ease-out" style={{ width: `${(slide / (TOTAL_SLIDES - 1)) * 100}%` }} />
@@ -119,7 +142,7 @@ export function WrappedView({ onClose }: Props): JSX.Element {
 
       {/* Slides */}
       {data && !loading && !error && (
-        <div key={animKey} className="h-full flex items-center justify-center" style={{ animation: 'wrappedFadeIn 300ms ease-out' }}>
+        <div key={animKey} style={{ height: '100%' }}>
           {slide === 0 && <SlideOpening data={data} />}
           {slide === 1 && <SlideHeadline data={data} />}
           {slide === 2 && <SlideTopBond data={data} />}
@@ -143,59 +166,51 @@ export function WrappedView({ onClose }: Props): JSX.Element {
         </div>
         <p className="text-[10px] text-[#333]">{slide + 1} / {TOTAL_SLIDES}</p>
       </div>
-
-      <style>{`
-        @keyframes wrappedFadeIn {
-          from { opacity: 0; transform: translateY(12px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-      `}</style>
     </div>
   )
 }
 
-// ── Slides ──
+// ── SLIDES ──
 
 function SlideOpening({ data }: { data: WrappedData }): JSX.Element {
   const total = data.totalMessagesSent + data.totalMessagesReceived
   return (
-    <div className="text-center">
-      <p className="text-[#4a4a4a] text-sm tracking-widest uppercase mb-4">your year in messages</p>
-      <p className="text-white font-bold leading-none" style={{ fontSize: '160px' }}>{data.year}</p>
-      <div className="mt-8 flex items-center justify-center gap-12">
-        <div><p className="text-white text-4xl font-bold">{total.toLocaleString()}</p><p className="text-[#636363] text-sm mt-1">messages</p></div>
-        <div><p className="text-white text-4xl font-bold">{data.activeDays}</p><p className="text-[#636363] text-sm mt-1">active days</p></div>
+    <div style={S.slide}>
+      <div className="anim-up d0" style={S.label}>your year in messages</div>
+      <div className="anim-reveal d1" style={{ ...S.year, marginTop: 16 }}>{data.year}</div>
+      <div className="anim-up d2" style={{ ...S.stat, marginTop: 32, display: 'flex', gap: 24, justifyContent: 'center' }}>
+        <span>{total.toLocaleString()} messages</span>
+        <span style={{ color: 'rgba(255,255,255,0.15)' }}>·</span>
+        <span>{data.totalConversations} conversations</span>
+        <span style={{ color: 'rgba(255,255,255,0.15)' }}>·</span>
+        <span>{data.activeDays} active days</span>
       </div>
+      <div className="anim-in d4" style={{ ...S.tealLine, marginTop: 40 }} />
     </div>
   )
 }
 
 function SlideHeadline({ data }: { data: WrappedData }): JSX.Element {
   return (
-    <div className="text-center max-w-[560px] px-6">
-      <p className="text-white font-bold text-5xl leading-tight">{data.narrative.headline}</p>
-      <p className="text-[#636363] text-base mt-6 leading-relaxed">{data.narrative.topRelationshipLine}</p>
+    <div style={S.slide}>
+      <div className="anim-up d1" style={S.headline}>{data.narrative.headline}</div>
+      <div className="anim-up d3" style={{ ...S.muted, marginTop: 24, maxWidth: 440 }}>{data.narrative.topRelationshipLine}</div>
     </div>
   )
 }
 
 function SlideTopBond({ data }: { data: WrappedData }): JSX.Element {
   const top = data.topRelationships[0]
-  if (!top) return <div className="text-[#636363]">No relationships found</div>
-  const total = top.messagesSent + top.messagesReceived
-  const sentPct = total > 0 ? (top.messagesSent / total) * 100 : 50
+  if (!top) return <div style={S.slide}><div style={{ ...S.muted, fontSize: 20 }}>A quiet year.</div></div>
   return (
-    <div className="text-center">
-      <p className="text-white font-bold leading-tight" style={{ fontSize: '56px' }}>{top.displayName}</p>
-      <p className="text-teal-400 font-bold mt-4" style={{ fontSize: '32px' }}>{top.totalMessages.toLocaleString()} messages</p>
-      <p className="text-[#636363] text-sm mt-3">{top.longestStreakDays}-day streak · Most active in {top.mostActiveMonth}</p>
-      <div className="w-[400px] mx-auto mt-6 h-2 rounded-full overflow-hidden flex bg-[#1a1a1a]">
-        <div className="bg-teal-500 rounded-l-full" style={{ width: `${sentPct}%` }} />
-        <div className="bg-[#333] flex-1 rounded-r-full" />
-      </div>
-      <div className="flex justify-between w-[400px] mx-auto mt-2 text-[10px]">
-        <span className="text-teal-400">{top.messagesSent.toLocaleString()} sent</span>
-        <span className="text-[#636363]">{top.messagesReceived.toLocaleString()} received</span>
+    <div style={S.slide}>
+      <div className="anim-up d0" style={S.label}>your #1</div>
+      <div className="anim-reveal d1" style={{ ...S.heroName, marginTop: 12 }}>{top.displayName}</div>
+      <div className="anim-up d2" style={{ fontFamily: 'system-ui', fontWeight: 200, fontSize: 32, color: 'rgba(255,255,255,0.6)', marginTop: 12 }}>{top.totalMessages.toLocaleString()} messages</div>
+      <div className="anim-up d3" style={{ ...S.stat, marginTop: 28, display: 'flex', gap: 20, justifyContent: 'center', flexWrap: 'wrap' }}>
+        {top.firstMessageDate && <span>First message: {new Date(top.firstMessageDate).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}</span>}
+        {top.longestStreakDays > 0 && <span>Streak: {top.longestStreakDays} days</span>}
+        {top.sharedGroupCount > 0 && <span>{top.sharedGroupCount} shared group{top.sharedGroupCount > 1 ? 's' : ''}</span>}
       </div>
     </div>
   )
@@ -203,40 +218,48 @@ function SlideTopBond({ data }: { data: WrappedData }): JSX.Element {
 
 function SlideStreak({ data }: { data: WrappedData }): JSX.Element {
   const top = data.topRelationships[0]
-  if (!top || top.longestStreakDays === 0) return <div className="text-center"><p className="text-white text-5xl font-bold">Every day counts</p><p className="text-[#636363] mt-4">Keep the conversation going</p></div>
+  const streak = top?.longestStreakDays || 0
+  if (streak === 0) return <div style={S.slide}><div className="anim-up d0" style={{ ...S.headline, fontSize: 28 }}>Every day counts.</div><div className="anim-up d1" style={S.muted}>Keep the conversation going.</div></div>
+  const flavor = streak > 60 ? "That's not a conversation — that's a commitment." : streak > 30 ? 'Over a month straight. Something was happening.' : 'Short but sweet.'
   return (
-    <div className="text-center">
-      <p className="text-white font-bold leading-none" style={{ fontSize: '120px' }}>{top.longestStreakDays}</p>
-      <p className="text-[#636363] text-xl mt-2">days in a row</p>
-      <p className="text-[#4a4a4a] text-base mt-4">with {top.displayName}</p>
-      <div className="flex justify-center gap-1 mt-8">
-        {data.monthlyActivity.map((m, i) => {
-          const active = (m.messagesSent + m.messagesReceived) > 0
-          return <div key={i} className={`w-6 h-6 rounded-sm ${active ? 'bg-teal-500/60' : 'bg-[#1a1a1a]'}`} title={m.month} />
-        })}
-      </div>
-      <div className="flex justify-center gap-1 mt-1">
-        {data.monthlyActivity.map((m, i) => <span key={i} className="w-6 text-[8px] text-[#333] text-center">{m.month.slice(0, 1)}</span>)}
-      </div>
+    <div style={S.slide}>
+      <div className="anim-reveal d0" style={{ ...S.heroNum, color: '#E8604A' }}>{streak}</div>
+      <div className="anim-up d1" style={{ fontFamily: 'system-ui', fontWeight: 200, fontSize: 24, color: 'rgba(255,255,255,0.4)', marginTop: 8 }}>days in a row</div>
+      <div className="anim-up d2" style={{ ...S.muted, marginTop: 20 }}>with {top!.displayName}</div>
+      <div className="anim-up d3" style={{ ...S.stat, marginTop: 16, fontStyle: 'italic' }}>{flavor}</div>
     </div>
   )
 }
 
 function SlideArc({ data }: { data: WrappedData }): JSX.Element {
-  const arc = data.relationshipArcs[0]
-  if (!arc) return <div className="text-center text-[#636363]">No significant changes this year</div>
+  // Pick the arc with biggest absolute change
+  const sorted = [...data.relationshipArcs].sort((a, b) => Math.abs(b.changePercent) - Math.abs(a.changePercent))
+  const arc = sorted[0]
+  if (!arc) return <div style={S.slide}><div style={S.muted}>No significant changes this year.</div></div>
+  const isPositive = arc.changePercent > 0
+  const arcColors: Record<string, string> = { new: '#2EC4A0', growing: '#2EC4A0', fading: '#E8604A', rekindled: '#fbbf24', steady: '#666' }
+  const arcLabels: Record<string, string> = { new: 'New', growing: 'Growing', fading: 'Fading', rekindled: 'Rekindled', steady: 'Steady' }
   return (
-    <div className="text-center">
-      <p className="text-white font-bold" style={{ fontSize: '40px' }}>{arc.displayName}</p>
-      <div className="mt-4"><span className={`inline-block px-4 py-1.5 rounded-full text-sm font-medium ${ARC_COLORS[arc.arc]}`}>{ARC_LABELS[arc.arc]}</span></div>
-      <div className="flex items-center justify-center gap-6 mt-8">
-        <div className="text-right"><p className="text-[#636363] text-xs">Last year</p><p className="text-white text-2xl font-bold">{arc.lastYearMessages.toLocaleString()}</p></div>
-        <span className="text-[#333] text-2xl">&rarr;</span>
-        <div className="text-left"><p className="text-[#636363] text-xs">This year</p><p className="text-white text-2xl font-bold">{arc.thisYearMessages.toLocaleString()}</p></div>
+    <div style={S.slide}>
+      <div className="anim-up d0" style={S.label}>relationship shift</div>
+      <div className="anim-reveal d1" style={{ fontFamily: 'system-ui', fontWeight: 300, fontSize: 56, color: '#fff', marginTop: 12 }}>{arc.displayName}</div>
+      <div className="anim-up d2" style={{ marginTop: 16 }}>
+        <span style={{ display: 'inline-block', padding: '4px 14px', borderRadius: 20, fontSize: 12, fontWeight: 500, background: `${arcColors[arc.arc]}20`, color: arcColors[arc.arc] }}>{arcLabels[arc.arc]}</span>
       </div>
-      <p className={`text-4xl font-bold mt-6 ${arc.changePercent > 0 ? 'text-green-400' : 'text-red-400'}`}>
-        {arc.changePercent > 0 ? '+' : ''}{arc.changePercent}%
-      </p>
+      <div className="anim-up d3" style={{ display: 'flex', alignItems: 'center', gap: 32, marginTop: 28 }}>
+        <div style={{ textAlign: 'right' }}>
+          <div style={{ ...S.label, marginBottom: 4 }}>last year</div>
+          <div style={{ fontFamily: 'system-ui', fontWeight: 200, fontSize: 28, color: 'rgba(255,255,255,0.5)' }}>{arc.lastYearMessages.toLocaleString()}</div>
+        </div>
+        <div style={{ color: 'rgba(255,255,255,0.15)', fontSize: 20 }}>&rarr;</div>
+        <div style={{ textAlign: 'left' }}>
+          <div style={{ ...S.label, marginBottom: 4 }}>this year</div>
+          <div style={{ fontFamily: 'system-ui', fontWeight: 200, fontSize: 28, color: '#fff' }}>{arc.thisYearMessages.toLocaleString()}</div>
+        </div>
+      </div>
+      <div className="anim-reveal d4" style={{ fontFamily: 'system-ui', fontWeight: 200, fontSize: 48, color: isPositive ? '#2EC4A0' : '#E8604A', marginTop: 20 }}>
+        {isPositive ? '+' : ''}{arc.changePercent}%
+      </div>
     </div>
   )
 }
@@ -244,39 +267,40 @@ function SlideArc({ data }: { data: WrappedData }): JSX.Element {
 function SlideMoment({ data }: { data: WrappedData }): JSX.Element {
   const moment = data.momentClusters[0]
   if (!moment) {
-    const peak = data.monthlyActivity.reduce((best, m) => (m.messagesSent + m.messagesReceived) > (best.messagesSent + best.messagesReceived) ? m : best, data.monthlyActivity[0])
+    const peak = data.monthlyActivity.reduce((b, m) => (m.messagesSent + m.messagesReceived) > (b.messagesSent + b.messagesReceived) ? m : b, data.monthlyActivity[0])
     return (
-      <div className="text-center">
-        <p className="text-[#636363] text-sm mb-4">Your most active month</p>
-        <p className="text-white font-bold" style={{ fontSize: '64px' }}>{peak.month}</p>
-        <p className="text-teal-400 text-2xl mt-4">{(peak.messagesSent + peak.messagesReceived).toLocaleString()} messages</p>
+      <div style={{ ...S.slide, background: 'radial-gradient(ellipse at center, rgba(232,96,74,0.06) 0%, transparent 70%)' }}>
+        <div className="anim-up d0" style={S.label}>peak moment</div>
+        <div className="anim-reveal d1" style={{ fontFamily: 'system-ui', fontWeight: 200, fontSize: 80, color: '#fff', marginTop: 8 }}>{peak.month}</div>
+        <div className="anim-up d2" style={{ fontFamily: 'system-ui', fontWeight: 200, fontSize: 24, color: '#E8604A', marginTop: 12 }}>{(peak.messagesSent + peak.messagesReceived).toLocaleString()} messages</div>
       </div>
     )
   }
   return (
-    <div className="text-center">
-      <p className="text-[#636363] text-sm mb-4">Something big happened</p>
-      <p className="text-white font-bold" style={{ fontSize: '64px' }}>{moment.month}</p>
-      <p className="text-teal-400 text-2xl mt-4">{moment.attachmentCount} moments shared</p>
-      <p className="text-[#4a4a4a] text-base mt-3">with {moment.topContact}</p>
+    <div style={{ ...S.slide, background: 'radial-gradient(ellipse at center, rgba(232,96,74,0.06) 0%, transparent 70%)' }}>
+      <div className="anim-up d0" style={S.label}>something big happened</div>
+      <div className="anim-reveal d1" style={{ fontFamily: 'system-ui', fontWeight: 200, fontSize: 80, color: '#fff', marginTop: 8 }}>{moment.month}</div>
+      <div className="anim-up d2" style={{ fontFamily: 'system-ui', fontWeight: 200, fontSize: 24, color: '#E8604A', marginTop: 12 }}>{moment.attachmentCount} moments shared</div>
+      <div className="anim-up d3" style={{ ...S.muted, marginTop: 16 }}>with {moment.topContact}</div>
     </div>
   )
 }
 
 function SlideGroups({ data }: { data: WrappedData }): JSX.Element {
   const g = data.groupStats[0]
-  if (!g) return <div className="text-center"><p className="text-white text-4xl font-bold">No group chats</p><p className="text-[#636363] mt-4">This year was all about 1:1 conversations</p></div>
+  if (!g) return <div style={S.slide}><div className="anim-up d0" style={{ fontFamily: 'system-ui', fontWeight: 300, fontSize: 28, color: '#fff' }}>No group chats</div><div className="anim-up d1" style={{ ...S.muted, marginTop: 12 }}>This year was all about 1:1.</div></div>
   return (
-    <div className="text-center max-w-[440px]">
-      <p className="text-white font-bold leading-tight" style={{ fontSize: '40px' }}>{g.chatName}</p>
-      <p className="text-[#636363] text-lg mt-2">{g.totalMessages.toLocaleString()} messages · {g.memberCount} members</p>
-      <div className="w-full h-3 rounded-full overflow-hidden flex gap-px mt-6 bg-[#1a1a1a]">
-        {g.yourContribution.percentOfGroup > 0 && <div className="bg-teal-400 rounded-sm" style={{ width: `${g.yourContribution.percentOfGroup}%` }} />}
-        {g.members.map((m, i) => <div key={m.handle} className={`${MEMBER_COLORS[(i + 1) % MEMBER_COLORS.length]} rounded-sm`} style={{ width: `${m.percentOfGroup}%` }} />)}
+    <div style={S.slide}>
+      <div className="anim-up d0" style={S.label}>your biggest group</div>
+      <div className="anim-reveal d1" style={{ fontFamily: 'system-ui', fontWeight: 300, fontSize: 44, color: '#fff', marginTop: 12, maxWidth: 480 }}>{g.chatName}</div>
+      <div className="anim-up d2" style={{ ...S.stat, marginTop: 12 }}>{g.totalMessages.toLocaleString()} messages · {g.memberCount} members</div>
+      <div className="anim-up d3" style={{ width: 360, height: 6, borderRadius: 3, overflow: 'hidden', display: 'flex', gap: 1, marginTop: 24, background: '#111' }}>
+        {g.yourContribution.percentOfGroup > 0 && <div style={{ width: `${g.yourContribution.percentOfGroup}%`, background: '#2EC4A0', borderRadius: 3 }} />}
+        {g.members.map((m, i) => <div key={m.handle} style={{ width: `${m.percentOfGroup}%`, background: MEMBER_COLORS[i % MEMBER_COLORS.length], borderRadius: 2 }} />)}
       </div>
-      <p className="text-teal-400 text-sm mt-3">You contributed {g.yourContribution.percentOfGroup}%</p>
-      <div className="flex items-center justify-center gap-1.5 mt-2 text-[#636363] text-xs">
-        <Crown className="w-3 h-3 text-amber-400" /> {g.primaryContributor.displayName}
+      <div className="anim-up d4" style={{ color: '#2EC4A0', fontSize: 14, marginTop: 12 }}>You contributed {g.yourContribution.percentOfGroup}%</div>
+      <div className="anim-in d5" style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, color: 'rgba(255,255,255,0.3)', fontSize: 12 }}>
+        <Crown style={{ width: 12, height: 12, color: '#fbbf24' }} /> {g.primaryContributor.displayName}
       </div>
     </div>
   )
@@ -285,46 +309,45 @@ function SlideGroups({ data }: { data: WrappedData }): JSX.Element {
 function SlidePersonality({ data }: { data: WrappedData }): JSX.Element {
   const hours = Array.from({ length: 24 }, (_, i) => i)
   return (
-    <div className="text-center">
-      <p className="text-[#636363] text-xl">You're {/^[aeiou]/i.test(data.personality.peakHourLabel) ? 'an' : 'a'}</p>
-      <p className="text-white font-bold mt-1" style={{ fontSize: '56px' }}>{data.personality.peakHourLabel}</p>
-      <p className="text-[#636363] text-xl mt-1">texter</p>
+    <div style={S.slide}>
+      <div className="anim-up d0" style={{ fontSize: 18, color: 'rgba(255,255,255,0.3)' }}>You're {/^[aeiou]/i.test(data.personality.peakHourLabel) ? 'an' : 'a'}</div>
+      <div className="anim-reveal d1" style={{ fontFamily: 'system-ui', fontWeight: 200, fontSize: 64, color: '#fff', marginTop: 4 }}>{data.personality.peakHourLabel}</div>
+      <div className="anim-up d2" style={{ fontSize: 18, color: 'rgba(255,255,255,0.3)', marginTop: 4 }}>texter</div>
       {data.personality.avgResponseTimeMinutes > 0 && (
-        <p className="text-[#4a4a4a] text-sm mt-6">Average reply time: {data.personality.avgResponseTimeMinutes} minutes</p>
+        <div className="anim-up d3" style={{ ...S.stat, marginTop: 24 }}>Average reply: {data.personality.avgResponseTimeMinutes} min</div>
       )}
-      <div className="flex items-end justify-center gap-[3px] mt-8 h-12">
-        {hours.map((h) => {
+      <div className="anim-in d4" style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'center', gap: 2, marginTop: 32, height: 48 }}>
+        {hours.map(h => {
           const isPeak = h === data.personality.peakHour
-          const dist = Math.abs(h - data.personality.peakHour)
-          const wrapped = Math.min(dist, 24 - dist)
-          const height = Math.max(8, 48 - wrapped * 6)
-          return <div key={h} className={`w-[6px] rounded-t-sm transition-all ${isPeak ? 'bg-teal-400' : 'bg-[#222]'}`} style={{ height: `${height}px` }} />
+          const dist = Math.min(Math.abs(h - data.personality.peakHour), 24 - Math.abs(h - data.personality.peakHour))
+          const height = Math.max(6, 48 - dist * 5)
+          return <div key={h} style={{ width: 5, height, borderRadius: '2px 2px 0 0', background: isPeak ? '#2EC4A0' : '#1a1a1a', transition: 'all 0.3s' }} />
         })}
       </div>
-      <div className="flex justify-between w-[200px] mx-auto mt-1 text-[9px] text-[#333]">
-        <span>12am</span><span>6am</span><span>12pm</span><span>6pm</span><span>12am</span>
+      <div className="anim-in d5" style={{ display: 'flex', justifyContent: 'space-between', width: 180, margin: '6px auto 0', fontSize: 9, color: 'rgba(255,255,255,0.15)' }}>
+        <span>12am</span><span>6am</span><span>12pm</span><span>6pm</span>
       </div>
     </div>
   )
 }
 
 function SlideMonthly({ data }: { data: WrappedData }): JSX.Element {
-  const max = Math.max(...data.monthlyActivity.map((m) => m.messagesSent + m.messagesReceived), 1)
-  const peak = data.monthlyActivity.reduce((best, m) => (m.messagesSent + m.messagesReceived) > (best.messagesSent + best.messagesReceived) ? m : best, data.monthlyActivity[0])
+  const max = Math.max(...data.monthlyActivity.map(m => m.messagesSent + m.messagesReceived), 1)
+  const peak = data.monthlyActivity.reduce((b, m) => (m.messagesSent + m.messagesReceived) > (b.messagesSent + b.messagesReceived) ? m : b, data.monthlyActivity[0])
   return (
-    <div className="text-center">
-      <p className="text-[#636363] text-sm mb-3">Your loudest month</p>
-      <p className="text-white font-bold" style={{ fontSize: '64px' }}>{peak.month}</p>
-      <p className="text-teal-400 text-lg mt-1">{(peak.messagesSent + peak.messagesReceived).toLocaleString()} messages</p>
-      <div className="flex items-end justify-center gap-2 mt-8" style={{ height: '120px' }}>
-        {data.monthlyActivity.map((m) => {
+    <div style={S.slide}>
+      <div className="anim-up d0" style={S.label}>your loudest month</div>
+      <div className="anim-reveal d1" style={{ fontFamily: 'system-ui', fontWeight: 200, fontSize: 72, color: '#fff', marginTop: 8 }}>{peak.month}</div>
+      <div className="anim-up d2" style={{ fontFamily: 'system-ui', fontWeight: 200, fontSize: 20, color: '#2EC4A0', marginTop: 8 }}>{(peak.messagesSent + peak.messagesReceived).toLocaleString()} messages</div>
+      <div className="anim-in d3" style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'center', gap: 6, marginTop: 32, height: 120 }}>
+        {data.monthlyActivity.map(m => {
           const total = m.messagesSent + m.messagesReceived
           const h = Math.max((total / max) * 100, 3)
           const isPeak = m.month === peak.month
           return (
-            <div key={m.month} className="flex flex-col items-center gap-1 w-7">
-              <div className={`w-full rounded-t-sm ${isPeak ? 'bg-white' : 'bg-teal-500/60'}`} style={{ height: `${h}px` }} />
-              <span className="text-[9px] text-[#444]">{m.month.slice(0, 3)}</span>
+            <div key={m.month} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, width: 28 }}>
+              <div style={{ width: '100%', height: h, borderRadius: '3px 3px 0 0', background: isPeak ? '#fff' : '#1a1a1a' }} />
+              <span style={{ fontSize: 9, color: isPeak ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.15)' }}>{m.month.slice(0, 3)}</span>
             </div>
           )
         })}
@@ -334,39 +357,52 @@ function SlideMonthly({ data }: { data: WrappedData }): JSX.Element {
 }
 
 function SlideEmoji({ data }: { data: WrappedData }): JSX.Element {
-  const emoji = data.personality.mostUsedEmoji || '💬'
   if (!data.personality.mostUsedEmoji) {
     return (
-      <div className="text-center" style={{ background: '#0a0a0a' }}>
-        <p className="text-white text-4xl font-bold">You texted across</p>
-        <p className="text-teal-400 font-bold mt-2" style={{ fontSize: '72px' }}>{data.totalConversations}</p>
-        <p className="text-white text-4xl font-bold">conversations</p>
-        <p className="text-[#636363] text-sm mt-6">{data.narrative.personalityLine}</p>
+      <div style={S.slide}>
+        <div className="anim-up d0" style={{ fontFamily: 'system-ui', fontWeight: 300, fontSize: 28, color: '#fff' }}>You texted across</div>
+        <div className="anim-reveal d1" style={{ fontFamily: 'system-ui', fontWeight: 200, fontSize: 80, color: '#2EC4A0', marginTop: 8 }}>{data.totalConversations}</div>
+        <div className="anim-up d2" style={{ fontFamily: 'system-ui', fontWeight: 300, fontSize: 28, color: '#fff', marginTop: 4 }}>conversations</div>
+        <div className="anim-up d3" style={{ ...S.muted, marginTop: 24, maxWidth: 400 }}>{data.narrative.personalityLine}</div>
       </div>
     )
   }
   return (
-    <div className="text-center" style={{ background: '#0a0a0a' }}>
-      <p style={{ fontSize: '96px' }}>{emoji}</p>
-      <p className="text-[#636363] text-lg mt-4">your most-used emoji this year</p>
-      <p className="text-[#4a4a4a] text-sm mt-6">{data.narrative.personalityLine}</p>
+    <div style={S.slide}>
+      <div className="anim-reveal d0" style={{ fontSize: 96, lineHeight: 1 }}>{data.personality.mostUsedEmoji}</div>
+      <div className="anim-up d1" style={{ ...S.muted, fontSize: 16, marginTop: 20 }}>your most-used emoji this year</div>
+      <div className="anim-up d2" style={{ ...S.stat, marginTop: 20, maxWidth: 400, fontStyle: 'italic' }}>{data.narrative.personalityLine}</div>
     </div>
   )
 }
 
 function SlideShare({ data }: { data: WrappedData }): JSX.Element {
   const top = data.topRelationships[0]
-  const peak = data.monthlyActivity.reduce((best, m) => (m.messagesSent + m.messagesReceived) > (best.messagesSent + best.messagesReceived) ? m : best, data.monthlyActivity[0])
+  const peak = data.monthlyActivity.reduce((b, m) => (m.messagesSent + m.messagesReceived) > (b.messagesSent + b.messagesReceived) ? m : b, data.monthlyActivity[0])
   return (
-    <div className="text-center" style={{ background: '#111', borderRadius: '16px', padding: '48px', maxWidth: '420px' }}>
-      <p className="text-white text-2xl font-bold mb-8">Your {data.year} wrapped</p>
-      <div className="grid grid-cols-2 gap-6 text-left">
-        <div><p className="text-[#636363] text-[10px] uppercase tracking-wider">Messages</p><p className="text-white text-xl font-bold">{(data.totalMessagesSent + data.totalMessagesReceived).toLocaleString()}</p></div>
-        <div><p className="text-[#636363] text-[10px] uppercase tracking-wider">Top contact</p><p className="text-white text-xl font-bold truncate">{top?.displayName || '—'}</p></div>
-        <div><p className="text-[#636363] text-[10px] uppercase tracking-wider">Longest streak</p><p className="text-white text-xl font-bold">{top?.longestStreakDays || 0} days</p></div>
-        <div><p className="text-[#636363] text-[10px] uppercase tracking-wider">Peak month</p><p className="text-white text-xl font-bold">{peak.month}</p></div>
+    <div style={S.slide}>
+      <div className="anim-reveal d0" style={{
+        background: '#111', borderRadius: 20, padding: '48px 40px', maxWidth: 400, width: '100%',
+        border: '1px solid rgba(46,196,160,0.12)', boxShadow: '0 0 60px rgba(46,196,160,0.04)'
+      }}>
+        <div style={{ fontFamily: 'system-ui', fontWeight: 200, fontSize: 28, color: '#fff', marginBottom: 32 }}>Your {data.year}</div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
+          {[
+            { label: 'Messages', value: (data.totalMessagesSent + data.totalMessagesReceived).toLocaleString() },
+            { label: 'Top contact', value: top?.displayName || '\u2014' },
+            { label: 'Longest streak', value: `${top?.longestStreakDays || 0} days` },
+            { label: 'Peak month', value: peak.month },
+          ].map(s => (
+            <div key={s.label} style={{ textAlign: 'left' }}>
+              <div style={{ ...S.label, marginBottom: 6 }}>{s.label}</div>
+              <div style={{ fontFamily: 'system-ui', fontWeight: 300, fontSize: 18, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.value}</div>
+            </div>
+          ))}
+        </div>
+        <div style={{ ...S.tealLine, marginTop: 28, width: 24 }} />
+        <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.12)', marginTop: 16, letterSpacing: '0.15em' }}>STASH · WRAPPED</div>
       </div>
-      <p className="text-[#333] text-xs mt-8">Share card coming soon</p>
+      <div className="anim-up d2" style={{ fontSize: 12, color: 'rgba(255,255,255,0.2)', marginTop: 20 }}>Share card coming soon</div>
     </div>
   )
 }
