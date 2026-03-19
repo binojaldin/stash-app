@@ -140,8 +140,11 @@ export function initDb(): Database.Database {
   }
 
   // Backfill null chat_name from Messages chat.db
+  // Skip if a previous attempt found 0 fixable records
   try {
-    const nullCount = (db.prepare("SELECT COUNT(*) as c FROM attachments WHERE chat_name IS NULL OR chat_name = ''").get() as { c: number }).c
+    db.exec("CREATE TABLE IF NOT EXISTS _meta (key TEXT PRIMARY KEY, value TEXT)")
+    const skipFlag = db.prepare("SELECT value FROM _meta WHERE key = 'backfill_done'").get() as { value: string } | undefined
+    const nullCount = skipFlag ? 0 : (db.prepare("SELECT COUNT(*) as c FROM attachments WHERE chat_name IS NULL OR chat_name = ''").get() as { c: number }).c
     if (nullCount > 0) {
       console.log(`[DB] Backfilling chat_name for ${nullCount} records...`)
       const { homedir } = require('os')
@@ -181,6 +184,9 @@ export function initDb(): Database.Database {
             if (chatName) { updateStmt.run(chatName, nr.id); fixed++ }
           }
           console.log(`[DB] Backfilled ${fixed} of ${nullCount} records`)
+          if (fixed === 0) {
+            try { db.prepare("INSERT OR REPLACE INTO _meta (key, value) VALUES ('backfill_done', '1')").run() } catch { /* ignore */ }
+          }
           chatDb.close()
         } catch (err) {
           console.error('[DB] Backfill error:', err)

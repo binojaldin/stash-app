@@ -372,7 +372,7 @@ function runStatsInWorker(chatNameFilter?: string, dateFrom?: string, dateTo?: s
 }
 
 function setupIpc(): void {
-  ipcMain.handle('check-disk-access', () => checkFullDiskAccess())
+  ipcMain.handle('check-disk-access', () => { console.log('[IPC] check-disk-access called'); return checkFullDiskAccess() })
 
   ipcMain.handle('search-attachments', (_event, query: string, filters: Record<string, string>, page: number, limit: number, sortOrder?: string) => {
     return searchAttachments(query, filters, page, limit, sortOrder)
@@ -497,8 +497,12 @@ function setupIpc(): void {
     return result
   })
   ipcMain.handle('get-fast-stats', async (_event, chatNameFilter?: string, dateFrom?: string, dateTo?: string) => {
+    console.log('[IPC] get-fast-stats called, awaiting dbReady...')
     await dbReady
-    return { ...getFastStats(chatNameFilter, dateFrom, dateTo), chatNameMap: {} }
+    console.log('[IPC] get-fast-stats: dbReady, computing...')
+    const result = { ...getFastStats(chatNameFilter, dateFrom, dateTo), chatNameMap: {} }
+    console.log(`[IPC] get-fast-stats: done, total=${result.total}`)
+    return result
   })
   ipcMain.handle('get-attachment', (_event, id: number) => getAttachmentById(id))
 
@@ -663,25 +667,23 @@ function setupLoginItem(): void {
 app.whenReady().then(() => {
   const bootStart = Date.now()
   app.setName('Stash')
+
+  // DB init runs before window — schema creation is fast, backfill is the slow part
+  const t0 = Date.now()
+  initDb()
+  console.log(`[PERF][BOOT] initDb: ${Date.now()-t0}ms`)
+  invalidateLaughCache()
+  const t1 = Date.now()
+  compileContactsHelper()
+  console.log(`[PERF][BOOT] compileContactsHelper: ${Date.now()-t1}ms`)
+  dbReadyResolve()
+
   createMenu()
   createTray()
   setupLoginItem()
   setupIpc()
   createWindow()
-  console.log(`[PERF][BOOT] Window created: ${Date.now()-bootStart}ms`)
-
-  // DB init + contacts run AFTER window is visible (non-blocking for first paint)
-  setImmediate(() => {
-    const t0 = Date.now()
-    initDb()
-    console.log(`[PERF][BOOT] initDb: ${Date.now()-t0}ms`)
-    invalidateLaughCache()
-    const t1 = Date.now()
-    compileContactsHelper()
-    console.log(`[PERF][BOOT] compileContactsHelper: ${Date.now()-t1}ms`)
-    dbReadyResolve()
-    console.log(`[PERF][BOOT] DB ready: ${Date.now()-bootStart}ms total`)
-  })
+  console.log(`[PERF][BOOT] Total boot to window created: ${Date.now()-bootStart}ms`)
 
   // Deferred reaction count sync
   setTimeout(() => { try { updateReactionCounts() } catch (e) { console.error('[Reactions]', e) } }, 3000)
