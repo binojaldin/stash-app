@@ -642,42 +642,69 @@ export function getStats(chatNameFilter?: string, dateFrom?: string, dateTo?: st
         console.error('[GroupDetection] failed', err)
       }
 
-      // Laugh detection — cached per session (expensive full-table scan)
+      // Laugh detection — cached per session
+      // METHOD 1: Text-based (lol, haha, 😂, etc.) — no time window, no sequential requirement
+      // METHOD 2: Tapback reactions (associated_message_type 2003 = "Laughed at")
       if (!laughCacheValid) {
         try {
-          const LAUGH_RE = /\b(lol|lmao|lmfao|rofl|hehe|omg dead|im dead|i'm dead|i cant|i can't)\b|ha{2,}|he{2,}/i
-          const LAUGH_EMOJI = /[\u{1F602}\u{1F923}\u{1F480}]/u
-          const FIVE_MIN_NS = 300000000000
+          const LAUGH_RE = /\b(lol|lmao|lmfao|rofl|hehe|omg dead|im dead|i'm dead|i cant|i can't|dying|i'm dying|im dying)\b|ha{2,}|he{2,}/i
+          const LAUGH_EMOJI = /[\u{1F602}\u{1F923}\u{1F480}\u{2620}]/u
 
+          laughCache.clear()
+
+          // Method 1: Text-based laughs (simplified — no window functions, no time filter)
           const laughRows = chatDb.prepare(`
-            SELECT c.chat_identifier as chat_name, m.is_from_me, m.text, m.date,
-              LAG(m.date) OVER (PARTITION BY cmj.chat_id ORDER BY m.date) as prev_date,
-              LAG(m.is_from_me) OVER (PARTITION BY cmj.chat_id ORDER BY m.date) as prev_is_from_me
-            FROM message m JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
+            SELECT c.chat_identifier as chat_name, m.is_from_me, m.text
+            FROM message m
+            JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
             JOIN chat c ON cmj.chat_id = c.ROWID
             WHERE m.text IS NOT NULL
               AND (
                 m.text LIKE '%lol%' OR m.text LIKE '%lmao%' OR m.text LIKE '%haha%'
                 OR m.text LIKE '%hehe%' OR m.text LIKE '%rofl%' OR m.text LIKE '%lmfao%'
                 OR m.text LIKE '%im dead%' OR m.text LIKE '%i cant%'
-                OR m.text LIKE '%😂%' OR m.text LIKE '%🤣%' OR m.text LIKE '%💀%'
+                OR m.text LIKE '%dying%'
+                OR m.text LIKE '%😂%' OR m.text LIKE '%🤣%' OR m.text LIKE '%💀%' OR m.text LIKE '%☠️%'
               )
-          `).all() as { chat_name: string; is_from_me: number; text: string; date: number; prev_date: number | null; prev_is_from_me: number | null }[]
+          `).all() as { chat_name: string; is_from_me: number; text: string }[]
 
-          laughCache.clear()
           for (const row of laughRows) {
-            if (row.prev_date === null || row.prev_is_from_me === null) continue
-            if (row.is_from_me === row.prev_is_from_me) continue
-            if (row.date - row.prev_date > FIVE_MIN_NS) continue
             const isLaugh = LAUGH_RE.test(row.text) || LAUGH_EMOJI.test(row.text)
             if (!isLaugh) continue
             if (!laughCache.has(row.chat_name)) laughCache.set(row.chat_name, { generated: 0, received: 0 })
             const entry = laughCache.get(row.chat_name)!
-            if (row.is_from_me === 0) entry.generated++
-            else entry.received++
+            // is_from_me=1 + laugh text = I laughed = I received humor from them
+            // is_from_me=0 + laugh text = they laughed = I generated humor
+            if (row.is_from_me === 1) entry.received++
+            else entry.generated++
           }
+          console.log(`[Laugh] Text-based: ${laughCache.size} conversations`)
+
+          // Method 2: Tapback "Laughed at" reactions (associated_message_type 2003)
+          try {
+            const tapbackRows = chatDb.prepare(`
+              SELECT c.chat_identifier as chat_name, m.is_from_me
+              FROM message m
+              JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
+              JOIN chat c ON cmj.chat_id = c.ROWID
+              WHERE m.associated_message_type = 2003
+            `).all() as { chat_name: string; is_from_me: number }[]
+
+            let tapbackCount = 0
+            for (const row of tapbackRows) {
+              if (!laughCache.has(row.chat_name)) laughCache.set(row.chat_name, { generated: 0, received: 0 })
+              const entry = laughCache.get(row.chat_name)!
+              // is_from_me=1 = I tapback-laughed at their message = I received humor
+              // is_from_me=0 = they tapback-laughed at my message = I generated humor
+              if (row.is_from_me === 1) entry.received++
+              else entry.generated++
+              tapbackCount++
+            }
+            console.log(`[Laugh] Tapback reactions: ${tapbackCount} across ${laughCache.size} conversations`)
+          } catch { /* tapback query may fail on older chat.db schemas */ }
+
           laughCacheValid = true
-          console.log(`[Laugh] Cached ${laughCache.size} conversations`)
+          console.log(`[Laugh] Total cached: ${laughCache.size} conversations`)
         } catch { /* laugh detection failed, ignore */ }
       }
 
