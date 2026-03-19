@@ -643,23 +643,102 @@ function MemoryCard({ moments, chatNameMap }: { moments: MemoryMoment[]; chatNam
     const n = (chatNameMap[raw] || raw).replace(/^#/, '')
     return n.startsWith('+') ? null : n
   }
+  const heroTypes = new Set(['comeback', 'fading'])
+  const statTypes = new Set(['biggest_day', 'biggest_month', 'streak'])
+  const sentimentalTypes = new Set(['on_this_day', 'first_message', 'streak_anniversary'])
+  const signalTypes = new Set(['heat_peak', 'intensity_echo'])
+
+  // Dynamic subtitle
+  const subtitle = moments.some(m => m.type === 'comeback') ? 'Someone came back.'
+    : moments.some(m => m.type === 'fading') ? 'Some things change.'
+    : moments.some(m => m.type === 'on_this_day') ? 'This day in your history.'
+    : 'Moments that defined your year.'
+
+  let firstNonHeroSeen = false
+
   return (
     <div style={{ gridColumn: 'span 12', borderRadius: 18, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', padding: '22px 24px 18px', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}>
-      <div style={{ fontSize: 10, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#E8604A', marginBottom: 4, fontFamily: "'DM Sans'", fontWeight: 600 }}>Memory</div>
-      <div style={{ fontSize: 13, color: '#9a948f', marginBottom: 18, fontFamily: "'DM Sans'" }}>Moments worth remembering.</div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 4 }}>
+        <div style={{ fontSize: 10, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#E8604A', fontFamily: "'DM Sans'", fontWeight: 600 }}>Memory</div>
+        <div style={{ fontSize: 10, color: '#c8c0ba', fontFamily: "'DM Sans'" }}>{moments.length} moment{moments.length !== 1 ? 's' : ''}</div>
+      </div>
+      <div style={{ fontSize: 13, color: '#9a948f', marginBottom: 18, fontFamily: "'DM Sans'" }}>{subtitle}</div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 12 }}>
         {moments.map((m, i) => {
           const name = resolve(m.chatName)
           const icon = MEMORY_ICONS[m.type] || '\u{2728}'
-          return (
-            <div key={i} style={{ borderRadius: 14, background: '#F8F4F0', padding: '16px 18px', position: 'relative', overflow: 'hidden' }}>
-              <div style={{ position: 'absolute', right: -8, bottom: -8, fontSize: 48, opacity: 0.06, pointerEvents: 'none' }}>{icon}</div>
-              <div style={{ fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#E8604A', marginBottom: 6, fontFamily: "'DM Sans'", fontWeight: 600 }}>{m.title}</div>
-              <div style={{ fontSize: 13, color: '#1A1A1A', lineHeight: 1.5, marginBottom: 6, fontFamily: "'DM Sans'", fontWeight: 500 }}>{m.subtitle}</div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ fontSize: 11, color: '#9a948f', fontFamily: "'DM Sans'" }}>{m.dateLabel}</div>
-                {name && <div style={{ fontSize: 11, color: '#E8604A', fontFamily: "'DM Sans'", fontWeight: 500 }}>{name}</div>}
+          const isHero = heroTypes.has(m.type)
+          let span = 4
+          if (isHero) span = 6
+          else if (!firstNonHeroSeen) { span = 6; firstNonHeroSeen = true }
+
+          // HERO cards (comeback, fading)
+          if (isHero) {
+            const isDark = m.type === 'comeback'
+            return (
+              <div key={i} style={{ gridColumn: `span ${span}`, borderRadius: 16, background: isDark ? '#1E2826' : '#F5EDE5', padding: '24px 22px', position: 'relative', overflow: 'hidden', minHeight: 140 }}>
+                <div style={{ position: 'absolute', right: 16, top: 16, fontSize: 36, opacity: 0.3 }}>{icon}</div>
+                <div style={{ fontSize: 10, letterSpacing: '0.14em', textTransform: 'uppercase', color: isDark ? '#2EC4A0' : '#9a948f', marginBottom: 8, fontWeight: 600, fontFamily: "'DM Sans'" }}>{m.title}</div>
+                <div style={{ fontFamily: "'Unbounded', sans-serif", fontWeight: 200, fontSize: 22, color: isDark ? '#fff' : '#1A1A1A', lineHeight: 1.3, marginBottom: 8 }}>{m.subtitle}</div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <div style={{ fontSize: 11, color: isDark ? 'rgba(255,255,255,0.5)' : '#9a948f', fontFamily: "'DM Sans'" }}>{m.dateLabel}</div>
+                  {name && <div style={{ fontSize: 11, fontWeight: 500, color: isDark ? '#2EC4A0' : '#E8604A', fontFamily: "'DM Sans'" }}>{name}</div>}
+                </div>
               </div>
+            )
+          }
+
+          // STAT cards (biggest_day, biggest_month, streak)
+          if (statTypes.has(m.type)) {
+            return (
+              <div key={i} style={{ gridColumn: `span ${span}`, borderRadius: 14, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', padding: '18px 18px' }}>
+                <div style={{ fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#E8604A', marginBottom: 8, fontWeight: 600, fontFamily: "'DM Sans'" }}>{icon} {m.title}</div>
+                {m.metric != null && <div style={{ fontFamily: "'Unbounded', sans-serif", fontWeight: 200, fontSize: 28, color: '#E8604A', lineHeight: 1, marginBottom: 6 }}>{typeof m.metric === 'number' && m.metric > 100 ? m.metric.toLocaleString() : m.metric}</div>}
+                <div style={{ fontSize: 13, color: '#1A1A1A', lineHeight: 1.5, marginBottom: 6, fontWeight: 500, fontFamily: "'DM Sans'" }}>{m.subtitle}</div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <div style={{ fontSize: 11, color: '#9a948f', fontFamily: "'DM Sans'" }}>{m.dateLabel}</div>
+                  {name && <div style={{ fontSize: 11, color: '#E8604A', fontWeight: 500, fontFamily: "'DM Sans'" }}>{name}</div>}
+                </div>
+              </div>
+            )
+          }
+
+          // SENTIMENTAL cards (on_this_day, first_message, streak_anniversary)
+          if (sentimentalTypes.has(m.type)) {
+            return (
+              <div key={i} style={{ gridColumn: `span ${span}`, borderRadius: 14, background: 'linear-gradient(135deg, #F8F4F0 0%, #FFF8F2 100%)', border: '1px solid rgba(232,96,74,0.08)', padding: '18px 18px' }}>
+                <div style={{ fontSize: 20, marginBottom: 8 }}>{icon}</div>
+                <div style={{ fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#2EC4A0', marginBottom: 6, fontWeight: 600, fontFamily: "'DM Sans'" }}>{m.title}</div>
+                <div style={{ fontSize: 14, color: '#1A1A1A', lineHeight: 1.5, marginBottom: 6, fontWeight: 500, fontFamily: "'DM Sans'" }}>{m.subtitle}</div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <div style={{ fontSize: 11, color: '#9a948f', fontFamily: "'DM Sans'" }}>{m.dateLabel}</div>
+                  {name && <div style={{ fontSize: 11, color: '#2EC4A0', fontWeight: 500, fontFamily: "'DM Sans'" }}>{name}</div>}
+                </div>
+              </div>
+            )
+          }
+
+          // SIGNAL cards (heat_peak, intensity_echo)
+          if (signalTypes.has(m.type)) {
+            const isDark = m.type === 'heat_peak'
+            return (
+              <div key={i} style={{ gridColumn: `span ${span}`, borderRadius: 14, background: isDark ? 'linear-gradient(135deg, #2D1F1A 0%, #1E2826 100%)' : '#F8F4F0', padding: '18px 18px' }}>
+                <div style={{ fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: isDark ? '#E8604A' : '#2EC4A0', marginBottom: 8, fontWeight: 600, fontFamily: "'DM Sans'" }}>{icon} {m.title}</div>
+                <div style={{ fontSize: 14, color: isDark ? 'rgba(255,255,255,0.75)' : '#1A1A1A', lineHeight: 1.5, marginBottom: 6, fontWeight: 500, fontFamily: "'DM Sans'" }}>{m.subtitle}</div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <div style={{ fontSize: 11, color: isDark ? 'rgba(255,255,255,0.4)' : '#9a948f', fontFamily: "'DM Sans'" }}>{m.dateLabel}</div>
+                  {name && <div style={{ fontSize: 11, color: isDark ? '#E8604A' : '#2EC4A0', fontWeight: 500, fontFamily: "'DM Sans'" }}>{name}</div>}
+                </div>
+              </div>
+            )
+          }
+
+          // Fallback (unknown type)
+          return (
+            <div key={i} style={{ gridColumn: `span ${span}`, borderRadius: 14, background: '#F8F4F0', padding: '18px 18px' }}>
+              <div style={{ fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#E8604A', marginBottom: 6, fontWeight: 600, fontFamily: "'DM Sans'" }}>{m.title}</div>
+              <div style={{ fontSize: 13, color: '#1A1A1A', lineHeight: 1.5, marginBottom: 6, fontWeight: 500, fontFamily: "'DM Sans'" }}>{m.subtitle}</div>
+              <div style={{ fontSize: 11, color: '#9a948f', fontFamily: "'DM Sans'" }}>{m.dateLabel}</div>
             </div>
           )
         })}
