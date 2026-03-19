@@ -146,10 +146,12 @@ function getStatsWorkerPath(): string {
   const dir = join(app.getPath('userData'), 'workers')
   mkdirSync(dir, { recursive: true })
   const workerPath = join(dir, 'statsWorker.js')
+  // Resolve better-sqlite3 absolute path from the main process context
+  const sqlitePath = require.resolve('better-sqlite3').replace(/\\/g, '/')
   // Write worker script (idempotent, tiny file)
   writeFileSync(workerPath, `
 const { parentPort, workerData } = require('worker_threads');
-const Database = require('better-sqlite3');
+const Database = require('${sqlitePath}');
 const { homedir } = require('os');
 const { join } = require('path');
 const { existsSync } = require('fs');
@@ -172,7 +174,7 @@ try {
   const images = d.prepare('SELECT COUNT(*) as c FROM attachments WHERE is_image = 1' + chatCond + dateWhere).get(...params).c;
   const videos = d.prepare('SELECT COUNT(*) as c FROM attachments WHERE is_video = 1' + chatCond + dateWhere).get(...params).c;
   const documents = d.prepare('SELECT COUNT(*) as c FROM attachments WHERE is_document = 1' + chatCond + dateWhere).get(...params).c;
-  const audio = d.prepare('SELECT COUNT(*) as c FROM attachments WHERE mime_type LIKE "audio/%" ' + chatCond + dateWhere).get(...params).c;
+  const audio = d.prepare("SELECT COUNT(*) as c FROM attachments WHERE mime_type LIKE 'audio/%' " + chatCond + dateWhere).get(...params).c;
   const unavailable = d.prepare('SELECT COUNT(*) as c FROM attachments WHERE is_available = 0' + chatCond + dateWhere).get(...params).c;
 
   // Hidden chats
