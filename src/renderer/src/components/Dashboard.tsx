@@ -1562,12 +1562,12 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
     }).then(r => { setAiDynamics(r); setAiDynamicsLoading(false) }).catch(() => setAiDynamicsLoading(false))
   }, [scopedPerson, dynamics?.myTotalWords])
 
-  // ── Nickname detection (must be before early return) ──
-  const [nicknames, setNicknames] = useState<{ name: string; count: number; isFromMe: boolean }[]>([])
-  useEffect(() => {
-    if (!scopedPerson) { setNicknames([]); return }
-    window.api.detectNicknames(scopedPerson, resolveName(scopedPerson, chatNameMap)).then(r => setNicknames(r.nicknames)).catch(() => {})
-  }, [scopedPerson])
+  // ── Nickname detection — disabled (detection quality too low, will rebuild with AI) ──
+  // const [nicknames, setNicknames] = useState<{ name: string; count: number; isFromMe: boolean }[]>([])
+  // useEffect(() => {
+  //   if (!scopedPerson) { setNicknames([]); return }
+  //   window.api.detectNicknames(scopedPerson, resolveName(scopedPerson, chatNameMap)).then(r => setNicknames(r.nicknames)).catch(() => {})
+  // }, [scopedPerson])
 
   // ── Relationship hero AI state (must be before early return) ──
   const [heroPhoto, setHeroPhoto] = useState<{ id: number; thumbnail_path: string; created_at: string; filename: string } | null>(null)
@@ -1729,15 +1729,7 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
                     {closenessRank && <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', fontFamily: "'DM Sans'" }}>#{closenessRank} closest</span>}
                   </div>
                 )}
-                {/* Nicknames */}
-                {nicknames.length > 0 && (
-                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10, alignItems: 'center' }}>
-                    <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', letterSpacing: '0.1em', textTransform: 'uppercase', fontFamily: "'DM Sans'" }}>aka</span>
-                    {nicknames.slice(0, 3).map((n, i) => (
-                      <span key={i} style={{ fontSize: 12, padding: '2px 8px', borderRadius: 6, background: 'rgba(46,196,160,0.12)', color: '#2EC4A0', fontFamily: "'DM Sans'", fontWeight: 500, fontStyle: 'italic' }}>{n.name}</span>
-                    ))}
-                  </div>
-                )}
+                {/* Nicknames — disabled (detection quality too low, will rebuild with AI) */}
                 {/* AI narrative or stats fallback */}
                 {relNarrative ? (
                   <div style={{ fontSize: 15, color: 'rgba(255,255,255,0.65)', lineHeight: 1.7, maxWidth: 540, fontStyle: 'italic' }}>{relNarrative.narrative}</div>
