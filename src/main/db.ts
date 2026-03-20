@@ -2161,15 +2161,16 @@ export interface SearchResult {
   followUp?: string | null
 }
 
-const SIGNAL_COLUMN_MAP: Record<string, { column: string; label: string }> = {
-  laugh: { column: 'laugh_count', label: 'laughs' },
-  heat: { column: 'avg_heat', label: 'avg heat' },
-  sentiment: { column: 'positive_rate', label: '% positive' },
-  emoji: { column: 'emoji_rate', label: '% emoji' },
-  question: { column: 'question_count', label: 'questions' },
-  word_count: { column: 'avg_word_count', label: 'avg words' },
-  all_caps: { column: 'all_caps_rate', label: '% all caps' },
-  link: { column: 'link_count', label: 'links' },
+// Rate-based: count signals use rate per analyzed message, rate signals stay as-is
+const SIGNAL_COLUMN_MAP: Record<string, { column: string; label: string; isRate: boolean }> = {
+  laugh: { column: 'laugh_count', label: '% laugh rate', isRate: false },
+  heat: { column: 'avg_heat', label: 'avg heat', isRate: true },
+  sentiment: { column: 'positive_rate', label: '% positive', isRate: true },
+  emoji: { column: 'emoji_rate', label: '% emoji', isRate: true },
+  question: { column: 'question_count', label: '% question rate', isRate: false },
+  word_count: { column: 'avg_word_count', label: 'avg words', isRate: true },
+  all_caps: { column: 'all_caps_rate', label: '% all caps', isRate: true },
+  link: { column: 'link_count', label: '% link rate', isRate: false },
 }
 
 export function executeSignalRank(signal: string, sort: string, limit: number, chatName?: string): { contact: string; value: number; label: string }[] {
@@ -2178,8 +2179,15 @@ export function executeSignalRank(signal: string, sort: string, limit: number, c
   if (!mapping) return []
   const chatFilter = chatName ? ` AND chat_identifier = '${chatName.replace(/'/g, "''")}'` : ''
   try {
-    const rows = d.prepare(`SELECT chat_identifier as contact, ${mapping.column} as value, total_analyzed FROM conversation_signals WHERE total_analyzed > 10${chatFilter} ORDER BY ${mapping.column} ${sort === 'asc' ? 'ASC' : 'DESC'} LIMIT ?`).all(limit) as { contact: string; value: number; total_analyzed: number }[]
-    return rows.map(r => ({ contact: r.contact, value: Math.round(r.value * 100) / 100, label: mapping.label }))
+    if (mapping.isRate) {
+      // Already a rate/average — sort directly
+      const rows = d.prepare(`SELECT chat_identifier as contact, ${mapping.column} as value, total_analyzed FROM conversation_signals WHERE total_analyzed >= 50${chatFilter} ORDER BY ${mapping.column} ${sort === 'asc' ? 'ASC' : 'DESC'} LIMIT ?`).all(limit) as { contact: string; value: number; total_analyzed: number }[]
+      return rows.map(r => ({ contact: r.contact, value: Math.round(r.value * 100) / 100, label: mapping.label }))
+    } else {
+      // Count-based — convert to rate (per 100 messages)
+      const rows = d.prepare(`SELECT chat_identifier as contact, ROUND(CAST(${mapping.column} AS REAL) / NULLIF(total_analyzed, 0) * 100, 1) as value, total_analyzed FROM conversation_signals WHERE total_analyzed >= 50${chatFilter} ORDER BY value ${sort === 'asc' ? 'ASC' : 'DESC'} LIMIT ?`).all(limit) as { contact: string; value: number; total_analyzed: number }[]
+      return rows.map(r => ({ contact: r.contact, value: r.value || 0, label: mapping.label }))
+    }
   } catch { return [] }
 }
 

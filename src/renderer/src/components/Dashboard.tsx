@@ -1300,10 +1300,11 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
   const groups = chats.filter((c) => c.isGroup)
 
   // Sorted lists — individuals only for person-level tiles
-  const byLaughsGenerated = [...individuals].sort((a, b) => b.laughsGenerated - a.laughsGenerated)
-  const byLaughsReceived = [...individuals].sort((a, b) => b.laughsReceived - a.laughsReceived)
-  const byMessages = [...chats].sort((a, b) => b.messageCount - a.messageCount) // all for most active
-  const byAttachments = [...chats].sort((a, b) => b.attachmentCount - a.attachmentCount)
+  // Rate-based rankings (per 100 messages, minimum thresholds)
+  const byLaughsGenerated = [...individuals].filter(c => c.messageCount >= 200).sort((a, b) => (b.laughsGenerated / b.messageCount) - (a.laughsGenerated / a.messageCount))
+  const byLaughsReceived = [...individuals].filter(c => c.messageCount >= 200).sort((a, b) => (b.laughsReceived / b.messageCount) - (a.laughsReceived / a.messageCount))
+  const byMessages = [...chats].sort((a, b) => b.messageCount - a.messageCount) // total volume, not rate
+  const byAttachments = [...chats].filter(c => c.messageCount >= 100).sort((a, b) => (b.attachmentCount / b.messageCount) - (a.attachmentCount / a.messageCount))
   const byInitiation = [...individuals].sort((a, b) => b.initiationCount - a.initiationCount)
   const topGroup = [...groups].sort((a, b) => b.messageCount - a.messageCount)[0]
 
@@ -1644,11 +1645,11 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
       if (byMessages[0]?.rawName === pd.rawName)
         trophies.push({ emoji: '👑', label: '#1 Most Messaged', sublabel: 'Your most texted person' })
       if (byLaughsReceived[0]?.rawName === pd.rawName && pd.laughsReceived > 0)
-        trophies.push({ emoji: '😂', label: 'Chief Comedian', sublabel: 'Makes you laugh most' })
+        trophies.push({ emoji: '😂', label: 'Chief Comedian', sublabel: `Makes you laugh most (${Math.round(pd.laughsReceived / Math.max(pd.messageCount, 1) * 100)}% of messages)` })
       if (byLaughsGenerated[0]?.rawName === pd.rawName && pd.laughsGenerated > 0)
-        trophies.push({ emoji: '🎭', label: 'Best Audience', sublabel: 'Laughs at everything you say' })
+        trophies.push({ emoji: '🎭', label: 'Best Audience', sublabel: `Laughs at ${Math.round(pd.laughsGenerated / Math.max(pd.messageCount, 1) * 100)}% of your messages` })
       if (byAttachments[0]?.rawName === pd.rawName && pd.attachmentCount > 0)
-        trophies.push({ emoji: '📸', label: 'Photo Dumper', sublabel: 'Most files shared' })
+        trophies.push({ emoji: '📸', label: 'Photo Dumper', sublabel: `${Math.round(pd.attachmentCount / Math.max(pd.messageCount, 1) * 100)}% of messages have media` })
       if (pd.initiationCount > 0) {
         const initPctVal = Math.round((pd.initiationCount / Math.max(pd.sentCount, 1)) * 100)
         if (initPctVal >= 70)
@@ -1877,13 +1878,13 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
               {pd && <>
                 <div style={{ gridColumn: 'span 4', cursor: 'pointer', position: 'relative' }}
                   onClick={() => onDrillThrough?.(`${firstName}'s comedy record`, `${firstName} · all time`, [
-                    { label: 'Made you laugh', value: `${pd.laughsReceived.toLocaleString()} times` },
-                    { label: 'You made them laugh', value: `${pd.laughsGenerated.toLocaleString()} times` },
-                    { label: 'Laugh rate', value: `${Math.round((pd.laughsReceived / Math.max(pd.messageCount, 1)) * 100)}% of messages got a laugh` },
+                    { label: 'Your laugh rate', value: `${Math.round(pd.laughsGenerated / Math.max(pd.messageCount, 1) * 100)}% of messages` },
+                    { label: 'Their laugh rate', value: `${Math.round(pd.laughsReceived / Math.max(pd.messageCount, 1) * 100)}% of messages` },
+                    { label: 'Total laughs', value: `${(pd.laughsGenerated + pd.laughsReceived).toLocaleString()}` },
                   ])}>
                   <WinnerCard award="JesterMaxxer"
                     name={pd.laughsGenerated > pd.laughsReceived ? 'You' : pd.laughsReceived > pd.laughsGenerated ? firstName : 'Tied'}
-                    stat={`You: ${pd.laughsGenerated.toLocaleString()} laughs · ${firstName}: ${pd.laughsReceived.toLocaleString()} laughs`}
+                    stat={`You: ${Math.round(pd.laughsGenerated / Math.max(pd.messageCount, 1) * 100)}% · ${firstName}: ${Math.round(pd.laughsReceived / Math.max(pd.messageCount, 1) * 100)}%`}
                     flavor={pd.laughsGenerated > pd.laughsReceived * 1.5 ? `Not even close. ${firstName} doesn't stand a chance.`
                       : pd.laughsReceived > pd.laughsGenerated * 1.5 ? `${firstName} owns you. Accept it.`
                       : pd.laughsGenerated > pd.laughsReceived ? 'You edge it — but they put up a fight.'
@@ -1900,7 +1901,7 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
                 </div>
                 <WinnerCard award="JesterMogged"
                   name={firstName}
-                  stat={`${pd.laughsReceived.toLocaleString()} times they've made you laugh`}
+                  stat={`${Math.round(pd.laughsReceived / Math.max(pd.messageCount, 1) * 100)}% laugh rate (${pd.laughsReceived.toLocaleString()} total)`}
                   flavor={pd.laughsReceived > 500 ? "You never stood a chance." : pd.laughsReceived > 100 ? `${firstName} has your number.` : 'They know exactly how to get you.'}
                   emoji="💀" accentColor="#2EC4A0" span={4} />
                 <SplitCard eyebrow="Who reaches first"
