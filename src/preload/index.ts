@@ -171,6 +171,7 @@ const api = {
   getAnalysisProgress: (): Promise<{
     totalMessages: number; analyzedMessages: number; lastRunAt: string | null; isRunning: boolean
   }> => ipcRenderer.invoke('get-analysis-progress'),
+  detectNicknames: (chatIdentifier: string, contactName: string): Promise<{ nicknames: { name: string; count: number; isFromMe: boolean }[] }> => ipcRenderer.invoke('detect-nicknames', chatIdentifier, contactName),
   getMediaIntelligence: (chatIdentifier?: string): Promise<{
     topSenders: { chatName: string; count: number }[]; topReceivers: { chatName: string; count: number }[]
     myMediaCount: number; theirMediaCount: number; totalMedia: number

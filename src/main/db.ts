@@ -2895,6 +2895,79 @@ export function getAttachmentContext(attachmentId: number, messageCount = 5): Me
   } catch { return [] }
 }
 
+const NICKNAME_STOPS = new Set([
+  'the','and','but','for','not','you','all','can','her','was','one','our','out','are','has','his','how','its',
+  'may','new','now','old','see','way','who','did','get','got','had','him','let','say','she','too','use',
+  'yes','no','ok','okay','yeah','yep','nah','nope','sure','just','like','good','well','what','that','this',
+  'with','have','from','they','been','said','will','each','make','than','them','then','these','some','when',
+  'where','your','also','back','here','there','about','would','could','should',
+  'lol','haha','lmao','omg','wtf','idk','smh','tbh','thanks','thank','sorry','please','right','really',
+  'think','know','want','need','going','come','love','miss','wait','text','call','send','home','work',
+  'food','down','cool','nice','great','much','more','very','still','tomorrow','today','tonight','morning',
+  'night','literally','actually','gonna','wanna','gotta','mine','same','true','done','stop','look',
+])
+
+export function detectNicknames(chatIdentifier: string, contactName: string): { nicknames: { name: string; count: number; isFromMe: boolean }[] } {
+  const d = initDb()
+  const nicknames: { name: string; count: number; isFromMe: boolean }[] = []
+  try {
+    const firstName = contactName.split(' ')[0].toLowerCase()
+    const firstInitial = firstName[0] || ''
+
+    const scan = (isFromMe: number) => {
+      const rows = d.prepare(`SELECT body FROM messages WHERE chat_name = ? AND is_from_me = ? ORDER BY apple_date DESC LIMIT 5000`).all(chatIdentifier, isFromMe) as { body: string }[]
+      const counts = new Map<string, number>()
+
+      for (const { body } of rows) {
+        const text = body.toLowerCase().trim()
+        if (!text || text.length < 2) continue
+        const candidates = new Set<string>()
+
+        // Start of message: "hey babe", "yo T"
+        const startMatch = text.match(/^(?:hey|hi|yo|morning|night|ok|lol|haha)?\s*,?\s*([a-z]{1,12})\b/)
+        if (startMatch) candidates.add(startMatch[1])
+
+        // End of message: "thanks babe", "love you G"
+        const endMatch = text.match(/\b([a-z]{1,12})\s*[!.?]*$/)
+        if (endMatch) candidates.add(endMatch[1])
+
+        // Standalone short message
+        if (text.length <= 15) {
+          const standalone = text.replace(/[!?.❤️😘💕]/g, '').trim()
+          if (standalone.length >= 1 && standalone.length <= 10 && /^[a-z]+$/.test(standalone)) candidates.add(standalone)
+        }
+
+        for (const c of candidates) {
+          if (NICKNAME_STOPS.has(c)) continue
+          if (c.length > 10) continue
+          // Skip single chars unless they match initial
+          if (c.length === 1 && c !== firstInitial) continue
+          counts.set(c, (counts.get(c) || 0) + 1)
+        }
+      }
+
+      for (const [name, count] of counts) {
+        if (count < 5) continue
+        // Skip if it's just their first name
+        if (name === firstName) continue
+        nicknames.push({ name, count, isFromMe: isFromMe === 1 })
+      }
+    }
+
+    scan(1) // what you call them
+    scan(0) // what they call you
+
+    // Deduplicate and sort
+    const merged = new Map<string, { count: number; isFromMe: boolean }>()
+    for (const n of nicknames) {
+      const existing = merged.get(n.name)
+      if (!existing || n.count > existing.count) merged.set(n.name, { count: n.count, isFromMe: n.isFromMe })
+    }
+
+    return { nicknames: [...merged.entries()].sort((a, b) => b[1].count - a[1].count).slice(0, 5).map(([name, v]) => ({ name, count: v.count, isFromMe: v.isFromMe })) }
+  } catch { return { nicknames: [] } }
+}
+
 export interface MediaIntelligence {
   topSenders: { chatName: string; count: number }[]
   topReceivers: { chatName: string; count: number }[]
