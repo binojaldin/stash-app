@@ -35,6 +35,7 @@ const api = {
   getMessagingNetwork: (): Promise<{
     nodes: { rawName: string; messageCount: number }[]
     edges: { a: string; b: string; sharedGroups: number }[]
+    groups: { chatId: string; displayName: string; members: string[]; messageCount: number }[]
   }> => ipcRenderer.invoke('get-messaging-network'),
   getTodayInHistory: (): Promise<{
     id: number; filename: string; original_path: string; thumbnail_path: string | null;

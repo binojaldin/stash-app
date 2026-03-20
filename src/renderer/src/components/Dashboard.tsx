@@ -4,7 +4,8 @@ import type { Stats, ChatNameEntry } from '../types'
 
 type NetworkNode = { rawName: string; messageCount: number }
 type NetworkEdge = { a: string; b: string; sharedGroups: number }
-type NetworkData = { nodes: NetworkNode[]; edges: NetworkEdge[] }
+type NetworkGroup = { chatId: string; displayName: string; members: string[]; messageCount: number }
+type NetworkData = { nodes: NetworkNode[]; edges: NetworkEdge[]; groups: NetworkGroup[] }
 
 type MemoryItem = {
   id: number; filename: string; original_path: string; thumbnail_path: string | null;
@@ -841,7 +842,8 @@ function ConstellationCard({ network, chatNameMap, onSelectConversation }: {
 }): JSX.Element | null {
   const [hovered, setHovered] = useState<string | null>(null)
   const [focused, setFocused] = useState<string | null>(null)
-  const [graphMode, setGraphMode] = useState<'network' | 'communities'>('network')
+  const [graphMode, setGraphMode] = useState<'people' | 'communities' | 'groups' | 'bridges'>('people')
+  const [hintDismissed, setHintDismissed] = useState(false)
   const DEFAULT_VB = { x: 0, y: 0, w: 600, h: 380 }
   const [viewBox, setViewBox] = useState(DEFAULT_VB)
   const [isPanning, setIsPanning] = useState(false)
@@ -971,10 +973,26 @@ function ConstellationCard({ network, chatNameMap, onSelectConversation }: {
   }
 
   const isCommunities = graphMode === 'communities'
+  const isGroups = graphMode === 'groups'
+  const isBridges = graphMode === 'bridges'
+
+  // Bridge contacts: nodes with edges to 3+ clusters
+  const bridgeNodes = new Set<string>()
+  for (const [name] of edgeCounts) {
+    const clusters = new Set<number>()
+    for (const e of filteredEdges) {
+      if (e.a === name) { const c = clusterMap.get(e.b); if (c !== undefined) clusters.add(c) }
+      if (e.b === name) { const c = clusterMap.get(e.a); if (c !== undefined) clusters.add(c) }
+    }
+    if (clusters.size >= 3) bridgeNodes.add(name)
+  }
+
+  // Groups for focused person
+  const groupsForFocused = focused ? (network.groups || []).filter(g => g.members.includes(focused)) : []
   const focusedPos = focused ? positions.get(focused) : null
 
   return (
-    <div style={{ gridColumn: 'span 12', borderRadius: 18, background: '#0F0F0F', border: '1px solid rgba(255,255,255,0.06)', boxShadow: '0 4px 24px rgba(0,0,0,0.2)', padding: '22px 24px 16px' }}>
+    <div style={{ gridColumn: 'span 12', borderRadius: 18, background: '#1A1815', border: '1px solid rgba(255,255,255,0.06)', boxShadow: '0 4px 24px rgba(0,0,0,0.2)', padding: '22px 24px 16px', position: 'relative' }}>
       <style>{`@keyframes nodePulse{0%,100%{r:var(--nr)}50%{r:calc(var(--nr) + 1.5px)}} @keyframes focusRing{0%{stroke-dashoffset:0}100%{stroke-dashoffset:-20}} @keyframes focusGlow{0%,100%{opacity:0.35}50%{opacity:0.7}}`}</style>
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 2 }}>
@@ -991,14 +1009,14 @@ function ConstellationCard({ network, chatNameMap, onSelectConversation }: {
         )}
       </div>
 
-      {/* FIX 4: Network / Communities toggle */}
+      {/* Mode tabs */}
       <div style={{ display: 'flex', gap: 2, background: 'rgba(255,255,255,0.04)', borderRadius: 7, padding: 2, marginBottom: 6, width: 'fit-content' }}>
-        {(['network', 'communities'] as const).map(mode => (
-          <button key={mode} onClick={() => setGraphMode(mode)}
+        {([['people', 'People'], ['communities', 'Communities'], ['groups', 'Groups'], ['bridges', 'Bridges']] as const).map(([mode, label]) => (
+          <button key={mode} onClick={() => setGraphMode(mode as typeof graphMode)}
             style={{ padding: '3px 10px', borderRadius: 5, fontSize: 9, border: 'none', cursor: 'pointer', fontFamily: "'DM Sans'", letterSpacing: '0.06em', textTransform: 'uppercase',
               background: graphMode === mode ? 'rgba(255,255,255,0.1)' : 'transparent',
               color: graphMode === mode ? 'rgba(255,255,255,0.8)' : 'rgba(255,255,255,0.3)', transition: 'all 0.15s' }}>
-            {mode}
+            {label}
           </button>
         ))}
         {/* Reset view button */}
@@ -1070,12 +1088,12 @@ function ConstellationCard({ network, chatNameMap, onSelectConversation }: {
             const isHov = hovered === node.rawName, isFoc = focused === node.rawName
             const isBridge = node.rawName === bridgeName, isConnected = connectedSet.has(node.rawName)
             const isDimmed = enableDimming && activeNode && !isConnected
-            const fill = isFoc ? '#2EC4A0' : isBridge ? '#E8604A' : isHov ? '#2EC4A0' : 'rgba(255,255,255,0.35)'
+            const fill = isFoc ? '#2EC4A0' : (isBridges && bridgeNodes.has(node.rawName)) ? '#E8604A' : isBridge ? '#E8604A' : isHov ? '#2EC4A0' : 'rgba(210,200,190,0.35)'
             const r = (isHov || isFoc) ? pos.size + 1 : pos.size
             const showLabel = pos.size >= 5 || isHov || isFoc
             const sharedCount = edgeCounts.get(node.rawName) || 0
             return (
-              <g key={node.rawName} style={{ cursor: 'pointer', transition: 'opacity 0.2s' }} opacity={isDimmed ? 0.08 : 1}
+              <g key={node.rawName} style={{ cursor: 'pointer', transition: 'opacity 0.2s' }} opacity={isDimmed ? 0.08 : (isBridges && !bridgeNodes.has(node.rawName) && !isFoc && !isConnected) ? 0.12 : 1}
                 onMouseEnter={() => setHovered(node.rawName)} onMouseLeave={() => setHovered(null)}
                 onClick={(e) => { e.stopPropagation(); handleNodeClick(node.rawName) }}>
                 <circle cx={pos.x} cy={pos.y} r={Math.max(r, 10)} fill="transparent" />
@@ -1102,28 +1120,75 @@ function ConstellationCard({ network, chatNameMap, onSelectConversation }: {
               </g>
             )
           }))}
+
+          {/* Group nodes in Shared Groups mode */}
+          {isGroups && focused && positions.get(focused) && groupsForFocused.map((g, i) => {
+            const fp = positions.get(focused)!
+            const angle = (i / Math.max(groupsForFocused.length, 1)) * Math.PI * 2 - Math.PI / 2
+            const gx = fp.x + Math.cos(angle) * 110
+            const gy = fp.y + Math.sin(angle) * 110
+            return (
+              <g key={g.chatId}>
+                <line x1={fp.x} y1={fp.y} x2={gx} y2={gy} stroke="rgba(46,196,160,0.4)" strokeWidth={1.2} />
+                {g.members.filter(m => m !== focused && positions.has(m)).map(m => {
+                  const mp = positions.get(m)!
+                  return <line key={m} x1={gx} y1={gy} x2={mp.x} y2={mp.y} stroke="rgba(232,96,74,0.15)" strokeWidth={0.8} strokeDasharray="4 3" />
+                })}
+                <rect x={gx - 42} y={gy - 11} width={84} height={22} rx={4} fill="rgba(232,96,74,0.85)" stroke="rgba(232,96,74,0.4)" strokeWidth={0.5} />
+                <text x={gx} y={gy + 4} textAnchor="middle" style={{ fontSize: 7, fill: '#fff', fontFamily: 'DM Sans', fontWeight: 500 }}>
+                  {g.displayName.length > 12 ? g.displayName.slice(0, 11) + '\u2026' : g.displayName}
+                </text>
+              </g>
+            )
+          })}
+
+          {/* Groups mode hint when nothing selected */}
+          {isGroups && !focused && (
+            <text x={CX} y={CY + 50} textAnchor="middle" style={{ fontSize: 10, fill: 'rgba(255,255,255,0.3)', fontFamily: 'DM Sans' }}>Select a person to see their shared groups</text>
+          )}
         </svg>
 
-        {/* FIX 3: Right-rail detail panel for focused node */}
+        {/* Right-rail detail panel for focused node */}
         {focused && (() => {
-          const fNode = sorted.find(n => n.rawName === focused)
           const fEdgeCount = edgeCounts.get(focused) || 0
           const fMsgCount = msgCountMap.get(focused) || 0
           const fCluster = clusterMap.get(focused)
           const fIsBridge = focused === bridgeName
+          const fIsBridgeNode = bridgeNodes.has(focused)
           return (
-            <div style={{ flex: '0 0 25%', padding: '8px 0 8px 16px', borderLeft: '1px solid rgba(255,255,255,0.06)', display: 'flex', flexDirection: 'column', gap: 12, overflow: 'hidden' }}>
+            <div style={{ flex: '0 0 25%', padding: '8px 0 8px 16px', borderLeft: '1px solid rgba(255,255,255,0.06)', display: 'flex', flexDirection: 'column', gap: 10, overflow: 'hidden' }}>
               <div>
                 <div style={{ fontSize: 16, color: '#2EC4A0', fontFamily: "'DM Sans'", fontWeight: 600, marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{getFullName(focused)}</div>
                 <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', fontFamily: "'DM Sans'" }}>{fMsgCount.toLocaleString()} messages</div>
                 <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', fontFamily: "'DM Sans'", marginTop: 2 }}>{fEdgeCount} shared group{fEdgeCount !== 1 ? 's' : ''}</div>
               </div>
-              {fIsBridge && (
+              {(fIsBridge || fIsBridgeNode) && (
                 <div style={{ padding: '6px 10px', background: 'rgba(232,96,74,0.08)', borderRadius: 6, fontSize: 10, color: '#E8604A', fontFamily: "'DM Sans'" }}>
-                  Your #1 bridge contact
+                  {fIsBridge ? 'Your #1 bridge contact' : 'Bridge — connects multiple clusters'}
                 </div>
               )}
-              {fCluster !== undefined && (
+              {/* Mode-specific content */}
+              {isGroups && groupsForFocused.length > 0 && (
+                <div>
+                  <div style={{ fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.25)', marginBottom: 6, fontFamily: "'DM Sans'" }}>Shared groups</div>
+                  {groupsForFocused.map(g => (
+                    <div key={g.chatId} style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', fontFamily: "'DM Sans'", padding: '3px 0', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                      {g.displayName.length > 20 ? g.displayName.slice(0, 19) + '\u2026' : g.displayName}
+                      <span style={{ color: 'rgba(255,255,255,0.25)', marginLeft: 6 }}>{g.members.length} members</span>
+                    </div>
+                  ))}
+                  <div style={{ fontSize: 10, color: 'rgba(232,96,74,0.6)', marginTop: 6, fontFamily: "'DM Sans'" }}>Appears in {groupsForFocused.length} group{groupsForFocused.length !== 1 ? 's' : ''}</div>
+                </div>
+              )}
+              {isBridges && fIsBridgeNode && (
+                <div>
+                  <div style={{ fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.25)', marginBottom: 4, fontFamily: "'DM Sans'" }}>Bridge role</div>
+                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', fontFamily: "'DM Sans'" }}>
+                    {(() => { const clusters = new Set<number>(); for (const e of filteredEdges) { if (e.a === focused) { const c = clusterMap.get(e.b); if (c !== undefined) clusters.add(c) } if (e.b === focused) { const c = clusterMap.get(e.a); if (c !== undefined) clusters.add(c) } } return `Connects ${clusters.size} separate clusters` })()}
+                  </div>
+                </div>
+              )}
+              {!isGroups && !isBridges && fCluster !== undefined && (
                 <div>
                   <div style={{ fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.25)', marginBottom: 4, fontFamily: "'DM Sans'" }}>Cluster</div>
                   <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', fontFamily: "'DM Sans'" }}>
@@ -1150,6 +1215,7 @@ function ConstellationCard({ network, chatNameMap, onSelectConversation }: {
           { visual: <div style={{ width: 14, height: 1, background: 'rgba(255,255,255,0.12)', borderRadius: 1 }} />, label: 'Edge = shared groups' },
           { visual: <div style={{ width: 5, height: 5, borderRadius: '50%', background: '#E8604A' }} />, label: 'Bridge' },
           { visual: <div style={{ width: 5, height: 5, borderRadius: '50%', background: '#2EC4A0' }} />, label: 'Selected' },
+          ...(isGroups ? [{ visual: <div style={{ width: 12, height: 7, borderRadius: 2, background: 'rgba(232,96,74,0.85)' }} />, label: 'Group' }] : []),
         ].map(({ visual, label }) => (
           <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
             {visual}
@@ -1157,6 +1223,12 @@ function ConstellationCard({ network, chatNameMap, onSelectConversation }: {
           </div>
         ))}
       </div>
+      {!focused && !hintDismissed && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+          <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', fontFamily: "'DM Sans'" }}>Click a person to explore their connections</span>
+          <button onClick={() => setHintDismissed(true)} style={{ fontSize: 9, color: 'rgba(255,255,255,0.25)', background: 'rgba(255,255,255,0.05)', border: 'none', borderRadius: 4, padding: '2px 8px', cursor: 'pointer' }}>OK</button>
+        </div>
+      )}
     </div>
   )
 }

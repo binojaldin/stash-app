@@ -495,13 +495,14 @@ export function getUsageStats(dateFrom?: string, dateTo?: string): {
 export function getMessagingNetwork(): {
   nodes: { rawName: string; messageCount: number }[]
   edges: { a: string; b: string; sharedGroups: number }[]
+  groups: { chatId: string; displayName: string; members: string[]; messageCount: number }[]
 } {
   try {
     const { homedir } = require('os')
     const { join } = require('path')
     const { existsSync } = require('fs')
     const chatDbPath = join(homedir(), 'Library/Messages/chat.db')
-    if (!existsSync(chatDbPath)) return { nodes: [], edges: [] }
+    if (!existsSync(chatDbPath)) return { nodes: [], edges: [], groups: [] }
 
     const chatDb = new Database(chatDbPath, { readonly: true })
     try {
@@ -555,12 +556,28 @@ export function getMessagingNetwork(): {
         if (nodeSet.has(a) && nodeSet.has(b)) edges.push({ a, b, sharedGroups: count })
       }
 
-      return { nodes, edges }
+      // Collect group chat data
+      const groups: { chatId: string; displayName: string; members: string[]; messageCount: number }[] = []
+      for (const [chatId, handles] of chatToHandles) {
+        const relevantMembers = Array.from(handles).filter(h => nodeSet.has(h))
+        if (relevantMembers.length < 2) continue
+        let displayName = chatId
+        try {
+          const nameRow = chatDb.prepare('SELECT display_name FROM chat WHERE chat_identifier = ?').get(chatId) as { display_name: string } | undefined
+          displayName = nameRow?.display_name || `Group (${handles.size} members)`
+        } catch {}
+        let msgCount = 0
+        try { msgCount = (chatDb.prepare(`SELECT COUNT(*) as cnt FROM message m JOIN chat_message_join cmj ON m.ROWID=cmj.message_id JOIN chat c ON cmj.chat_id=c.ROWID WHERE c.chat_identifier=?`).get(chatId) as { cnt: number })?.cnt || 0 } catch {}
+        groups.push({ chatId, displayName, members: relevantMembers, messageCount: msgCount })
+      }
+      groups.sort((a, b) => b.members.length - a.members.length)
+
+      return { nodes, edges, groups: groups.slice(0, 15) }
     } finally {
       try { chatDb.close() } catch { /* ignore double close */ }
     }
   } catch {
-    return { nodes: [], edges: [] }
+    return { nodes: [], edges: [], groups: [] }
   }
 }
 
