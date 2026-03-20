@@ -1632,8 +1632,36 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
       const daysSince = pd.lastMessageDate ? Math.floor((Date.now() - new Date(pd.lastMessageDate).getTime()) / 86400000) : 0
       if (pd.messageCount > 200 && daysSince > 60)
         trophies.push({ emoji: '👻', label: 'The Ghost', sublabel: `${daysSince} days of silence` })
-      // TODO: Longest Standing trophy needs firstMessageDate on ChatNameEntry
-      // Cannot be computed correctly from lastMessageDate (which shows most dormant, not oldest)
+      // ── NEW TROPHIES (pipeline + closeness data) ──
+
+      // 9. Ride-or-Die: inner circle tier
+      if (closenessEntry && closenessEntry.tier === 'inner_circle')
+        trophies.push({ emoji: '💀', label: 'Ride-or-Die', sublabel: 'Inner circle. Through everything.' })
+
+      // 10. Potty Mouth: heated relationship
+      if (dynamics && (dynamics.myNegativeRate > 12 || dynamics.theirNegativeRate > 12))
+        trophies.push({ emoji: '🤬', label: 'Potty Mouth', sublabel: 'Your most heated conversations happen here' })
+
+      // 11. Frenemy: high volume + mixed sentiment
+      if (dynamics && pd.messageCount > 500 && dynamics.myNegativeRate > 8 && dynamics.myPositiveRate > 10)
+        trophies.push({ emoji: '⚔️', label: 'Frenemy', sublabel: 'Love to argue with this one' })
+
+      // 12. Walking Thesaurus: diverse vocabulary
+      if (vocabStats && vocabStats.uniqueWords > 500 && vocabStats.totalWords > 0 && (vocabStats.uniqueWords / vocabStats.totalWords) > 0.15)
+        trophies.push({ emoji: '📖', label: 'Walking Thesaurus', sublabel: `${vocabStats.uniqueWords.toLocaleString()} unique words` })
+
+      // 13. Longest Standing: 5+ years of history (from timeline)
+      const firstTimelineEvent = timelineEvents.find(e => e.type === 'first_message')
+      if (firstTimelineEvent) {
+        const yearsHistory = new Date().getFullYear() - new Date(firstTimelineEvent.timestamp + 'T00:00:00').getFullYear()
+        if (yearsHistory >= 5)
+          trophies.push({ emoji: '🏛️', label: 'Longest Standing', sublabel: `${yearsHistory} years of history` })
+      }
+
+      // 14. The Comeback: had silent gaps but recently active
+      if (dynamics && dynamics.silentGaps > 0 && pd.lastMessageDate &&
+          (Date.now() - new Date(pd.lastMessageDate).getTime()) < 30 * 86400000 && pd.messageCount > 100)
+        trophies.push({ emoji: '🔄', label: 'The Comeback', sublabel: 'Went quiet. Came back.' })
     }
 
     const RelCard = ({ emoji, title, metric, sentence, flavor, span }: { emoji: string; title: string; metric: string; sentence: string; flavor: string; span: number }): JSX.Element => (
@@ -1739,20 +1767,25 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
 
           {!isStatsLoading && trophies.length > 0 && (
             <div style={{ marginBottom: 20 }}>
-              <div style={{ fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase', color: '#9a948f', marginBottom: 10 }}>Trophies</div>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 10 }}>
+                <div style={{ fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase', color: '#9a948f' }}>Trophies</div>
+                <div style={{ fontSize: 10, color: '#c8c0ba' }}>{trophies.length}</div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
                 {trophies.map(t => (
                   <div key={t.label} style={{
                     display: 'flex', alignItems: 'center', gap: 8,
                     background: '#fff', border: '1px solid rgba(0,0,0,0.07)',
                     borderRadius: 12, padding: '8px 12px',
-                    boxShadow: '0 1px 4px rgba(0,0,0,0.04)'
+                    boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
+                    position: 'relative'
                   }}>
                     <span style={{ fontSize: 18 }}>{t.emoji}</span>
-                    <div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 12, fontWeight: 600, color: '#1A1A1A', lineHeight: 1.2 }}>{t.label}</div>
-                      <div style={{ fontSize: 10, color: '#9a948f', marginTop: 1 }}>{t.sublabel}</div>
+                      <div style={{ fontSize: 10, color: '#9a948f', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.sublabel}</div>
                     </div>
+                    <div style={{ fontSize: 10, color: '#c8c0ba', cursor: 'pointer', opacity: 0.4 }}>\u2197</div>
                   </div>
                 ))}
               </div>
