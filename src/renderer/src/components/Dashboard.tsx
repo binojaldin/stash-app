@@ -1369,6 +1369,7 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
 
       if (cancelled) return
       const baseEras = erasResult.chapters
+      console.log('[UI] Topic Eras received from backend:', JSON.stringify(baseEras.map(e => ({ label: e.topicLabel, kw: e.keywords }))))
       setTopicEras(baseEras)
       setMemoryMoments(momentsResult.moments)
       console.log(`[PERF] Stage D deterministic: ${Date.now()-t0}ms`)
@@ -1395,6 +1396,7 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
               enriched.push({ ...baseEras[i], topicLabel: e.enrichedLabel || baseEras[i].topicLabel })
             }
             if (enriched.length > 0 && enriched.length >= Math.floor(baseEras.length / 2)) {
+              console.log('[UI] Topic Eras ENRICHED:', JSON.stringify(enriched.map(e => ({ label: e.topicLabel, kw: e.keywords }))))
               setTopicEras(enriched); setAiEnrichedTopics(true)
             }
           }

@@ -1460,6 +1460,7 @@ const _TOPIC_ERAS_UNUSED = 0 // placeholder to mark old code removal
 export function getTopicEras(): { chapters: TopicChapter[] } {
   const chapters: TopicChapter[] = []
   try {
+    console.log('[TopicEras] V3 EXECUTING — if you do not see this log, the old code is running')
     const d = initDb()
     const hasMessages = (d.prepare('SELECT COUNT(*) as c FROM messages').get() as { c: number }).c
     if (hasMessages < 200) return { chapters }
@@ -1616,6 +1617,14 @@ export function getTopicEras(): { chapters: TopicChapter[] } {
     console.log(`[TopicEras] Final output: ${chapters.length} eras`)
     for (const ch of chapters) console.log(`  ${ch.topicLabel}: [${ch.keywords.join(', ')}] (strength: ${ch.strengthScore})`)
   } catch (err) { console.error('[TopicEras] Error:', err) }
+  if (chapters.length > 0) {
+    console.log('[TopicEras] V3 OUTPUT:')
+    for (const ch of chapters) {
+      console.log('  ' + ch.topicLabel + ': [' + ch.keywords.join(', ') + ']')
+    }
+  } else {
+    console.log('[TopicEras] V3 produced ZERO eras — filters may be too aggressive')
+  }
   return { chapters }
 }
 
