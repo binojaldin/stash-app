@@ -1633,6 +1633,11 @@ export function getTopicEras(): { chapters: TopicChapter[] } {
     }
   } else {
     console.log('[TopicEras] V3 produced ZERO eras — filters may be too aggressive')
+    console.log('[TopicEras] ZERO ERAS - returning test era to verify rendering')
+    chapters.push({
+      startYear: 2024, endYear: 2025, startMonth: 1, endMonth: 12,
+      topicLabel: 'Test Era', keywords: ['test', 'debug', 'verify'], strengthScore: 100
+    })
   }
   return { chapters }
 }
