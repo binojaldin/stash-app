@@ -814,6 +814,7 @@ function setupLoginItem(): void {
 }
 
 app.whenReady().then(() => {
+  console.log('[BOOT] Main process started — check this terminal for backend logs')
   const bootStart = Date.now()
   app.setName('Stash')
 

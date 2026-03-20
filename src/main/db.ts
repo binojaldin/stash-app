@@ -1515,6 +1515,10 @@ export function getTopicEras(): { chapters: TopicChapter[] } {
       }
     }
 
+    let totalTermsStep1 = 0
+    for (const qmap of quarterTokens.values()) totalTermsStep1 += qmap.size
+    console.log(`[TopicEras] Step 1: ${totalTermsStep1} total terms across ${quarterTokens.size} quarters`)
+
     if (quarterTokens.size < 3) return { chapters }
 
     // Step 2: TF-IDF scoring per quarter
@@ -1530,7 +1534,7 @@ export function getTopicEras(): { chapters: TopicChapter[] } {
       if (totalTokens < 30) continue
       const scored: { term: string; score: number }[] = []
       for (const [term, { count, chats }] of qmap) {
-        if (count < 3 || chats.size < 2) continue
+        if (count < 3) continue
         const tf = count / totalTokens
         const presence = termQuarterPresence.get(term) || 1
         // Skip terms in > 60% of quarters (too common)
@@ -1542,6 +1546,10 @@ export function getTopicEras(): { chapters: TopicChapter[] } {
       scored.sort((a, b) => b.score - a.score)
       if (scored.length >= 3) quarterScored.set(qk, scored.slice(0, 20))
     }
+
+    let scoredTermsStep2 = 0
+    for (const scored of quarterScored.values()) scoredTermsStep2 += scored.length
+    console.log(`[TopicEras] Step 2: ${scoredTermsStep2} scored terms across ${quarterScored.size} quarters`)
 
     // Step 3: Group adjacent quarters into eras by topic overlap
     const sortedQuarters = [...quarterScored.keys()].sort()
@@ -1558,7 +1566,7 @@ export function getTopicEras(): { chapters: TopicChapter[] } {
       const qk = sortedQuarters[i]
       const terms = topTerms(qk)
       const overlap = [...terms].filter(t => cur.terms.has(t)).length
-      if (overlap >= 3) {
+      if (overlap >= 2) {
         cur.endQK = qk
         for (const t of terms) cur.terms.add(t)
         cur.scored.push(...quarterScored.get(qk)!.slice(0, 10))
@@ -1568,14 +1576,15 @@ export function getTopicEras(): { chapters: TopicChapter[] } {
       }
     }
     eras.push(cur)
+    console.log(`[TopicEras] Step 3: ${eras.length} candidate eras`)
 
     // Step 4: Extract top keywords per era and build chapters
     for (const era of eras) {
       const start = parseQK(era.startQK)
       const end = parseQK(era.endQK)
-      // Must span 2+ quarters
+      // Allow single-quarter eras
       const qSpan = (end.year - start.year) * 4 + (end.quarter - start.quarter) + 1
-      if (qSpan < 2) continue
+      if (qSpan < 1) continue
 
       // Deduplicate and rank keywords
       const kwMap = new Map<string, number>()
@@ -1584,10 +1593,10 @@ export function getTopicEras(): { chapters: TopicChapter[] } {
 
       // Belt-and-suspenders: final cleanup of any leaked stopwords/artifacts
       keywords = keywords.filter(kw => kw.split(' ').every(p => !TEXT_STOPWORDS.has(p) && !SYSTEM_ARTIFACTS.has(p)))
-      if (keywords.length < 3) continue
+      if (keywords.length < 2) continue
 
       const strength = [...kwMap.entries()].slice(0, 5).reduce((s, [, v]) => s + v, 0)
-      if (strength < 30) continue
+      if (strength < 10) continue
 
       // Build full chat name set for label filtering
       const fullChatNamesSet = new Set<string>()

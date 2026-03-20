@@ -4,6 +4,7 @@
  */
 
 import { initDb } from './db'
+import { detectProactiveItems } from './ai'
 
 export interface ProactiveItem {
   id: number; chat_identifier: string; item_type: string; description: string
@@ -14,7 +15,6 @@ export interface ProactiveItem {
 export async function scanForProactiveItems(): Promise<void> {
   const t0 = Date.now()
   const d = initDb()
-  const { detectProactiveItems } = require('./ai')
 
   const contacts = d.prepare(`
     SELECT chat_identifier, COUNT(*) as cnt FROM message_signals
