@@ -169,6 +169,10 @@ const api = {
   getAnalysisProgress: (): Promise<{
     totalMessages: number; analyzedMessages: number; lastRunAt: string | null; isRunning: boolean
   }> => ipcRenderer.invoke('get-analysis-progress'),
+  getMonthlyAverages: (chatIdentifier?: string): Promise<{
+    months: { month: string; count: number; isAnomaly: boolean; anomalyType: 'spike' | 'drop' | null; deviation: number }[]
+    avgPerMonth: number; anomalies: { month: string; count: number; type: 'spike' | 'drop'; message: string }[]
+  }> => ipcRenderer.invoke('get-monthly-averages', chatIdentifier),
   analyzeRelationshipDynamics: (chatIdentifier: string, contactName: string, stats: Record<string, unknown>): Promise<{
     conflictPattern: string | null; supportPattern: string | null; insideJokes: string[] | null; relationshipPhase: string | null; communicationStyleMatch: number | null; topicEvolution: { then: string; now: string } | null; vulnerabilityBalance: string | null
   } | null> => ipcRenderer.invoke('analyze-relationship-dynamics', chatIdentifier, contactName, stats),

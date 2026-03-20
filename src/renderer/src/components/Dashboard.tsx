@@ -1453,6 +1453,14 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
   const formatTier = (tier: string): string => tier === 'inner_circle' ? 'Inner Circle' : tier.charAt(0).toUpperCase() + tier.slice(1)
   const tierColor = (tier: string): string => tier === 'inner_circle' ? '#2EC4A0' : tier === 'close' ? 'rgba(46,196,160,0.6)' : tier === 'regular' ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.3)'
 
+  // ── Monthly averages (must be before early return) ──
+  const [monthlyData, setMonthlyData] = useState<{ months: { month: string; count: number; isAnomaly: boolean; anomalyType: 'spike' | 'drop' | null }[]; avgPerMonth: number; anomalies: { month: string; count: number; type: string; message: string }[] } | null>(null)
+  const [globalMonthly, setGlobalMonthly] = useState<{ months: { month: string; count: number; isAnomaly: boolean; anomalyType: 'spike' | 'drop' | null }[]; avgPerMonth: number; anomalies: { month: string; count: number; type: string; message: string }[] } | null>(null)
+  useEffect(() => {
+    if (scopedPerson) window.api.getMonthlyAverages(scopedPerson).then(setMonthlyData).catch(() => {})
+    else { setMonthlyData(null); window.api.getMonthlyAverages().then(setGlobalMonthly).catch(() => {}) }
+  }, [scopedPerson])
+
   // ── Relationship dynamics (must be before early return) ──
   const [dynamics, setDynamics] = useState<{ myTotalWords: number; theirTotalWords: number; effortRatio: number; myQuestions: number; theirQuestions: number; myPositiveRate: number; theirPositiveRate: number; myNegativeRate: number; theirNegativeRate: number; myAvgReplyMinutes: number; theirAvgReplyMinutes: number; monthlyVolume: { month: string; count: number }[]; trajectoryDirection: string; myInitiations: number; totalDays: number; marathonDays: number; silentGaps: number; avgDailyWhenActive: number; lateNightMessages: number; totalLateNightAcrossAll: number; lateNightExclusivity: number; myMediaCount: number; theirMediaCount: number; heatByHour: { hour: number; avgHeat: number }[]; peakHeatHour: number } | null>(null)
   useEffect(() => {
@@ -2068,6 +2076,40 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
                     </div>
                     {cards}
                   </>
+                )
+              })()}
+
+              {/* Monthly Rhythm card */}
+              {monthlyData && monthlyData.months.length >= 6 && (() => {
+                const recent = monthlyData.months.slice(-12)
+                const maxCount = Math.max(...recent.map(m => m.count), 1)
+                const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+                return (
+                  <div style={{ gridColumn: 'span 6', ...tileBase }}>
+                    <div style={{ fontSize: 10, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#2EC4A0', marginBottom: 4, fontWeight: 600, fontFamily: "'DM Sans'" }}>Monthly rhythm</div>
+                    <div style={{ fontSize: 12, color: '#9a948f', marginBottom: 12, fontFamily: "'DM Sans'" }}>Avg: {monthlyData.avgPerMonth.toLocaleString()} msgs/month</div>
+                    <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2, height: 50, marginBottom: 6 }}>
+                      {recent.map((m, i) => {
+                        const h = Math.max((m.count / maxCount) * 100, 3)
+                        const color = m.isAnomaly ? (m.anomalyType === 'spike' ? '#E8604A' : '#9a948f') : '#2EC4A0'
+                        return (
+                          <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+                            <div style={{ width: '100%', height: `${h}%`, borderRadius: '2px 2px 0 0', background: color, minHeight: 2 }} />
+                            <span style={{ fontSize: 7, color: 'rgba(0,0,0,0.25)' }}>{MONTHS[parseInt(m.month.split('-')[1]) - 1]?.slice(0, 1) || ''}</span>
+                          </div>
+                        )
+                      })}
+                    </div>
+                    {monthlyData.anomalies.length > 0 && (
+                      <div style={{ borderTop: '1px solid rgba(0,0,0,0.04)', paddingTop: 8, marginTop: 4 }}>
+                        {monthlyData.anomalies.slice(0, 3).map((a, i) => (
+                          <div key={i} style={{ fontSize: 11, color: '#6f6a65', lineHeight: 1.6, fontFamily: "'DM Sans'" }}>
+                            {a.type === 'spike' ? '🔥' : '📉'} {a.message}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 )
               })()}
 
@@ -2861,6 +2903,27 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
               <div style={{ fontSize: 10, color: '#9a948f', marginTop: 10, fontFamily: "'DM Sans'" }}>
                 {inner > 0 ? `${inner} inner circle` : ''}{inner > 0 && close > 0 ? ' · ' : ''}{close > 0 ? `${close} close` : ''}{(inner > 0 || close > 0) && regular > 0 ? ' · ' : ''}{regular > 0 ? `${regular} regular` : ''}
               </div>
+            </div>
+          )
+        })()}
+
+        {/* ZONE 0.5 — Messaging Pulse */}
+        {globalMonthly && globalMonthly.months.length >= 6 && (() => {
+          const recent = globalMonthly.months.slice(-12)
+          const maxCount = Math.max(...recent.map(m => m.count), 1)
+          const topAnomaly = globalMonthly.anomalies.find(a => a.type === 'spike')
+          return (
+            <div style={{ gridColumn: 'span 6', borderRadius: 16, padding: '20px 22px', background: '#fff', border: '1px solid rgba(0,0,0,0.06)', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}>
+              <div style={{ fontSize: 10, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#E8604A', marginBottom: 4, fontFamily: "'DM Sans'", fontWeight: 600 }}>Messaging pulse</div>
+              <div style={{ fontSize: 12, color: '#9a948f', marginBottom: 10, fontFamily: "'DM Sans'" }}>Avg: {globalMonthly.avgPerMonth.toLocaleString()} msgs/month</div>
+              <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2, height: 40, marginBottom: 6 }}>
+                {recent.map((m, i) => {
+                  const h = Math.max((m.count / maxCount) * 100, 3)
+                  const color = m.isAnomaly ? (m.anomalyType === 'spike' ? '#E8604A' : '#c8c0ba') : '#EAE5DF'
+                  return <div key={i} style={{ flex: 1, height: `${h}%`, borderRadius: '2px 2px 0 0', background: color, minHeight: 2 }} />
+                })}
+              </div>
+              {topAnomaly && <div style={{ fontSize: 11, color: '#6f6a65', fontFamily: "'DM Sans'" }}>🔥 {topAnomaly.message}</div>}
             </div>
           )
         })()}

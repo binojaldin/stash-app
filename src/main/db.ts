@@ -2875,6 +2875,53 @@ export function getAttachmentContext(attachmentId: number, messageCount = 5): Me
   } catch { return [] }
 }
 
+export function getMonthlyAverages(chatIdentifier?: string): {
+  months: { month: string; count: number; isAnomaly: boolean; anomalyType: 'spike' | 'drop' | null; deviation: number }[]
+  avgPerMonth: number; stdDev: number
+  anomalies: { month: string; count: number; type: 'spike' | 'drop'; message: string }[]
+} {
+  const d = initDb()
+  const empty = { months: [], avgPerMonth: 0, stdDev: 0, anomalies: [] }
+  try {
+    const chatFilter = chatIdentifier ? ' WHERE chat_identifier = ?' : ''
+    const params = chatIdentifier ? [chatIdentifier] : []
+    const rows = d.prepare(`SELECT strftime('%Y-%m', sent_at) as month, COUNT(*) as count FROM message_signals${chatFilter} GROUP BY month ORDER BY month`).all(...params) as { month: string; count: number }[]
+    if (rows.length < 3) return empty
+
+    const counts = rows.map(r => r.count)
+    const avg = counts.reduce((s, c) => s + c, 0) / counts.length
+    const variance = counts.reduce((s, c) => s + (c - avg) ** 2, 0) / counts.length
+    const std = Math.sqrt(variance)
+
+    const threshold = 1.5
+    const anomalies: { month: string; count: number; type: 'spike' | 'drop'; message: string }[] = []
+    const months = rows.map(r => {
+      const dev = std > 0 ? (r.count - avg) / std : 0
+      let isAnomaly = false, anomalyType: 'spike' | 'drop' | null = null
+      if (rows.length >= 6) {
+        if (r.count > avg + threshold * std) { isAnomaly = true; anomalyType = 'spike' }
+        else if (r.count < avg - threshold * std && avg > 20) { isAnomaly = true; anomalyType = 'drop' }
+      }
+      if (isAnomaly) {
+        const ratio = Math.round((r.count / Math.max(avg, 1)) * 10) / 10
+        const [y, m] = r.month.split('-').map(Number)
+        const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+        const label = `${MONTHS[m - 1]} ${y}`
+        if (anomalyType === 'spike') {
+          const isMax = r.count === Math.max(...counts)
+          anomalies.push({ month: r.month, count: r.count, type: 'spike', message: isMax ? `${label}: ${r.count.toLocaleString()} msgs — highest month ever` : `${label}: ${r.count.toLocaleString()} msgs — ${ratio}x more than usual` })
+        } else {
+          const pctBelow = Math.round((1 - r.count / avg) * 100)
+          anomalies.push({ month: r.month, count: r.count, type: 'drop', message: `${label}: ${r.count.toLocaleString()} msgs — ${pctBelow}% below average` })
+        }
+      }
+      return { month: r.month, count: r.count, isAnomaly, anomalyType, deviation: Math.round(dev * 100) / 100 }
+    })
+
+    return { months, avgPerMonth: Math.round(avg), stdDev: Math.round(std), anomalies: anomalies.slice(0, 5) }
+  } catch { return empty }
+}
+
 export function closeDb(): void {
   if (db) { db.close(); db = null }
 }
