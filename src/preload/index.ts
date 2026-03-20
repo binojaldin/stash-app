@@ -169,6 +169,14 @@ const api = {
   getAnalysisProgress: (): Promise<{
     totalMessages: number; analyzedMessages: number; lastRunAt: string | null; isRunning: boolean
   }> => ipcRenderer.invoke('get-analysis-progress'),
+  getMediaIntelligence: (chatIdentifier?: string): Promise<{
+    topSenders: { chatName: string; count: number }[]; topReceivers: { chatName: string; count: number }[]
+    myMediaCount: number; theirMediaCount: number; totalMedia: number
+    imageCount: number; videoCount: number; documentCount: number
+    mediaByMonth: { month: string; count: number }[]
+    peakMediaMonth: { month: string; count: number } | null
+    mediaHeavy: { chatName: string; mediaCount: number; messageCount: number; ratio: number }[]
+  }> => ipcRenderer.invoke('get-media-intelligence', chatIdentifier),
   getMonthlyAverages: (chatIdentifier?: string): Promise<{
     months: { month: string; count: number; isAnomaly: boolean; anomalyType: 'spike' | 'drop' | null; deviation: number }[]
     avgPerMonth: number; anomalies: { month: string; count: number; type: 'spike' | 'drop'; message: string }[]

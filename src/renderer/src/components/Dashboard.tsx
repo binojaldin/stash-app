@@ -1453,6 +1453,14 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
   const formatTier = (tier: string): string => tier === 'inner_circle' ? 'Inner Circle' : tier.charAt(0).toUpperCase() + tier.slice(1)
   const tierColor = (tier: string): string => tier === 'inner_circle' ? '#2EC4A0' : tier === 'close' ? 'rgba(46,196,160,0.6)' : tier === 'regular' ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.3)'
 
+  // ── Media intelligence (must be before early return) ──
+  const [mediaData, setMediaData] = useState<{ topSenders: { chatName: string; count: number }[]; topReceivers: { chatName: string; count: number }[]; myMediaCount: number; theirMediaCount: number; totalMedia: number; imageCount: number; videoCount: number; documentCount: number; peakMediaMonth: { month: string; count: number } | null; mediaHeavy: { chatName: string; mediaCount: number; ratio: number }[] } | null>(null)
+  const [globalMedia, setGlobalMedia] = useState<{ topSenders: { chatName: string; count: number }[]; topReceivers: { chatName: string; count: number }[]; mediaHeavy: { chatName: string; mediaCount: number; ratio: number }[] } | null>(null)
+  useEffect(() => {
+    if (scopedPerson) window.api.getMediaIntelligence(scopedPerson).then(d => setMediaData(d as typeof mediaData)).catch(() => {})
+    else { setMediaData(null); window.api.getMediaIntelligence().then(d => setGlobalMedia(d as typeof globalMedia)).catch(() => {}) }
+  }, [scopedPerson])
+
   // ── Monthly averages (must be before early return) ──
   const [monthlyData, setMonthlyData] = useState<{ months: { month: string; count: number; isAnomaly: boolean; anomalyType: 'spike' | 'drop' | null }[]; avgPerMonth: number; anomalies: { month: string; count: number; type: string; message: string }[] } | null>(null)
   const [globalMonthly, setGlobalMonthly] = useState<{ months: { month: string; count: number; isAnomaly: boolean; anomalyType: 'spike' | 'drop' | null }[]; avgPerMonth: number; anomalies: { month: string; count: number; type: string; message: string }[] } | null>(null)
@@ -2112,6 +2120,29 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
                   </div>
                 )
               })()}
+
+              {/* Media Shared card */}
+              {mediaData && mediaData.totalMedia > 10 && (
+                <div style={{ gridColumn: 'span 6', ...tileBase }}>
+                  <div style={{ fontSize: 10, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#7F77DD', marginBottom: 8, fontWeight: 600, fontFamily: "'DM Sans'" }}>Media shared</div>
+                  <div style={{ display: 'flex', gap: 12, marginBottom: 10 }}>
+                    <div><span style={{ fontFamily: "'Unbounded', sans-serif", fontWeight: 200, fontSize: 20, color: '#E8604A' }}>{mediaData.myMediaCount}</span><span style={{ fontSize: 10, color: '#9a948f', marginLeft: 4 }}>you sent</span></div>
+                    <div><span style={{ fontFamily: "'Unbounded', sans-serif", fontWeight: 200, fontSize: 20, color: '#2EC4A0' }}>{mediaData.theirMediaCount}</span><span style={{ fontSize: 10, color: '#9a948f', marginLeft: 4 }}>{firstName} sent</span></div>
+                  </div>
+                  {(mediaData.myMediaCount + mediaData.theirMediaCount) > 0 && (
+                    <div style={{ display: 'flex', borderRadius: 6, overflow: 'hidden', height: 20, marginBottom: 8 }}>
+                      <div style={{ width: `${Math.max(5, Math.round(mediaData.myMediaCount / (mediaData.myMediaCount + mediaData.theirMediaCount) * 100))}%`, background: '#E8604A', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, color: '#fff', fontWeight: 600 }}>You</div>
+                      <div style={{ flex: 1, background: '#2EC4A0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, color: '#fff', fontWeight: 600 }}>{firstName}</div>
+                    </div>
+                  )}
+                  <div style={{ fontSize: 11, color: '#9a948f', fontFamily: "'DM Sans'" }}>
+                    {mediaData.imageCount > 0 ? `${mediaData.imageCount} photos` : ''}{mediaData.videoCount > 0 ? ` · ${mediaData.videoCount} videos` : ''}{mediaData.documentCount > 0 ? ` · ${mediaData.documentCount} docs` : ''}
+                  </div>
+                  {mediaData.peakMediaMonth && (
+                    <div style={{ fontSize: 11, color: '#6f6a65', marginTop: 4, fontFamily: "'DM Sans'" }}>Peak: {(() => { const [y, m] = mediaData.peakMediaMonth.month.split('-').map(Number); const MN = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']; return `${MN[m-1]} ${y}` })()} ({mediaData.peakMediaMonth.count} files)</div>
+                  )}
+                </div>
+              )}
 
               {vocabStats && vocabStats.theirAvgWordsPerMessage > 0 && (
                 <LoquaciousnessCard myAvg={vocabStats.avgWordsPerMessage} theirAvg={vocabStats.theirAvgWordsPerMessage} theirName={firstName}
@@ -2927,6 +2958,45 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
             </div>
           )
         })()}
+
+        {/* ZONE 0.6 — Media Intelligence */}
+        {globalMedia && (globalMedia.topSenders.length > 0 || globalMedia.topReceivers.length > 0) && (
+          <div style={{ gridColumn: 'span 6', borderRadius: 16, padding: '20px 22px', background: '#fff', border: '1px solid rgba(0,0,0,0.06)', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}>
+            <div style={{ fontSize: 10, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#7F77DD', marginBottom: 10, fontFamily: "'DM Sans'", fontWeight: 600 }}>Media intelligence</div>
+            {globalMedia.topSenders.length > 0 && (
+              <div style={{ marginBottom: 10 }}>
+                <div style={{ fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#9a948f', marginBottom: 4, fontFamily: "'DM Sans'" }}>Who sends you the most</div>
+                {globalMedia.topSenders.slice(0, 3).map((s, i) => (
+                  <div key={s.chatName} onClick={() => onSelectConversation(s.chatName)} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', cursor: 'pointer', fontSize: 12, fontFamily: "'DM Sans'" }}>
+                    <span style={{ color: '#1A1A1A', fontWeight: i === 0 ? 600 : 400 }}>{resolveName(s.chatName, chatNameMap)}</span>
+                    <span style={{ color: '#7F77DD' }}>{s.count.toLocaleString()}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {globalMedia.topReceivers.length > 0 && (
+              <div style={{ marginBottom: 10 }}>
+                <div style={{ fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#9a948f', marginBottom: 4, fontFamily: "'DM Sans'" }}>Who you send the most to</div>
+                {globalMedia.topReceivers.slice(0, 3).map((s, i) => (
+                  <div key={s.chatName} onClick={() => onSelectConversation(s.chatName)} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', cursor: 'pointer', fontSize: 12, fontFamily: "'DM Sans'" }}>
+                    <span style={{ color: '#1A1A1A', fontWeight: i === 0 ? 600 : 400 }}>{resolveName(s.chatName, chatNameMap)}</span>
+                    <span style={{ color: '#E8604A' }}>{s.count.toLocaleString()}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {globalMedia.mediaHeavy.filter(m => m.ratio > 30).length > 0 && (
+              <div style={{ borderTop: '1px solid rgba(0,0,0,0.04)', paddingTop: 6 }}>
+                <div style={{ fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#9a948f', marginBottom: 4, fontFamily: "'DM Sans'" }}>Media-heavy</div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  {globalMedia.mediaHeavy.filter(m => m.ratio > 30).slice(0, 4).map(m => (
+                    <span key={m.chatName} style={{ fontSize: 10, color: '#7F77DD', fontFamily: "'DM Sans'" }}>{resolveName(m.chatName, chatNameMap)} ({m.ratio}%)</span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* ZONE 1 — Identity: who you are as a communicator */}
         {(() => {

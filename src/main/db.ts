@@ -2875,6 +2875,44 @@ export function getAttachmentContext(attachmentId: number, messageCount = 5): Me
   } catch { return [] }
 }
 
+export interface MediaIntelligence {
+  topSenders: { chatName: string; count: number }[]
+  topReceivers: { chatName: string; count: number }[]
+  myMediaCount: number; theirMediaCount: number; totalMedia: number
+  imageCount: number; videoCount: number; documentCount: number
+  mediaByMonth: { month: string; count: number }[]
+  peakMediaMonth: { month: string; count: number } | null
+  mediaHeavy: { chatName: string; mediaCount: number; messageCount: number; ratio: number }[]
+}
+
+export function getMediaIntelligence(chatIdentifier?: string): MediaIntelligence {
+  const d = initDb()
+  const r: MediaIntelligence = { topSenders: [], topReceivers: [], myMediaCount: 0, theirMediaCount: 0, totalMedia: 0, imageCount: 0, videoCount: 0, documentCount: 0, mediaByMonth: [], peakMediaMonth: null, mediaHeavy: [] }
+  try {
+    if (chatIdentifier) {
+      // Per-contact stats
+      const row = d.prepare(`SELECT SUM(CASE WHEN sender_handle IS NULL OR sender_handle = '' THEN 1 ELSE 0 END) as my_count, SUM(CASE WHEN sender_handle IS NOT NULL AND sender_handle != '' THEN 1 ELSE 0 END) as their_count, SUM(is_image) as images, SUM(is_video) as videos, SUM(is_document) as documents, COUNT(*) as total FROM attachments WHERE chat_name = ?`).get(chatIdentifier) as { my_count: number; their_count: number; images: number; videos: number; documents: number; total: number } | undefined
+      if (row) { r.myMediaCount = row.my_count || 0; r.theirMediaCount = row.their_count || 0; r.totalMedia = row.total || 0; r.imageCount = row.images || 0; r.videoCount = row.videos || 0; r.documentCount = row.documents || 0 }
+      r.mediaByMonth = d.prepare(`SELECT strftime('%Y-%m', created_at) as month, COUNT(*) as count FROM attachments WHERE chat_name = ? AND (is_image = 1 OR is_video = 1) GROUP BY month ORDER BY month`).all(chatIdentifier) as { month: string; count: number }[]
+      if (r.mediaByMonth.length > 0) r.peakMediaMonth = r.mediaByMonth.reduce((best, m) => m.count > best.count ? m : best, r.mediaByMonth[0])
+    } else {
+      // Global stats
+      r.topSenders = d.prepare(`SELECT chat_name as chatName, COUNT(*) as count FROM attachments WHERE chat_name IS NOT NULL AND sender_handle IS NOT NULL AND sender_handle != '' AND (is_image = 1 OR is_video = 1) GROUP BY chat_name ORDER BY count DESC LIMIT 10`).all() as { chatName: string; count: number }[]
+      r.topReceivers = d.prepare(`SELECT chat_name as chatName, COUNT(*) as count FROM attachments WHERE chat_name IS NOT NULL AND (sender_handle IS NULL OR sender_handle = '') AND (is_image = 1 OR is_video = 1) GROUP BY chat_name ORDER BY count DESC LIMIT 10`).all() as { chatName: string; count: number }[]
+      // Media-heavy relationships
+      const mediaRows = d.prepare(`SELECT chat_name as chatName, COUNT(*) as mediaCount FROM attachments WHERE chat_name IS NOT NULL AND (is_image = 1 OR is_video = 1) GROUP BY chat_name HAVING mediaCount > 20 ORDER BY mediaCount DESC LIMIT 10`).all() as { chatName: string; mediaCount: number }[]
+      for (const mr of mediaRows) {
+        const msgRow = d.prepare(`SELECT COUNT(*) as cnt FROM messages WHERE chat_name = ?`).get(mr.chatName) as { cnt: number } | undefined
+        const msgCount = msgRow?.cnt || 1
+        const ratio = Math.round((mr.mediaCount / Math.max(msgCount, 1)) * 100)
+        if (ratio > 20) r.mediaHeavy.push({ chatName: mr.chatName, mediaCount: mr.mediaCount, messageCount: msgCount, ratio })
+      }
+      r.mediaHeavy.sort((a, b) => b.ratio - a.ratio)
+    }
+  } catch { /* ignore */ }
+  return r
+}
+
 export function getMonthlyAverages(chatIdentifier?: string): {
   months: { month: string; count: number; isAnomaly: boolean; anomalyType: 'spike' | 'drop' | null; deviation: number }[]
   avgPerMonth: number; stdDev: number
