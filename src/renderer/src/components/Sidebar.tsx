@@ -19,18 +19,43 @@ interface Props {
   availableYears?: number[]
 }
 
-function getVibeTag(c: ChatNameEntry): { label: string; color: string } | null {
+function getVibeTag(c: ChatNameEntry): { label: string; color: string }[] {
+  const tags: { label: string; color: string; cat: string }[] = []
   const total = c.messageCount
-  if (total < 10) return null
+  if (total < 10) return []
   const sentPct = total > 0 ? c.sentCount / total : 0.5
   const recvPct = 1 - sentPct
-  if (sentPct > 0.72 && total > 30) return { label: 'One-sided', color: '#9a948f' }
-  if (recvPct > 0.72 && total > 30) return { label: 'They carry it', color: '#9a948f' }
-  if (c.lateNightRatio > 40) return { label: 'Late night', color: '#7F77DD' }
-  if (c.laughsReceived > 20 && c.laughsReceived / Math.max(total * 0.01, 1) > 2) return { label: 'Comedy', color: '#E8604A' }
-  if (c.avgReplyMinutes > 0 && c.avgReplyMinutes < 5 && total > 100) return { label: 'Always on', color: '#2EC4A0' }
-  if (c.avgReplyMinutes > 120 && total > 20) return { label: 'Slow burn', color: '#9a948f' }
-  return null
+  const daysSince = c.lastMessageDate ? Math.floor((Date.now() - new Date(c.lastMessageDate).getTime()) / 86400000) : 999
+
+  const add = (label: string, color: string, cat: string) => {
+    if (tags.length >= 2) return
+    if (tags.some(t => t.cat === cat)) return // no two from same category
+    tags.push({ label, color, cat })
+  }
+
+  // Priority 1: Gone cold
+  if (daysSince > 60 && total > 100) add('Gone cold', '#9a948f', 'health')
+  // Priority 2: One-sided / They carry it
+  if (sentPct > 0.70 && total > 30) add('One-sided', '#9a948f', 'health')
+  else if (recvPct > 0.70 && total > 30) add('They carry it', '#9a948f', 'health')
+  // Priority 3: New connection
+  if (total < 50 && daysSince < 90) add('New connection', '#2EC4A0', 'health')
+  // Priority 4: Always on
+  if (c.avgReplyMinutes > 0 && c.avgReplyMinutes < 5 && total > 100) add('Always on', '#2EC4A0', 'behavior')
+  // Priority 5: Late night
+  if (c.lateNightRatio > 35) add('Late night', '#7F77DD', 'temporal')
+  // Priority 6: Comedy
+  if (c.laughsReceived > 20 && c.laughsReceived / Math.max(total * 0.01, 1) > 2) add('Comedy', '#E8604A', 'behavior')
+  // Priority 7: Balanced
+  if (sentPct >= 0.42 && sentPct <= 0.58 && total > 200) add('Balanced', '#2EC4A0', 'health')
+  // Priority 8: Chatterbox
+  if (total > 5000) add('Chatterbox', '#E8604A', 'behavior')
+  // Priority 9: Photo heavy
+  if (c.attachmentCount > total * 0.3 && c.attachmentCount > 50) add('Photo heavy', '#7F77DD', 'behavior')
+  // Priority 10: Slow burn
+  if (c.avgReplyMinutes > 120 && total > 20) add('Slow burn', '#9a948f', 'behavior')
+
+  return tags.map(({ label, color }) => ({ label, color }))
 }
 
 function resolveName(raw: string, map: Record<string, string>): string {
@@ -156,7 +181,7 @@ export function Sidebar({ stats, filters, onFilterChange, onManageConversations,
         <div style={{ padding: '16px 14px 12px', borderBottom: '1px solid #1A1A1A' }}>
           <div style={{ width: 44, height: 44, borderRadius: '50%', background: '#2EC4A0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, fontWeight: 600, color: '#0A0A0A', marginBottom: 10 }}>{initials}</div>
           <div style={{ fontSize: 15, color: '#fff', fontWeight: 500, marginBottom: 3 }}>{personName}</div>
-          {(() => { if (!personData) return null; const vibe = getVibeTag(personData); return vibe ? <div style={{ fontSize: 10, color: vibe.color, letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 4, fontFamily: "'DM Sans'" }}>{vibe.label}</div> : null })()}
+          {(() => { if (!personData) return null; const tags = getVibeTag(personData); return tags.length > 0 ? <div style={{ display: 'flex', gap: 6, marginTop: 2, marginBottom: 4, flexWrap: 'wrap' }}>{tags.map((t, i) => <span key={i} style={{ fontSize: 9, color: t.color, letterSpacing: '0.06em', fontFamily: "'DM Sans'" }}>{t.label}</span>)}</div> : null })()}
           <div style={{ fontSize: 11, color: '#7c7c7c' }}>
             {personData ? `${compactNum(personData.messageCount)} messages` : ''} <span style={{ color: '#2EC4A0' }}>·</span> {personData ? `${compactNum(personData.attachmentCount)} attachments` : ''}
           </div>
@@ -348,7 +373,7 @@ export function Sidebar({ stats, filters, onFilterChange, onManageConversations,
               <div style={{ fontSize: 11, color: '#5a5550', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {compactNum(chat.messageCount)} msgs <span style={{ color: '#E8604A' }}>·</span> {compactNum(chat.attachmentCount)} files
               </div>
-              {(() => { const vibe = getVibeTag(chat); return vibe ? <div style={{ fontSize: 10, color: vibe.color, marginTop: 2, letterSpacing: '0.08em', fontFamily: "'DM Sans'" }}>{vibe.label}</div> : null })()}
+              {(() => { const tags = getVibeTag(chat); return tags.length > 0 ? <div style={{ display: 'flex', gap: 6, marginTop: 2, flexWrap: 'wrap' }}>{tags.map((t, i) => <span key={i} style={{ fontSize: 9, color: t.color, letterSpacing: '0.06em', fontFamily: "'DM Sans'" }}>{t.label}</span>)}</div> : null })()}
             </button>
           )
         })}
