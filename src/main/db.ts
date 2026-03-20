@@ -1444,16 +1444,6 @@ export function getTopicEras(): { chapters: TopicChapter[] } {
   const chapters: TopicChapter[] = []
   try {
     const d = initDb()
-    // One-time: clear stale AI cache to force fresh topic era labels
-    try {
-      const meta = d.prepare("SELECT value FROM _meta WHERE key = 'topic_era_cache_cleared_v3'").get() as { value: string } | undefined
-      if (!meta) {
-        const { join: jn } = require('path'); const { app: eApp } = require('electron'); const { unlinkSync: ul, existsSync: ex } = require('fs')
-        const cp = jn(eApp.getPath('userData'), 'ai-cache', 'enrichment-cache.json')
-        if (ex(cp)) { ul(cp); console.log('[TopicEras] Cleared stale AI cache') }
-        d.prepare("INSERT OR REPLACE INTO _meta (key, value) VALUES ('topic_era_cache_cleared_v3', '1')").run()
-      }
-    } catch {}
     const hasMessages = (d.prepare('SELECT COUNT(*) as c FROM messages').get() as { c: number }).c
     if (hasMessages < 200) return { chapters }
 
@@ -1572,14 +1562,28 @@ export function getTopicEras(): { chapters: TopicChapter[] } {
       // Deduplicate and rank keywords
       const kwMap = new Map<string, number>()
       for (const s of era.scored) kwMap.set(s.term, (kwMap.get(s.term) || 0) + s.score)
-      const keywords = [...kwMap.entries()].sort((a, b) => b[1] - a[1]).filter(([t]) => isCleanTerm(t)).slice(0, 8).map(([t]) => t)
-      if (keywords.length < 4) continue
+      let keywords = [...kwMap.entries()].sort((a, b) => b[1] - a[1]).filter(([t]) => isCleanTerm(t)).slice(0, 8).map(([t]) => t)
+
+      // Belt-and-suspenders: final cleanup of any leaked stopwords/artifacts
+      keywords = keywords.filter(kw => kw.split(' ').every(p => !TEXT_STOPWORDS.has(p) && !SYSTEM_ARTIFACTS.has(p)))
+      if (keywords.length < 3) continue
 
       const strength = [...kwMap.entries()].slice(0, 5).reduce((s, [, v]) => s + v, 0)
       if (strength < 30) continue
 
-      // Fallback label: capitalize top keyword (skip if it's a chat name)
-      let labelKw = keywords.find(kw => !chatNames.has(kw.toLowerCase()) && !SYSTEM_ARTIFACTS.has(kw.toLowerCase())) || keywords[0]
+      // Build full chat name set for label filtering
+      const fullChatNamesSet = new Set<string>()
+      try { for (const c of d.prepare('SELECT DISTINCT chat_name FROM messages WHERE chat_name IS NOT NULL').all() as { chat_name: string }[]) fullChatNamesSet.add(c.chat_name.toLowerCase()) } catch {}
+      try { for (const r of d.prepare('SELECT resolved_name FROM resolved_names').all() as { resolved_name: string }[]) fullChatNamesSet.add(r.resolved_name.toLowerCase()) } catch {}
+
+      // Label: skip chat names, system artifacts, and substrings of chat names
+      const labelKw = keywords.find(kw => {
+        const kwLower = kw.toLowerCase()
+        if (chatNames.has(kwLower) || SYSTEM_ARTIFACTS.has(kwLower)) return false
+        for (const cn of fullChatNamesSet) { if (cn.includes(kwLower) && kwLower.length >= 3) return false }
+        return true
+      })
+      if (!labelKw) continue
       const label = labelKw.charAt(0).toUpperCase() + labelKw.slice(1) + ' Era'
 
       chapters.push({
@@ -1592,6 +1596,8 @@ export function getTopicEras(): { chapters: TopicChapter[] } {
     // Cap at 8, sort chronologically
     chapters.sort((a, b) => a.startYear - b.startYear || (a.startMonth || 0) - (b.startMonth || 0))
     if (chapters.length > 8) chapters.splice(8)
+    console.log(`[TopicEras] Final output: ${chapters.length} eras`)
+    for (const ch of chapters) console.log(`  ${ch.topicLabel}: [${ch.keywords.join(', ')}] (strength: ${ch.strengthScore})`)
   } catch (err) { console.error('[TopicEras] Error:', err) }
   return { chapters }
 }
@@ -2866,10 +2872,14 @@ export function getBehavioralPatterns(): BehavioralPatterns {
     }
     r.vocabularySize = wordFreq.size
     r.avgWordLength = totalWordCount > 0 ? Math.round((totalWordLen / totalWordCount) * 10) / 10 : 0
-    // Filter contact names from rare words
+    // Filter contact names from rare words (comprehensive)
     const vocabNameFilter = new Set<string>()
     try { for (const n of d.prepare('SELECT DISTINCT chat_name FROM messages WHERE chat_name IS NOT NULL').all() as { chat_name: string }[]) for (const p of n.chat_name.replace(/[^a-zA-Z\s]/g, ' ').toLowerCase().split(/\s+/)) if (p.length >= 3) vocabNameFilter.add(p) } catch {}
     try { for (const n of d.prepare('SELECT resolved_name FROM resolved_names').all() as { resolved_name: string }[]) for (const p of n.resolved_name.toLowerCase().split(/\s+/)) if (p.length >= 3) vocabNameFilter.add(p) } catch {}
+    // Sender handles (group chat participants)
+    try { for (const h of d.prepare('SELECT DISTINCT sender_handle FROM messages WHERE sender_handle IS NOT NULL AND sender_handle != ""').all() as { sender_handle: string }[]) { try { const rn = d.prepare('SELECT resolved_name FROM resolved_names WHERE chat_identifier = ?').get(h.sender_handle) as { resolved_name: string } | undefined; if (rn) for (const p of rn.resolved_name.toLowerCase().split(/\s+/)) if (p.length >= 3) vocabNameFilter.add(p) } catch {} if (/^[a-z]/i.test(h.sender_handle) && !h.sender_handle.includes('@') && !h.sender_handle.startsWith('+')) for (const p of h.sender_handle.toLowerCase().split(/\s+/)) if (p.length >= 3) vocabNameFilter.add(p) } } catch {}
+    // Common first names
+    for (const n of ['james','john','robert','michael','david','william','richard','joseph','thomas','charles','christopher','daniel','matthew','anthony','mark','steven','paul','andrew','joshua','kenneth','kevin','brian','george','timothy','ronald','edward','jason','jeffrey','ryan','jacob','gary','nicholas','eric','jonathan','stephen','larry','justin','scott','brandon','benjamin','samuel','raymond','gregory','frank','alexander','patrick','jack','dennis','jerry','tyler','aaron','jose','adam','nathan','henry','peter','zachary','douglas','kyle','carl','jeremy','keith','ethan','austin','noah','jesse','joe','bryan','billy','bruce','albert','gabriel','dylan','alan','mason','logan','philip','louis','harry','vincent','wayne','liam','mary','patricia','jennifer','linda','barbara','elizabeth','susan','jessica','sarah','karen','lisa','nancy','betty','margaret','sandra','ashley','dorothy','kimberly','emily','donna','michelle','carol','amanda','melissa','stephanie','rebecca','sharon','laura','cynthia','amy','angela','anna','brenda','pamela','emma','nicole','helen','samantha','katherine','christine','rachel','janet','catherine','maria','heather','diane','ruth','julie','olivia','joyce','virginia','victoria','kelly','lauren','christina','joan','judith','megan','andrea','cheryl','hannah','jacqueline','martha','gloria','teresa','ann','sara','madison','frances','kathryn','janice','jean','abigail','alice','julia','judy','sophia','grace','denise','amber','marilyn','danielle','beverly','isabella','theresa','diana','natalie','brittany','charlotte','marie','kayla','alexis','lori','kelsey','jude','tab','santa','philippe','ash']) vocabNameFilter.add(n)
     r.rareWords = [...wordFreq.entries()].filter(([word, v]) => v.count >= 5 && v.chats.size <= 2 && !vocabNameFilter.has(word)).sort((a, b) => b[1].count - a[1].count).slice(0, 10).map(([word, v]) => ({ word, count: v.count, conversations: v.chats.size }))
   } catch {}
   try {

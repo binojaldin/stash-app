@@ -53,9 +53,17 @@ export async function computeSignals(): Promise<void> {
 
   let sigCount = 0, notableCount = 0, significantCount = 0
 
+  const ninetyDaysAgo = new Date(now.getTime() - 90 * 86400000).toISOString().slice(0, 10)
+
   const tx = stashDb.transaction(() => {
     for (const contact of contacts) {
       const ci = contact.chat_identifier
+
+      // Skip dead contacts — no messages in last 90 days
+      try {
+        const recent = (stashDb.prepare(`SELECT COUNT(*) as cnt FROM message_signals WHERE chat_identifier = ? AND sent_at >= ?`).get(ci, ninetyDaysAgo) as { cnt: number }).cnt
+        if (recent === 0) continue
+      } catch { continue }
 
       for (const period of PERIODS) {
         const cutoff = new Date(now.getTime() - period.days * 86400000).toISOString().slice(0, 10)
@@ -101,7 +109,9 @@ export async function computeSignals(): Promise<void> {
 }
 
 function emitSignal(stmt: Database.Statement, ci: string, type: string, period: string, current: number, baseline: number, now: Date): void {
-  const delta = baseline > 0 ? ((current - baseline) / baseline) * 100 : 0
+  if (baseline < 0.01 && current < 0.01) return // both near zero, not interesting
+  let delta = baseline > 0.01 ? ((current - baseline) / baseline) * 100 : 0
+  delta = Math.max(-200, Math.min(200, delta)) // cap at ±200%
   const thresh = THRESHOLDS[type] || { notable: 20, significant: 40 }
   const absDelta = Math.abs(delta)
   const isSignificant = absDelta >= thresh.significant ? 1 : 0
@@ -127,6 +137,8 @@ export function getActiveAlerts(): SignalAlert[] {
     for (const r of rows) {
       let name = r.chat_identifier
       try { const nr = d.prepare('SELECT resolved_name FROM resolved_names WHERE chat_identifier = ?').get(r.chat_identifier) as { resolved_name: string } | undefined; if (nr) name = nr.resolved_name } catch {}
+      // Skip unresolvable contacts — showing raw IDs is worse than nothing
+      if (name === r.chat_identifier || name.startsWith('+') || /^[a-f0-9]{8,}/i.test(name)) continue
 
       const d_abs = Math.abs(Math.round(r.delta_pct))
       const key = `${r.signal_type}_${r.direction}`
@@ -146,6 +158,8 @@ export function getActiveAlerts(): SignalAlert[] {
       const severity = r.is_significant ? 'significant' : 'notable'
       alerts.push({ chat_identifier: r.chat_identifier, signal_type: r.signal_type, message, severity, delta_pct: r.delta_pct })
     }
-    return alerts.slice(0, 10)
+    const result = alerts.slice(0, 10)
+    console.log(`[Signals] Returning ${result.length} alerts, all with resolved names`)
+    return result
   } catch { return [] }
 }

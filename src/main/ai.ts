@@ -79,7 +79,7 @@ export interface LifeChapterSummaryInput {
 const MODEL = 'claude-sonnet-4-20250514'
 const API_HOST = 'api.anthropic.com'
 const API_VERSION = '2023-06-01'
-const CACHE_VERSION = 1
+const CACHE_VERSION = 2  // bumped to invalidate stale topic era cache
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000 // 7 days
 
 // ── Key management ──
