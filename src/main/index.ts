@@ -8,6 +8,7 @@ import { compileContactsHelper, resolveContact, resolveContactsBatch } from './c
 import { generateWrapped, getAvailableYears } from './wrapped'
 import { runMessageAnalysis, getConversationSignals, getAnalysisProgress } from './messageAnalysis'
 import { computeClosenessScores, getClosenessScores, getClosenessRank } from './closenessRank'
+import { computeSignals, getSignals, getActiveAlerts } from './signalsEngine'
 import { setApiKey, getAIStatus, searchConversationsAI, enrichTopicEras, enrichTopicErasV2, enrichMemoryMoments, interpretSearchQuery, summarizeConversation, generateRelationshipNarrative, generateAttachmentCaption, analyzeRelationshipDynamics, conversationalSearch } from './ai'
 import type { TopicEraSummaryInput, TopicEraContextInput, MemoryMomentSummaryInput } from './ai'
 import { getCachedAnalytics, setCachedAnalytics, getMessageCountSignal, yieldEventLoop, invalidateSignalCache } from './analyticsCache'
@@ -711,6 +712,8 @@ function setupIpc(): void {
     generateAttachmentCaption(chatIdentifier, contactName, attachmentInfo as Parameters<typeof generateAttachmentCaption>[2], surroundingMessages as Parameters<typeof generateAttachmentCaption>[3])
   )
   ipcMain.handle('get-closeness-scores', (_event, chatIdentifier?: string) => getClosenessScores(chatIdentifier))
+  ipcMain.handle('get-signals', (_event, chatIdentifier?: string) => getSignals(chatIdentifier))
+  ipcMain.handle('get-active-alerts', () => getActiveAlerts())
   ipcMain.handle('get-closeness-rank', (_event, chatIdentifier: string) => getClosenessRank(chatIdentifier))
   ipcMain.handle('generate-wrapped', (_event, year: number) => generateWrapped(year))
   ipcMain.handle('get-wrapped-years', () => getAvailableYears())
@@ -834,6 +837,11 @@ app.whenReady().then(() => {
   setTimeout(() => {
     computeClosenessScores(mainWindow!).catch(e => console.error('[Closeness] Failed:', e))
   }, 10000)
+
+  // Deferred signals computation (15s after boot)
+  setTimeout(() => {
+    computeSignals().catch(e => console.error('[Signals] Failed:', e))
+  }, 15000)
 
   // Hide to tray instead of quitting on window close
   mainWindow!.on('close', (e) => {

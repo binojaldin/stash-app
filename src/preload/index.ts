@@ -215,6 +215,8 @@ const api = {
   summarizeConversation: (chatIdentifier: string, contactName: string): Promise<{ summary: string; topics: string[]; tone: string } | null> => ipcRenderer.invoke('summarize-conversation', chatIdentifier, contactName),
   generateRelationshipNarrative: (chatIdentifier: string, contactName: string, stats: Record<string, unknown>): Promise<{ narrative: string; headline: string } | null> => ipcRenderer.invoke('generate-relationship-narrative', chatIdentifier, contactName, stats),
   generateAttachmentCaption: (chatIdentifier: string, contactName: string, attachmentInfo: Record<string, unknown>, surroundingMessages: Record<string, unknown>[]): Promise<{ caption: string } | null> => ipcRenderer.invoke('generate-attachment-caption', chatIdentifier, contactName, attachmentInfo, surroundingMessages),
+  getSignals: (chatIdentifier?: string): Promise<{ chat_identifier: string; signal_type: string; period: string; current_value: number; baseline_value: number; delta_pct: number; is_significant: boolean; direction: string }[]> => ipcRenderer.invoke('get-signals', chatIdentifier),
+  getActiveAlerts: (): Promise<{ chat_identifier: string; signal_type: string; message: string; severity: string; delta_pct: number }[]> => ipcRenderer.invoke('get-active-alerts'),
   getClosenessScores: (chatIdentifier?: string): Promise<{
     chat_identifier: string; total_score: number; tier: string
     volume_score: number; balance_score: number; recency_score: number

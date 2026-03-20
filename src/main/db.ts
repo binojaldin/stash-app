@@ -200,6 +200,22 @@ export function initDb(): Database.Database {
     );
   `)
 
+  // ── V6: relationship signals ──
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS relationship_signals (
+      chat_identifier TEXT NOT NULL,
+      signal_type TEXT NOT NULL,
+      period TEXT NOT NULL,
+      current_value REAL NOT NULL,
+      baseline_value REAL NOT NULL,
+      delta_pct REAL NOT NULL,
+      is_significant INTEGER DEFAULT 0,
+      direction TEXT DEFAULT 'stable',
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (chat_identifier, signal_type, period)
+    );
+  `)
+
   // ── V5: resolved contact names ──
   db.exec(`
     CREATE TABLE IF NOT EXISTS resolved_names (

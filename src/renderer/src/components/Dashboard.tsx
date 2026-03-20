@@ -1567,6 +1567,15 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
     }).then(r => { setAiDynamics(r); setAiDynamicsLoading(false) }).catch(() => setAiDynamicsLoading(false))
   }, [scopedPerson, dynamics?.myTotalWords])
 
+  // ── Signals (must be before early return) ──
+  const [activeAlerts, setActiveAlerts] = useState<{ chat_identifier: string; signal_type: string; message: string; severity: string; delta_pct: number }[]>([])
+  const [contactSignals, setContactSignals] = useState<{ signal_type: string; period: string; current_value: number; baseline_value: number; delta_pct: number; direction: string }[]>([])
+  useEffect(() => { window.api.getActiveAlerts().then(setActiveAlerts).catch(() => {}) }, [])
+  useEffect(() => {
+    if (!scopedPerson) { setContactSignals([]); return }
+    window.api.getSignals(scopedPerson).then(s => setContactSignals(s as typeof contactSignals)).catch(() => {})
+  }, [scopedPerson])
+
   // ── Behavioral patterns (must be before early return) ──
   const [behaviorPatterns, setBehaviorPatterns] = useState<{ rareWords: { word: string; count: number }[]; vocabularySize: number; avgWordLength: number; repeatedMessages: { body: string; recipients: number; count: number }[]; laughsGiven: number; laughsReceived: number; humorRatio: number; funniestHour: number; busiestHour: number; busiestDay: number; avgMessagesPerActiveDay: number; longestSilence: number; marathonCount: number; photoRatio: number; linkShareRate: number; avgAttachmentsPerDay: number; mostSharedDomain: string | null } | null>(null)
   useEffect(() => { window.api.getBehavioralPatterns().then(setBehaviorPatterns).catch(() => {}) }, [])
@@ -2209,6 +2218,18 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
                   </>
                 )
               })()}
+
+              {/* Per-contact signals */}
+              {contactSignals.filter(s => s.direction !== 'stable' && s.period === '30d').length > 0 && (
+                <div style={{ gridColumn: 'span 4', ...tileBase }}>
+                  <div style={{ fontSize: 10, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#E8604A', marginBottom: 8, fontWeight: 600, fontFamily: "'DM Sans'" }}>Signals</div>
+                  {contactSignals.filter(s => s.direction !== 'stable' && s.period === '30d').slice(0, 4).map((s, i) => {
+                    const arrow = s.direction === 'up' ? '\u{1F4C8}' : '\u{1F4C9}'
+                    const label = s.signal_type.charAt(0).toUpperCase() + s.signal_type.slice(1).replace('_', ' ')
+                    return <div key={i} style={{ fontSize: 11, color: '#6f6a65', lineHeight: 1.8, fontFamily: "'DM Sans'" }}>{arrow} {label}: {s.delta_pct > 0 ? '+' : ''}{Math.round(s.delta_pct)}% vs 30d avg</div>
+                  })}
+                </div>
+              )}
 
               {/* Monthly Rhythm card */}
               {monthlyData && monthlyData.months.length >= 6 && (() => {
@@ -3172,6 +3193,25 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
             </div>
           )
         })()}
+
+        {/* ZONE 0.55 — Signals Feed */}
+        {activeAlerts.length > 0 && (
+          <div style={{ gridColumn: 'span 6', borderRadius: 16, padding: '20px 22px', background: '#fff', border: '1px solid rgba(0,0,0,0.06)', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}>
+            <div style={{ fontSize: 10, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#E8604A', marginBottom: 4, fontFamily: "'DM Sans'", fontWeight: 600 }}>Signals</div>
+            <div style={{ fontSize: 12, color: '#9a948f', marginBottom: 10, fontFamily: "'DM Sans'" }}>What's changing in your relationships.</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {activeAlerts.slice(0, 6).map((a, i) => {
+                const dotColor = a.severity === 'significant' ? '#E8604A' : a.severity === 'notable' ? '#fbbf24' : '#2EC4A0'
+                return (
+                  <div key={i} onClick={() => onSelectConversation(a.chat_identifier)} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer', padding: '4px 0' }}>
+                    <div style={{ width: 6, height: 6, borderRadius: '50%', background: dotColor, marginTop: 5, flexShrink: 0 }} />
+                    <div style={{ fontSize: 12, color: '#4a4542', lineHeight: 1.5, fontFamily: "'DM Sans'" }}>{a.message}</div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
 
         {/* ZONE 0.6 — Media Intelligence */}
         {globalMedia && (globalMedia.topSenders.length > 0 || globalMedia.topReceivers.length > 0) && (
