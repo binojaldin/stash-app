@@ -1447,6 +1447,24 @@ export function getTopicEras(): { chapters: TopicChapter[] } {
       FROM messages WHERE body IS NOT NULL AND length(body) > 10
     `).all() as { year: number; quarter: number; chat_name: string; body: string }[]
 
+    // System artifacts + contact name filter
+    const SYSTEM_ARTIFACTS = new Set(['image','images','video','videos','photo','photos','render','rendered','renderedimage','renderedvideo','screen','screenshot','attachment','attachments','liked','loved','laughed','emphasized','questioned','fullsizerender','fullsizeoutput','fullsize','img','dsc','mov','heic','jpeg','png','gif','mp4','pdf','brandlogo','brandlogoimage','tiktok','instagram','preview','sticker'])
+    const chatNames = new Set<string>()
+    try {
+      const names = d.prepare('SELECT DISTINCT chat_name FROM messages WHERE chat_name IS NOT NULL').all() as { chat_name: string }[]
+      for (const n of names) for (const p of n.chat_name.replace(/[^a-zA-Z\s]/g, ' ').toLowerCase().split(/\s+/)) if (p.length >= 3) chatNames.add(p)
+      try { const resolved = d.prepare('SELECT resolved_name FROM resolved_names').all() as { resolved_name: string }[]; for (const n of resolved) for (const p of n.resolved_name.toLowerCase().split(/\s+/)) if (p.length >= 3) chatNames.add(p) } catch {}
+    } catch {}
+
+    const isCleanTerm = (t: string): boolean => {
+      if (SYSTEM_ARTIFACTS.has(t)) return false
+      if (chatNames.has(t)) return false
+      if (/\d/.test(t)) return false
+      if (t.length < 3) return false
+      if (t.includes(' ') && t.split(' ').some(w => SYSTEM_ARTIFACTS.has(w))) return false
+      return true
+    }
+
     for (const r of rows) {
       if (r.year < 2006 || r.year > currentYear) continue
       const qk: QuarterKey = `${r.year}-Q${r.quarter}`
@@ -1455,6 +1473,7 @@ export function getTopicEras(): { chapters: TopicChapter[] } {
       const tokens = tokenizeWords(r.body)
       const chat = r.chat_name || '__unknown'
       for (const t of tokens) {
+        if (!isCleanTerm(t)) continue
         if (!qmap.has(t)) qmap.set(t, { count: 0, chats: new Set() })
         const entry = qmap.get(t)!
         entry.count++
@@ -1527,15 +1546,15 @@ export function getTopicEras(): { chapters: TopicChapter[] } {
       // Deduplicate and rank keywords
       const kwMap = new Map<string, number>()
       for (const s of era.scored) kwMap.set(s.term, (kwMap.get(s.term) || 0) + s.score)
-      const keywords = [...kwMap.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([t]) => t)
+      const keywords = [...kwMap.entries()].sort((a, b) => b[1] - a[1]).filter(([t]) => isCleanTerm(t)).slice(0, 8).map(([t]) => t)
       if (keywords.length < 4) continue
 
       const strength = [...kwMap.entries()].slice(0, 5).reduce((s, [, v]) => s + v, 0)
       if (strength < 30) continue
 
-      // Fallback label: capitalize top keyword
-      const topKw = keywords[0]
-      const label = topKw.charAt(0).toUpperCase() + topKw.slice(1) + ' Era'
+      // Fallback label: capitalize top keyword (skip if it's a chat name)
+      let labelKw = keywords.find(kw => !chatNames.has(kw.toLowerCase()) && !SYSTEM_ARTIFACTS.has(kw.toLowerCase())) || keywords[0]
+      const label = labelKw.charAt(0).toUpperCase() + labelKw.slice(1) + ' Era'
 
       chapters.push({
         startYear: start.year, endYear: end.year,
