@@ -1570,7 +1570,13 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
   // ── Signals (must be before early return) ──
   const [activeAlerts, setActiveAlerts] = useState<{ chat_identifier: string; signal_type: string; message: string; severity: string; delta_pct: number }[]>([])
   const [contactSignals, setContactSignals] = useState<{ signal_type: string; period: string; current_value: number; baseline_value: number; delta_pct: number; direction: string }[]>([])
-  useEffect(() => { window.api.getActiveAlerts().then(setActiveAlerts).catch(() => {}) }, [])
+  // Fetch alerts with delay — signals engine runs 15s after boot
+  useEffect(() => {
+    window.api.getActiveAlerts().then(setActiveAlerts).catch(() => {})
+    // Re-fetch after signals engine has had time to compute
+    const timer = setTimeout(() => { window.api.getActiveAlerts().then(a => { console.log('[UI] Alerts re-fetched:', a.length); setActiveAlerts(a) }).catch(() => {}) }, 20000)
+    return () => clearTimeout(timer)
+  }, [])
   useEffect(() => {
     if (!scopedPerson) { setContactSignals([]); return }
     window.api.getSignals(scopedPerson).then(s => setContactSignals(s as typeof contactSignals)).catch(() => {})
