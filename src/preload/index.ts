@@ -171,6 +171,13 @@ const api = {
   getAnalysisProgress: (): Promise<{
     totalMessages: number; analyzedMessages: number; lastRunAt: string | null; isRunning: boolean
   }> => ipcRenderer.invoke('get-analysis-progress'),
+  getBehavioralPatterns: (): Promise<{
+    rareWords: { word: string; count: number; conversations: number }[]; vocabularySize: number; avgWordLength: number
+    repeatedMessages: { body: string; recipients: number; count: number }[]
+    laughsGiven: number; laughsReceived: number; humorRatio: number; funniestHour: number
+    busiestHour: number; busiestDay: number; avgMessagesPerActiveDay: number; longestSilence: number; marathonCount: number
+    photoRatio: number; linkShareRate: number; avgAttachmentsPerDay: number; mostSharedDomain: string | null
+  }> => ipcRenderer.invoke('get-behavioral-patterns'),
   detectNicknames: (chatIdentifier: string, contactName: string): Promise<{ nicknames: { name: string; count: number; isFromMe: boolean }[] }> => ipcRenderer.invoke('detect-nicknames', chatIdentifier, contactName),
   getMediaIntelligence: (chatIdentifier?: string): Promise<{
     topSenders: { chatName: string; count: number }[]; topReceivers: { chatName: string; count: number }[]

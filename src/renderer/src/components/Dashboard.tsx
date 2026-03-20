@@ -1567,6 +1567,10 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
     }).then(r => { setAiDynamics(r); setAiDynamicsLoading(false) }).catch(() => setAiDynamicsLoading(false))
   }, [scopedPerson, dynamics?.myTotalWords])
 
+  // ── Behavioral patterns (must be before early return) ──
+  const [behaviorPatterns, setBehaviorPatterns] = useState<{ rareWords: { word: string; count: number }[]; vocabularySize: number; avgWordLength: number; repeatedMessages: { body: string; recipients: number; count: number }[]; laughsGiven: number; laughsReceived: number; humorRatio: number; funniestHour: number; busiestHour: number; busiestDay: number; avgMessagesPerActiveDay: number; longestSilence: number; marathonCount: number; photoRatio: number; linkShareRate: number; avgAttachmentsPerDay: number; mostSharedDomain: string | null } | null>(null)
+  useEffect(() => { window.api.getBehavioralPatterns().then(setBehaviorPatterns).catch(() => {}) }, [])
+
   // ── Nickname detection — disabled (detection quality too low, will rebuild with AI) ──
   // const [nicknames, setNicknames] = useState<{ name: string; count: number; isFromMe: boolean }[]>([])
   // useEffect(() => {
@@ -2407,6 +2411,74 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
         {memoryMoments.length >= 1 && (
           <MemoryCard moments={memoryMoments} chatNameMap={chatNameMap} />
         )}
+
+        {/* ── TIER 1.8: BEHAVIORAL PATTERNS ── */}
+        {behaviorPatterns && (behaviorPatterns.vocabularySize > 0 || behaviorPatterns.laughsGiven > 0) && (() => {
+          const bp = behaviorPatterns
+          const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+          const fmtHour = (h: number) => h === 0 ? '12am' : h < 12 ? `${h}am` : h === 12 ? '12pm' : `${h - 12}pm`
+          return (
+            <>
+              <div style={{ gridColumn: 'span 12', marginTop: 8 }}>
+                <div style={{ fontSize: 10, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#E8604A', marginBottom: 4, fontFamily: "'DM Sans'", fontWeight: 600 }}>Behavioral patterns</div>
+                <div style={{ fontSize: 13, color: '#9a948f', marginBottom: 12, fontFamily: "'DM Sans'" }}>What your habits say about you.</div>
+              </div>
+
+              {bp.vocabularySize > 0 && (
+                <div style={{ gridColumn: 'span 6', ...tileBase }}>
+                  <div style={{ fontSize: 10, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#E8604A', marginBottom: 8, fontWeight: 600, fontFamily: "'DM Sans'" }}>Your vocabulary</div>
+                  <div style={{ fontSize: 12, color: '#6f6a65', marginBottom: 8, fontFamily: "'DM Sans'" }}>{bp.avgWordLength} avg word length · {bp.vocabularySize.toLocaleString()} unique words</div>
+                  {bp.rareWords.length > 0 && (
+                    <div>
+                      <div style={{ fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#9a948f', marginBottom: 6, fontFamily: "'DM Sans'" }}>Your signature words</div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                        {bp.rareWords.slice(0, 8).map(w => <span key={w.word} style={{ fontSize: 10, color: '#2EC4A0', background: 'rgba(46,196,160,0.08)', borderRadius: 12, padding: '3px 10px', fontFamily: "'DM Sans'" }}>{w.word}</span>)}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {bp.repeatedMessages.length > 0 && (
+                <div style={{ gridColumn: 'span 6', ...tileBase }}>
+                  <div style={{ fontSize: 10, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#E8604A', marginBottom: 8, fontWeight: 600, fontFamily: "'DM Sans'" }}>The copy-paster</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {bp.repeatedMessages.slice(0, 3).map((m, i) => (
+                      <div key={i} style={{ fontSize: 12, color: '#6f6a65', fontFamily: "'DM Sans'" }}>
+                        <span style={{ color: '#9a948f', fontStyle: 'italic' }}>"{m.body}"</span>
+                        <span style={{ color: '#E8604A', marginLeft: 6 }}>&rarr; {m.recipients} people</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {bp.laughsGiven > 0 && (
+                <div style={{ gridColumn: 'span 4', ...tileBase }}>
+                  <div style={{ fontSize: 10, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#E8604A', marginBottom: 8, fontWeight: 600, fontFamily: "'DM Sans'" }}>Humor profile</div>
+                  <div style={{ fontSize: 12, color: '#6f6a65', marginBottom: 4, fontFamily: "'DM Sans'" }}>{bp.laughsGiven.toLocaleString()} laughs earned · {bp.laughsReceived.toLocaleString()} laughs given</div>
+                  <div style={{ fontSize: 13, color: '#1A1A1A', fontWeight: 500, fontFamily: "'DM Sans'" }}>{bp.humorRatio > 1.3 ? "You're the comedian." : bp.humorRatio < 0.7 ? "You're the audience." : "Balanced humor."}</div>
+                  <div style={{ fontSize: 11, color: '#9a948f', marginTop: 4, fontFamily: "'DM Sans'" }}>Funniest at {fmtHour(bp.funniestHour)}</div>
+                </div>
+              )}
+
+              <div style={{ gridColumn: 'span 4', ...tileBase }}>
+                <div style={{ fontSize: 10, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#E8604A', marginBottom: 8, fontWeight: 600, fontFamily: "'DM Sans'" }}>Your rhythm</div>
+                <div style={{ fontSize: 12, color: '#6f6a65', marginBottom: 2, fontFamily: "'DM Sans'" }}>Most active: {fmtHour(bp.busiestHour)} on {DAYS[bp.busiestDay]}s</div>
+                <div style={{ fontSize: 12, color: '#6f6a65', marginBottom: 2, fontFamily: "'DM Sans'" }}>{bp.avgMessagesPerActiveDay} msgs/day when active</div>
+                {bp.marathonCount > 0 && <div style={{ fontSize: 12, color: '#6f6a65', fontFamily: "'DM Sans'" }}>{bp.marathonCount} marathon day{bp.marathonCount !== 1 ? 's' : ''} (200+)</div>}
+                {bp.longestSilence > 0 && <div style={{ fontSize: 11, color: '#9a948f', marginTop: 4, fontFamily: "'DM Sans'" }}>Longest silence: {bp.longestSilence} days</div>}
+              </div>
+
+              <div style={{ gridColumn: 'span 4', ...tileBase }}>
+                <div style={{ fontSize: 10, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#E8604A', marginBottom: 8, fontWeight: 600, fontFamily: "'DM Sans'" }}>Sharing style</div>
+                <div style={{ fontSize: 12, color: '#6f6a65', marginBottom: 2, fontFamily: "'DM Sans'" }}>{bp.photoRatio}% photos · {bp.linkShareRate}% links</div>
+                <div style={{ fontSize: 12, color: '#6f6a65', marginBottom: 2, fontFamily: "'DM Sans'" }}>{bp.avgAttachmentsPerDay} files/day</div>
+                {bp.mostSharedDomain && <div style={{ fontSize: 11, color: '#E8604A', marginTop: 4, fontFamily: "'DM Sans'" }}>Most shared: {bp.mostSharedDomain}</div>}
+              </div>
+            </>
+          )
+        })()}
 
         {/* ── TIER 2: IDENTITY SPECTRUMS ── */}
         {(() => {

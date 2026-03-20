@@ -2787,6 +2787,78 @@ export function getMediaIntelligence(chatIdentifier?: string): MediaIntelligence
   return r
 }
 
+export interface BehavioralPatterns {
+  rareWords: { word: string; count: number; conversations: number }[]
+  vocabularySize: number; avgWordLength: number
+  repeatedMessages: { body: string; recipients: number; count: number }[]
+  laughsGiven: number; laughsReceived: number; humorRatio: number; funniestHour: number
+  busiestHour: number; busiestDay: number; avgMessagesPerActiveDay: number; longestSilence: number; marathonCount: number
+  photoRatio: number; linkShareRate: number; avgAttachmentsPerDay: number; mostSharedDomain: string | null
+}
+
+export function getBehavioralPatterns(): BehavioralPatterns {
+  const d = initDb()
+  const r: BehavioralPatterns = { rareWords: [], vocabularySize: 0, avgWordLength: 0, repeatedMessages: [], laughsGiven: 0, laughsReceived: 0, humorRatio: 0, funniestHour: 12, busiestHour: 12, busiestDay: 0, avgMessagesPerActiveDay: 0, longestSilence: 0, marathonCount: 0, photoRatio: 0, linkShareRate: 0, avgAttachmentsPerDay: 0, mostSharedDomain: null }
+  try {
+    // 1. Vocabulary
+    const myMsgs = d.prepare(`SELECT body, chat_name FROM messages WHERE is_from_me = 1 ORDER BY apple_date DESC LIMIT 50000`).all() as { body: string; chat_name: string }[]
+    const wordFreq = new Map<string, { count: number; chats: Set<string> }>()
+    let totalWordLen = 0, totalWordCount = 0
+    for (const { body, chat_name } of myMsgs) {
+      for (const t of tokenizeWords(body)) {
+        totalWordLen += t.length; totalWordCount++
+        if (!wordFreq.has(t)) wordFreq.set(t, { count: 0, chats: new Set() })
+        const e = wordFreq.get(t)!; e.count++; e.chats.add(chat_name)
+      }
+    }
+    r.vocabularySize = wordFreq.size
+    r.avgWordLength = totalWordCount > 0 ? Math.round((totalWordLen / totalWordCount) * 10) / 10 : 0
+    r.rareWords = [...wordFreq.entries()].filter(([, v]) => v.count >= 5 && v.chats.size <= 2).sort((a, b) => b[1].count - a[1].count).slice(0, 10).map(([word, v]) => ({ word, count: v.count, conversations: v.chats.size }))
+  } catch {}
+  try {
+    // 2. Repeated messages
+    r.repeatedMessages = (d.prepare(`SELECT LOWER(TRIM(body)) as normalized, COUNT(DISTINCT chat_name) as recipients, COUNT(*) as total FROM messages WHERE is_from_me = 1 AND length(body) > 20 AND length(body) < 200 GROUP BY normalized HAVING recipients >= 2 AND total >= 3 ORDER BY recipients DESC LIMIT 10`).all() as { normalized: string; recipients: number; total: number }[]).map(row => ({ body: row.normalized.slice(0, 80), recipients: row.recipients, count: row.total }))
+  } catch {}
+  try {
+    // 3. Humor
+    r.laughsGiven = (d.prepare(`SELECT SUM(has_laugh) as cnt FROM message_signals WHERE is_from_me = 0`).get() as { cnt: number })?.cnt || 0
+    r.laughsReceived = (d.prepare(`SELECT SUM(has_laugh) as cnt FROM message_signals WHERE is_from_me = 1`).get() as { cnt: number })?.cnt || 0
+    r.humorRatio = r.laughsReceived > 0 ? Math.round((r.laughsGiven / r.laughsReceived) * 10) / 10 : 0
+    const fh = d.prepare(`SELECT CAST(strftime('%H', sent_at) AS INTEGER) as hour, SUM(has_laugh) as laughs FROM message_signals WHERE is_from_me = 0 AND has_laugh = 1 GROUP BY hour ORDER BY laughs DESC LIMIT 1`).get() as { hour: number } | undefined
+    if (fh) r.funniestHour = fh.hour
+  } catch {}
+  try {
+    // 4. Rhythm
+    const bh = d.prepare(`SELECT CAST(strftime('%H', sent_at) AS INTEGER) as hour, COUNT(*) as cnt FROM message_signals WHERE is_from_me = 1 GROUP BY hour ORDER BY cnt DESC LIMIT 1`).get() as { hour: number } | undefined
+    if (bh) r.busiestHour = bh.hour
+    const bd = d.prepare(`SELECT CAST(strftime('%w', sent_at) AS INTEGER) as dow, COUNT(*) as cnt FROM message_signals WHERE is_from_me = 1 GROUP BY dow ORDER BY cnt DESC LIMIT 1`).get() as { dow: number } | undefined
+    if (bd) r.busiestDay = bd.dow
+    const daily = d.prepare(`SELECT date(sent_at) as d, COUNT(*) as cnt FROM message_signals GROUP BY d ORDER BY d`).all() as { d: string; cnt: number }[]
+    const active = daily.filter(x => x.cnt > 0)
+    r.avgMessagesPerActiveDay = active.length > 0 ? Math.round(active.reduce((s, x) => s + x.cnt, 0) / active.length) : 0
+    r.marathonCount = daily.filter(x => x.cnt >= 200).length
+    let maxGap = 0
+    for (let i = 1; i < daily.length; i++) { const gap = (new Date(daily[i].d).getTime() - new Date(daily[i - 1].d).getTime()) / 86400000; if (gap > maxGap) maxGap = gap }
+    r.longestSilence = Math.round(maxGap)
+  } catch {}
+  try {
+    // 5. Attachments
+    const att = d.prepare(`SELECT SUM(is_image) as photos, COUNT(*) as total FROM attachments`).get() as { photos: number; total: number } | undefined
+    if (att && att.total > 0) r.photoRatio = Math.round((att.photos / att.total) * 100)
+    const linkMsgs = (d.prepare(`SELECT COUNT(*) as cnt FROM messages WHERE is_from_me = 1 AND body LIKE '%http%'`).get() as { cnt: number })?.cnt || 0
+    const totalMsgs = (d.prepare(`SELECT COUNT(*) as cnt FROM messages WHERE is_from_me = 1`).get() as { cnt: number })?.cnt || 1
+    r.linkShareRate = Math.round((linkMsgs / totalMsgs) * 100)
+    const daysAtt = (d.prepare(`SELECT COUNT(DISTINCT date(created_at)) as days FROM attachments`).get() as { days: number })?.days || 1
+    if (att) r.avgAttachmentsPerDay = Math.round((att.total / daysAtt) * 10) / 10
+    const linkRows = d.prepare(`SELECT body FROM messages WHERE is_from_me = 1 AND body LIKE '%http%' LIMIT 5000`).all() as { body: string }[]
+    const domains = new Map<string, number>()
+    for (const { body } of linkRows) { for (const url of (body.match(/https?:\/\/([^\s/]+)/gi) || [])) { const dom = url.replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0]; if (dom.length > 3) domains.set(dom, (domains.get(dom) || 0) + 1) } }
+    const top = [...domains.entries()].sort((a, b) => b[1] - a[1])[0]
+    if (top) r.mostSharedDomain = top[0]
+  } catch {}
+  return r
+}
+
 export function getMonthlyAverages(chatIdentifier?: string): {
   months: { month: string; count: number; isAnomaly: boolean; anomalyType: 'spike' | 'drop' | null; deviation: number }[]
   avgPerMonth: number; stdDev: number

@@ -2,7 +2,7 @@ import { app, shell, BrowserWindow, ipcMain, dialog, Menu, Tray, nativeImage, po
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import { checkFullDiskAccess } from './messagesReader'
-import { initDb, searchAttachments, getStats, getFastStats, getTodayInHistory, getUsageStats, getMessagingNetwork, getAttachmentById, closeDb, hideChat, getHiddenChats, getConversationStats, getRelationshipTimeline, getSocialGravity, getTopicEras, getTopicEraContext, getMemoryMoments, searchMessagesAggregated, updateReactionCounts, invalidateLaughCache, searchMessages, getMessageIndexStatus, getVocabStats, getWordOrigins, detectSignalQuery, executeSearchIntent, getMessageSamples, getAttachmentContext, getSignificantPhotos, getRelationshipDynamics, getMonthlyAverages, getMediaIntelligence, detectNicknames } from './db'
+import { initDb, searchAttachments, getStats, getFastStats, getTodayInHistory, getUsageStats, getMessagingNetwork, getAttachmentById, closeDb, hideChat, getHiddenChats, getConversationStats, getRelationshipTimeline, getSocialGravity, getTopicEras, getTopicEraContext, getMemoryMoments, searchMessagesAggregated, updateReactionCounts, invalidateLaughCache, searchMessages, getMessageIndexStatus, getVocabStats, getWordOrigins, detectSignalQuery, executeSearchIntent, getMessageSamples, getAttachmentContext, getSignificantPhotos, getRelationshipDynamics, getMonthlyAverages, getMediaIntelligence, detectNicknames, getBehavioralPatterns } from './db'
 import { startIndexing, getIndexingProgress, fetchChatSummaries, saveChatPriorities, getSavedPriorityChats, resetIndexing, recoverAttachment, resolveNamesInBackground } from './indexer'
 import { compileContactsHelper, resolveContact, resolveContactsBatch } from './contacts'
 import { generateWrapped, getAvailableYears } from './wrapped'
@@ -690,6 +690,7 @@ function setupIpc(): void {
   ipcMain.handle('get-significant-photos', (_event, chatIdentifier: string) => getSignificantPhotos(chatIdentifier))
   ipcMain.handle('get-relationship-dynamics', (_event, chatIdentifier: string) => getRelationshipDynamics(chatIdentifier))
   ipcMain.handle('detect-nicknames', (_event, chatIdentifier: string, contactName: string) => detectNicknames(chatIdentifier, contactName))
+  ipcMain.handle('get-behavioral-patterns', () => getBehavioralPatterns())
   ipcMain.handle('get-monthly-averages', (_event, chatIdentifier?: string) => getMonthlyAverages(chatIdentifier))
   ipcMain.handle('get-media-intelligence', (_event, chatIdentifier?: string) => getMediaIntelligence(chatIdentifier))
   ipcMain.handle('analyze-relationship-dynamics', async (_event, chatIdentifier: string, contactName: string, stats: unknown) => {
