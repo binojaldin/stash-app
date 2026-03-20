@@ -1406,12 +1406,13 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
   }
 
   type SearchResultData = {
-    type: 'ranked_contacts' | 'messages' | 'aggregation' | 'timeline'
+    type: 'ranked_contacts' | 'messages' | 'aggregation' | 'timeline' | 'conversational'
     explanation: string
     ranked?: { contact: string; value: number; label: string }[]
     messages?: { body: string; chat_name: string; sent_at: string; is_from_me: number; snippet: string }[]
     aggregation?: { contact: string; count: number; samples: { body: string; sent_at: string; is_from_me: number }[] }[]
     timeline?: { period: string; value: number }[]
+    answer?: string; sources?: string[]; followUp?: string | null
   }
   const [searchResult, setSearchResult] = useState<SearchResultData | null>(null)
 
@@ -1433,7 +1434,7 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
     if (isSemanticQuery(query)) {
       try {
         const result = await window.api.executeSearchIntent(query, scopedPerson || undefined)
-        if (result && ((result.ranked && result.ranked.length > 0) || (result.aggregation && result.aggregation.length > 0) || (result.messages && result.messages.length > 0) || (result.timeline && result.timeline.length > 0))) {
+        if (result && ((result.ranked && result.ranked.length > 0) || (result.aggregation && result.aggregation.length > 0) || (result.messages && result.messages.length > 0) || (result.timeline && result.timeline.length > 0) || (result.type === 'conversational' && result.answer))) {
           setSearchResult(result)
           setMsgSearching(false)
           return
@@ -2710,6 +2711,29 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
                     </div>
                   ))}
                 </div>
+          )}
+
+          {/* Conversational AI answer */}
+          {searchResult.type === 'conversational' && searchResult.answer && (
+            <div style={{ padding: '20px 24px', borderRadius: 14, background: '#fff', border: '1px solid rgba(0,0,0,0.06)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+                <span style={{ fontSize: 8, padding: '2px 6px', borderRadius: 4, background: 'rgba(127,119,221,0.12)', color: '#7F77DD', fontFamily: "'DM Sans'", letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 600 }}>AI</span>
+              </div>
+              <div style={{ fontSize: 15, color: '#1A1A1A', lineHeight: 1.7, fontFamily: "'DM Sans'", marginBottom: 12 }}>{searchResult.answer}</div>
+              {searchResult.sources && searchResult.sources.length > 0 && (
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
+                  {searchResult.sources.map((s, i) => (
+                    <span key={i} style={{ fontSize: 10, padding: '3px 8px', borderRadius: 4, background: 'rgba(46,196,160,0.1)', color: '#2EC4A0', fontFamily: "'DM Sans'" }}>{s}</span>
+                  ))}
+                </div>
+              )}
+              {searchResult.followUp && (
+                <button onClick={(e) => { e.stopPropagation(); setMsgQuery(searchResult.followUp!); setTimeout(() => handleMsgSearch(), 100) }}
+                  style={{ fontSize: 12, color: '#7F77DD', background: 'rgba(127,119,221,0.08)', border: 'none', borderRadius: 6, padding: '6px 12px', cursor: 'pointer', fontFamily: "'DM Sans'" }}>
+                  Try: {searchResult.followUp}
+                </button>
+              )}
+            </div>
           )}
 
           {/* Timeline (behavior_query results) */}

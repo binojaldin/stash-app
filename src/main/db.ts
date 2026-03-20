@@ -2307,12 +2307,15 @@ export function getTopicEraContext(chapters: { startYear: number; endYear: numbe
 // ── Search execution functions ──
 
 export interface SearchResult {
-  type: 'ranked_contacts' | 'messages' | 'aggregation' | 'timeline'
+  type: 'ranked_contacts' | 'messages' | 'aggregation' | 'timeline' | 'conversational'
   explanation: string
   ranked?: { contact: string; value: number; label: string }[]
   messages?: { id?: number; body: string; chat_name: string; sent_at: string; is_from_me: number; snippet: string; sender_handle?: string | null }[]
   aggregation?: AggregatedSearchResult[]
   timeline?: { period: string; value: number }[]
+  answer?: string
+  sources?: string[]
+  followUp?: string | null
 }
 
 const SIGNAL_COLUMN_MAP: Record<string, { column: string; label: string }> = {

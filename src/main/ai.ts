@@ -560,6 +560,39 @@ export async function generateAttachmentCaption(chatIdentifier: string, contactN
   } catch { return null }
 }
 
+// ── Conversational AI Search ──
+
+export interface ConversationalSearchResult {
+  answer: string; sources: string[]; followUp: string | null
+}
+
+export async function conversationalSearch(query: string, dataContext: {
+  topContacts: { name: string; messages: number; tier: string }[]
+  recentSearchResults: { contact: string; snippet: string; date: string }[]
+  signalSummary: { contact: string; laughs: number; heat: number; emoji: number; sentiment: number }[]
+  globalStats: { totalMessages: number; totalContacts: number; oldestMessage: string }
+}): Promise<ConversationalSearchResult | null> {
+  if (!getAIStatus().configured) return null
+  const cached = getCached<ConversationalSearchResult>('convo-search', `${query}:${dataContext.topContacts.length}`)
+  if (cached) return cached
+
+  const contactLines = dataContext.topContacts.map(c => `${c.name} — ${c.messages > 0 ? c.messages + ' msgs, ' : ''}${c.tier}`).join('\n')
+  const searchLines = dataContext.recentSearchResults.map(r => `${r.contact}: "${r.snippet}" (${r.date})`).join('\n')
+  const signalLines = dataContext.signalSummary.map(s => `${s.contact} — laughs:${s.laughs}, heat:${s.heat}, emoji:${s.emoji}%, positive:${s.sentiment}%`).join('\n')
+
+  const userMsg = `Question: "${query}"\n\nDATA CONTEXT:\nTop contacts (by closeness):\n${contactLines || '(none)'}\n\n${searchLines ? `Recent message matches:\n${searchLines}\n\n` : ''}${signalLines ? `Signal summary:\n${signalLines}\n\n` : ''}Global: ${dataContext.globalStats.totalMessages > 0 ? dataContext.globalStats.totalMessages + ' total messages, ' : ''}${dataContext.globalStats.totalContacts} contacts${dataContext.globalStats.oldestMessage ? ', oldest message ' + dataContext.globalStats.oldestMessage : ''}`
+
+  const system = `You are a search assistant for Stash, an iMessage analytics app. The user is asking a question about their messaging history. You have access to a data summary about their conversations.\n\nAnswer their question using ONLY the data provided. If the data doesn't contain enough information, say so honestly and suggest what they could search for instead.\n\nReturn a JSON object:\n{\n  "answer": "A direct, conversational answer in 1-3 sentences. Second person ('You...'). Be specific with names and numbers when the data supports it.",\n  "sources": ["contact1", "contact2"],\n  "followUp": "A suggested follow-up question, or null"\n}\n\nRules:\n- Be direct. Answer first, then context.\n- Use actual names and numbers from the data.\n- If data can't answer the question, be honest.\n- Never fabricate data.\n- Keep answers warm and conversational.\n\nReturn ONLY the JSON object.`
+
+  const text = await callAnthropic(system, userMsg, 400)
+  if (!text) return null
+  try {
+    const result = JSON.parse(text.trim().replace(/^```json?\n?/, '').replace(/\n?```$/, '')) as ConversationalSearchResult
+    setCache('convo-search', `${query}:${dataContext.topContacts.length}`, result)
+    return result
+  } catch { return null }
+}
+
 // ── Relationship Dynamics AI Analysis ──
 
 export interface AIRelationshipDynamics {

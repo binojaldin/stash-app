@@ -8,7 +8,7 @@ import { compileContactsHelper, resolveContact, resolveContactsBatch } from './c
 import { generateWrapped, getAvailableYears } from './wrapped'
 import { runMessageAnalysis, getConversationSignals, getAnalysisProgress } from './messageAnalysis'
 import { computeClosenessScores, getClosenessScores, getClosenessRank } from './closenessRank'
-import { setApiKey, getAIStatus, searchConversationsAI, enrichTopicEras, enrichTopicErasV2, enrichMemoryMoments, interpretSearchQuery, summarizeConversation, generateRelationshipNarrative, generateAttachmentCaption, analyzeRelationshipDynamics } from './ai'
+import { setApiKey, getAIStatus, searchConversationsAI, enrichTopicEras, enrichTopicErasV2, enrichMemoryMoments, interpretSearchQuery, summarizeConversation, generateRelationshipNarrative, generateAttachmentCaption, analyzeRelationshipDynamics, conversationalSearch } from './ai'
 import type { TopicEraSummaryInput, TopicEraContextInput, MemoryMomentSummaryInput } from './ai'
 import { getCachedAnalytics, setCachedAnalytics, getMessageCountSignal, yieldEventLoop, invalidateSignalCache } from './analyticsCache'
 import { Worker } from 'worker_threads'
@@ -643,7 +643,42 @@ function setupIpc(): void {
         return executeSearchIntent(intent, chatName)
       }
     } catch { /* fall through */ }
-    // 3. Fallback: literal FTS search
+    // 3. Conversational AI search (for any question)
+    if (getAIStatus().configured) {
+      try {
+        console.log(`[Search] Conversational AI search for: "${query}"`)
+        const stashDb = initDb()
+        // Build name resolver from resolved_names
+        const nameMap = new Map<string, string>()
+        try { const rows = stashDb.prepare('SELECT chat_identifier, resolved_name FROM resolved_names').all() as { chat_identifier: string; resolved_name: string }[]; for (const r of rows) nameMap.set(r.chat_identifier, r.resolved_name) } catch {}
+        const resolve = (id: string) => nameMap.get(id) || id
+
+        // Top contacts from closeness
+        const closeness = getClosenessScores()
+        const topContacts = closeness.slice(0, 10).map(c => ({ name: resolve(c.chat_identifier), messages: Math.round(c.total_score), tier: c.tier }))
+
+        // Quick FTS search for keywords
+        const keywords = query.toLowerCase().split(/\s+/).filter(w => w.length > 3).slice(0, 3)
+        const ftsResults = keywords.length > 0 ? searchMessages(keywords.join(' '), chatName, 10) : []
+        const recentResults = ftsResults.map(r => ({ contact: resolve(r.chat_name), snippet: r.body.slice(0, 80), date: r.sent_at.slice(0, 10) }))
+
+        // Signal summary
+        const signals = getConversationSignals()
+        const signalSummary = (signals as { chat_identifier: string; laugh_count: number; avg_heat: number; emoji_rate: number; positive_rate: number }[]).slice(0, 15).map(s => ({
+          contact: resolve(s.chat_identifier), laughs: s.laugh_count, heat: Math.round(s.avg_heat * 10) / 10, emoji: Math.round(s.emoji_rate), sentiment: Math.round(s.positive_rate)
+        }))
+
+        const aiResult = await conversationalSearch(query, {
+          topContacts, recentSearchResults: recentResults, signalSummary,
+          globalStats: { totalMessages: 0, totalContacts: closeness.length, oldestMessage: '' }
+        })
+        if (aiResult) {
+          return { type: 'conversational' as const, explanation: 'AI-powered answer', answer: aiResult.answer, sources: aiResult.sources, followUp: aiResult.followUp }
+        }
+      } catch (err) { console.error('[Search] Conversational search failed:', err) }
+    }
+
+    // 4. Fallback: literal FTS search
     const results = searchMessages(query, chatName, 30)
     return { type: 'messages', explanation: `Showing messages matching "${query}"`, messages: results }
   })
