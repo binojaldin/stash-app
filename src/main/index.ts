@@ -17,6 +17,11 @@ import { Worker } from 'worker_threads'
 import { copyFileSync, existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
 import { extname } from 'path'
 
+process.on('uncaughtException', (err: NodeJS.ErrnoException) => {
+  if (err.message?.includes('EPIPE') || err.code === 'EPIPE') return
+  console.error('[FATAL]', err)
+})
+
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
 let isQuitting = false
