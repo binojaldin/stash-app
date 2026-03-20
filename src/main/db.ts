@@ -1444,6 +1444,16 @@ export function getTopicEras(): { chapters: TopicChapter[] } {
   const chapters: TopicChapter[] = []
   try {
     const d = initDb()
+    // One-time: clear stale AI cache to force fresh topic era labels
+    try {
+      const meta = d.prepare("SELECT value FROM _meta WHERE key = 'topic_era_cache_cleared_v3'").get() as { value: string } | undefined
+      if (!meta) {
+        const { join: jn } = require('path'); const { app: eApp } = require('electron'); const { unlinkSync: ul, existsSync: ex } = require('fs')
+        const cp = jn(eApp.getPath('userData'), 'ai-cache', 'enrichment-cache.json')
+        if (ex(cp)) { ul(cp); console.log('[TopicEras] Cleared stale AI cache') }
+        d.prepare("INSERT OR REPLACE INTO _meta (key, value) VALUES ('topic_era_cache_cleared_v3', '1')").run()
+      }
+    } catch {}
     const hasMessages = (d.prepare('SELECT COUNT(*) as c FROM messages').get() as { c: number }).c
     if (hasMessages < 200) return { chapters }
 
@@ -2478,8 +2488,8 @@ function cleanMessageText(text: string): string {
   clean = clean.replace(/www\.\S+/gi, '')
   clean = clean.replace(/\S+@\S+\.\S+/g, '')
   clean = clean.replace(/\+?\d[\d\s\-().]{7,}/g, '')
-  clean = clean.replace(/^(Liked|Loved|Laughed at|Emphasized|Questioned|Disliked)\s+".*"$/i, '')
-  clean = clean.replace(/^(Liked|Loved|Laughed at|Emphasized|Questioned|Disliked)\s+an?\s+(image|attachment|audio message)/i, '')
+  // Strip ALL iMessage tapback/reaction descriptions (system-generated, always short)
+  if (/^(Liked|Loved|Laughed at|Emphasized|Questioned|Disliked)\s+("|\u201c|an?\s)/i.test(clean) && clean.length < 120) return ''
   clean = clean.replace(/@\w+/g, '')
   return clean.trim()
 }
@@ -2848,11 +2858,17 @@ export function getBehavioralPatterns(): BehavioralPatterns {
     }
     r.vocabularySize = wordFreq.size
     r.avgWordLength = totalWordCount > 0 ? Math.round((totalWordLen / totalWordCount) * 10) / 10 : 0
-    r.rareWords = [...wordFreq.entries()].filter(([, v]) => v.count >= 5 && v.chats.size <= 2).sort((a, b) => b[1].count - a[1].count).slice(0, 10).map(([word, v]) => ({ word, count: v.count, conversations: v.chats.size }))
+    // Filter contact names from rare words
+    const vocabNameFilter = new Set<string>()
+    try { for (const n of d.prepare('SELECT DISTINCT chat_name FROM messages WHERE chat_name IS NOT NULL').all() as { chat_name: string }[]) for (const p of n.chat_name.replace(/[^a-zA-Z\s]/g, ' ').toLowerCase().split(/\s+/)) if (p.length >= 3) vocabNameFilter.add(p) } catch {}
+    try { for (const n of d.prepare('SELECT resolved_name FROM resolved_names').all() as { resolved_name: string }[]) for (const p of n.resolved_name.toLowerCase().split(/\s+/)) if (p.length >= 3) vocabNameFilter.add(p) } catch {}
+    r.rareWords = [...wordFreq.entries()].filter(([word, v]) => v.count >= 5 && v.chats.size <= 2 && !vocabNameFilter.has(word)).sort((a, b) => b[1].count - a[1].count).slice(0, 10).map(([word, v]) => ({ word, count: v.count, conversations: v.chats.size }))
   } catch {}
   try {
     // 2. Repeated messages
-    r.repeatedMessages = (d.prepare(`SELECT LOWER(TRIM(body)) as normalized, COUNT(DISTINCT chat_name) as recipients, COUNT(*) as total FROM messages WHERE is_from_me = 1 AND length(body) > 20 AND length(body) < 200 GROUP BY normalized HAVING recipients >= 2 AND total >= 3 ORDER BY recipients DESC LIMIT 10`).all() as { normalized: string; recipients: number; total: number }[]).map(row => ({ body: row.normalized.slice(0, 80), recipients: row.recipients, count: row.total }))
+    r.repeatedMessages = (d.prepare(`SELECT LOWER(TRIM(body)) as normalized, COUNT(DISTINCT chat_name) as recipients, COUNT(*) as total FROM messages WHERE is_from_me = 1 AND length(body) > 20 AND length(body) < 200 GROUP BY normalized HAVING recipients >= 2 AND total >= 3 ORDER BY recipients DESC LIMIT 20`).all() as { normalized: string; recipients: number; total: number }[])
+      .filter(row => !/^(liked|loved|laughed at|emphasized|questioned|disliked)\s/i.test(row.normalized) && row.normalized.length >= 25)
+      .slice(0, 10).map(row => ({ body: row.normalized.slice(0, 80), recipients: row.recipients, count: row.total }))
   } catch {}
   try {
     // 3. Humor
