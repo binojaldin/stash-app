@@ -1448,7 +1448,7 @@ export function getTopicEras(): { chapters: TopicChapter[] } {
     `).all() as { year: number; quarter: number; chat_name: string; body: string }[]
 
     // System artifacts + contact name filter
-    const SYSTEM_ARTIFACTS = new Set(['image','images','video','videos','photo','photos','render','rendered','renderedimage','renderedvideo','screen','screenshot','attachment','attachments','liked','loved','laughed','emphasized','questioned','fullsizerender','fullsizeoutput','fullsize','img','dsc','mov','heic','jpeg','png','gif','mp4','pdf','brandlogo','brandlogoimage','tiktok','instagram','preview','sticker'])
+    const SYSTEM_ARTIFACTS = new Set(['image','images','video','videos','photo','photos','render','rendered','renderedimage','renderedvideo','screen','screenshot','attachment','attachments','liked','loved','laughed','emphasized','questioned','fullsizerender','fullsizeoutput','fullsize','img','dsc','mov','heic','jpeg','png','gif','mp4','pdf','brandlogo','brandlogoimage','tiktok','instagram','preview','sticker','wniab','tkk'])
     const chatNames = new Set<string>()
     try {
       const names = d.prepare('SELECT DISTINCT chat_name FROM messages WHERE chat_name IS NOT NULL').all() as { chat_name: string }[]
