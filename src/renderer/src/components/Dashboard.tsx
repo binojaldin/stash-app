@@ -748,7 +748,7 @@ function MemoryCard({ moments, chatNameMap }: { moments: MemoryMoment[]; chatNam
   )
 }
 
-type TopicChapter = { startYear: number; endYear: number; topicLabel: string; keywords: string[]; strengthScore: number }
+type TopicChapter = { startYear: number; endYear: number; startMonth?: number; endMonth?: number; topicLabel: string; keywords: string[]; strengthScore: number }
 
 function TopicErasCard({ chapters, aiEnhanced }: { chapters: TopicChapter[]; aiEnhanced?: boolean }): JSX.Element | null {
   if (chapters.length < 1) return null
@@ -770,13 +770,18 @@ function TopicErasCard({ chapters, aiEnhanced }: { chapters: TopicChapter[]; aiE
                 {!isLast && <div style={{ width: 1, flex: 1, background: 'rgba(232,96,74,0.15)', marginTop: 4 }} />}
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontFamily: "'Unbounded', sans-serif", fontWeight: 200, fontSize: 16, color: '#1A1A1A', lineHeight: 1.3, marginBottom: 2 }}>
-                  {ch.topicLabel} Era
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                  <div style={{ fontFamily: "'Unbounded', sans-serif", fontWeight: 200, fontSize: 16, color: '#1A1A1A', lineHeight: 1.3 }}>
+                    {ch.topicLabel.endsWith(' Era') ? ch.topicLabel : ch.topicLabel}
+                  </div>
+                  {aiEnhanced && !ch.topicLabel.endsWith(' Era') && <span style={{ fontSize: 8, padding: '2px 6px', borderRadius: 4, background: 'rgba(127,119,221,0.12)', color: '#7F77DD', fontFamily: "'DM Sans'", letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 600 }}>AI</span>}
                 </div>
-                <div style={{ fontSize: 12, color: '#E8604A', fontFamily: "'DM Sans'", fontWeight: 500, marginBottom: 6 }}>{span}</div>
+                <div style={{ fontSize: 12, color: '#E8604A', fontFamily: "'DM Sans'", fontWeight: 500, marginBottom: 6 }}>
+                  {ch.startMonth ? (() => { const QN = ['', 'Q1', 'Q1', 'Q1', 'Q2', 'Q2', 'Q2', 'Q3', 'Q3', 'Q3', 'Q4', 'Q4', 'Q4']; return `${QN[ch.startMonth] || ''} ${ch.startYear}${ch.endYear !== ch.startYear || ch.endMonth !== ch.startMonth ? ` \u2013 ${QN[ch.endMonth || 12] || ''} ${ch.endYear}` : ''}` })() : span}
+                </div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
                   {ch.keywords.map(kw => (
-                    <span key={kw} style={{ fontSize: 11, color: '#6f6a65', background: '#F5F0EA', borderRadius: 4, padding: '2px 8px', fontFamily: "'DM Sans'" }}>{kw}</span>
+                    <span key={kw} style={{ fontSize: 10, color: '#2EC4A0', background: 'rgba(46,196,160,0.08)', borderRadius: 12, padding: '3px 10px', fontFamily: "'DM Sans'" }}>{kw}</span>
                   ))}
                 </div>
               </div>

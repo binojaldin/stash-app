@@ -1411,371 +1411,152 @@ export function getSocialGravity(): { individualYears: SocialGravityYear[]; grou
 export interface TopicChapter {
   startYear: number
   endYear: number
+  startMonth?: number
+  endMonth?: number
   topicLabel: string
   keywords: string[]
   strengthScore: number
 }
 
-// ── Topic Eras: signal-based theme detection ──
+// ── Topic Eras V3: quarter-level TF-IDF with AI labeling ──
 
-const TOPIC_STOPS = new Set([
-  // pronouns, articles, prepositions, conjunctions
-  'i','me','my','myself','we','our','ours','ourselves','you','your','yours','yourself','yourselves',
-  'he','him','his','himself','she','her','hers','herself','it','its','itself','they','them','their',
-  'theirs','themselves','what','which','who','whom','this','that','these','those','am','is','are',
-  'was','were','be','been','being','have','has','had','having','do','does','did','doing','a','an',
-  'the','and','but','if','or','because','as','until','while','of','at','by','for','with','about',
-  'against','between','through','during','before','after','above','below','to','from','up','down',
-  'in','out','on','off','over','under','again','further','then','once','here','there','when',
-  'where','why','how','all','both','each','few','more','most','other','some','such','no','nor',
-  'not','only','own','same','so','than','too','very','can','will','just','don','should',
-  'now','ain','aren','couldn','didn','doesn','hadn','hasn','haven','isn','mightn','mustn',
-  'needn','shan','shouldn','wasn','weren','won','wouldn',
-  // chat noise
-  'yeah','yea','yes','ok','okay','like','lol','haha','hahaha','ha','oh','ah','um','uh','hmm',
-  'gonna','gotta','wanna','idk','lmao','omg','brb','btw','tbh','imo','smh','nah','yep','nope',
-  'hey','hi','hello','bye','thanks','thank','sorry','please','good','great','nice','cool',
-  // ultra-common verbs / fillers
-  'got','get','go','going','went','come','came','know','think','said','say','see','look',
-  'want','need','let','make','made','take','took','thing','things','stuff','really','pretty',
-  'much','well','back','still','even','also','way','today','tomorrow','yesterday',
-  'one','two','three','right','would','could','might','actually','literally','basically',
-  'something','anything','nothing','everything','someone','anyone','everyone','people',
-  'guy','girl','day','week','month','year','tonight','morning','night','feel','lot','bit',
-  'sure','maybe','probably','already','though','thought','kind','keep','first','last',
-  'try','put','tell','told','give','gave','call','text','send','sent','message','chat',
-  'phone','pic','photo','video','link','app','wait','done','start','stop','never','always',
-  'every','enough','damn','shit','fuck','ass','hell','dude','bro','yo','sup','hehe','wow',
-  'aww','left','find','found','point','part','end','head','hand','set','world','life',
-  'play','run','move','live','bring','happen','write','sit','stand','lose','pay','meet',
-  'change','lead','understand','watch','follow','turn','leave','close','open','show',
-  'hear','seem','help','talk','read','ask','love','miss','hate','bad','best','worst',
-  'hard','easy','fun','funny','weird','crazy','new','old','big','little','long','real',
-  'whole','home','house','place','room','car','food','eat','dinner','lunch','drink',
-  'water','coffee','man','time','work','gonna','think','know','just','like','really',
-  'getting','looking','coming','doing','saying','making','taking','having','being',
-  'hahah','hahahaha','lmfao','soo','soooo','tho','rn','thats','dont','cant','wont',
-  'didnt','doesnt','isnt','wasnt','havent','wouldnt','couldnt','shouldnt','aint',
-  'ima','imma','til','bout','gon','tryna','kinda','sorta','lemme','trynna'
-])
+// Old TOPIC_STOPS, CONCEPT_MAP, DOMAIN_TOPICS, PHRASE_BLACKLIST removed (replaced by TEXT_STOPWORDS + tokenizeWords)
 
-// Concept clusters: related keywords → human-readable label
-const CONCEPT_MAP: [string, string[]][] = [
-  ['Golf', ['golf','tee','fairway','birdie','bogey','handicap','putter','wedge','driving range','par','clubhouse','nine holes','eighteen','back nine','front nine']],
-  ['Cycling', ['bike','cycling','ride','biking','peloton','strava','miles','cadence','pedal','velodrome','century ride']],
-  ['Running', ['running','marathon','half marathon','5k','10k','pace','splits','tempo run','trail run','treadmill','jogging']],
-  ['Fitness', ['gym','workout','lifting','weights','bench','squat','deadlift','crossfit','hiit','sets','reps','gains','protein','creatine','muscle']],
-  ['Surfing', ['surf','surfing','swell','waves','board','wetsuit','lineup','barrel','offshore']],
-  ['Skiing', ['ski','skiing','snowboard','powder','slope','moguls','chairlift','apres','resort']],
-  ['Hiking', ['hike','hiking','trail','summit','backpacking','elevation','campsite','switchback']],
-  ['Climbing', ['climbing','bouldering','belay','crag','route','v-grade','send','crimp']],
-  ['Tennis', ['tennis','racket','serve','volley','match point','deuce','forehand','backhand']],
-  ['Basketball', ['basketball','hoops','court','dunk','three pointer','pickup game','layup']],
-  ['Soccer', ['soccer','football','pitch','goal','match','league','premier league']],
-  ['Baseball', ['baseball','batting','pitcher','home run','inning','diamond','dugout']],
-  ['Fantasy Sports', ['fantasy','draft','waiver','roster','lineup','trade','sleeper','bust','matchup']],
-  ['Fishing', ['fishing','bass','trout','casting','lure','tackle','reel','catch','fly fishing']],
-  ['Travel', ['travel','flight','airport','hotel','airbnb','passport','trip','vacation','resort','itinerary','boarding pass']],
-  ['Camping', ['camping','tent','campfire','campground','rv','glamping','firewood','s\'mores']],
-  ['Music', ['guitar','bass','drums','band','rehearsal','gig','album','recording','studio','mixing','songwriting','setlist','amp','pedal','synth']],
-  ['Music Listening', ['spotify','playlist','album','concert','festival','tickets','venue','setlist','opener','headliner']],
-  ['Photography', ['photography','camera','lens','shoot','aperture','lightroom','editing','portrait','landscape']],
-  ['Gaming', ['gaming','game','xbox','playstation','nintendo','steam','fortnite','warzone','valorant','minecraft','controller','multiplayer','ranked','gg']],
-  ['Cooking', ['cooking','recipe','baking','kitchen','ingredient','meal prep','seasoning','grill','bbq','smoker','sous vide']],
-  ['Coding', ['code','coding','programming','github','deploy','api','database','frontend','backend','javascript','python','react','bug','debug','pull request','merge']],
-  ['Startup', ['startup','launch','funding','investor','pitch','mvp','product','users','growth','revenue','equity','valuation']],
-  ['Career', ['interview','resume','offer','salary','promotion','manager','meeting','deadline','quarterly','performance review','onboarding']],
-  ['Real Estate', ['house','apartment','mortgage','closing','realtor','listing','offer','inspection','escrow','rent','lease']],
-  ['Wedding', ['wedding','engaged','engagement','venue','reception','ceremony','bridesmaid','groomsman','registry','rehearsal dinner']],
-  ['Baby', ['baby','pregnant','pregnancy','nursery','stroller','diaper','ultrasound','due date','onesie','pediatrician']],
-  ['Pets', ['dog','puppy','cat','kitten','vet','walk','treats','fetch','leash','adoption']],
-  ['Crypto', ['crypto','bitcoin','ethereum','blockchain','wallet','nft','token','defi','mining','hodl']],
-  ['Investing', ['investing','stocks','portfolio','dividend','market','etf','401k','ira','broker','shares']],
-  ['School', ['class','professor','exam','midterm','final','homework','semester','campus','lecture','study','grade','gpa']],
-  ['Grad School', ['thesis','dissertation','advisor','research','phd','masters','defend','publish','journal','conference']],
-  ['Movies', ['movie','film','theater','cinema','director','trailer','screening','oscar','sequel','streaming']],
-  ['TV Shows', ['episode','season','series','binge','finale','premiere','showrunner','netflix','hbo']],
-  ['Reading', ['book','reading','novel','author','chapter','kindle','library','nonfiction','memoir','audiobook']],
-  ['Yoga', ['yoga','meditation','mindfulness','pose','mat','vinyasa','breathwork','chakra','zen']],
-  ['Martial Arts', ['martial arts','bjj','jiu jitsu','karate','boxing','sparring','belt','dojo','kickboxing','mma']],
-  ['Boating', ['boat','sailing','marina','dock','anchor','charter','yacht','catamaran','kayak']],
-  ['Cars', ['car','truck','engine','horsepower','turbo','exhaust','modification','track day','autocross','dyno']],
-  ['Fashion', ['outfit','style','brand','sneakers','drop','collection','designer','thrift','vintage']],
-  ['Art', ['painting','drawing','gallery','exhibition','canvas','sculpture','sketch','commission','mural']],
-  ['Podcast', ['podcast','episode','host','guest','listener','recording','mic','audio']],
-  ['Volunteer', ['volunteer','charity','donation','nonprofit','community service','fundraiser']],
-  ['Moving', ['moving','packing','boxes','new place','lease','movers','unpacking','neighborhood']],
-  ['Renovation', ['renovation','remodel','contractor','tile','flooring','paint','cabinet','plumbing','drywall']],
-  ['Gardening', ['garden','plant','soil','seeds','compost','harvest','tomato','herb','landscaping']],
-  ['Board Games', ['board game','catan','settlers','strategy','dice','tabletop','game night']],
-  ['D&D', ['dnd','d&d','dungeon','campaign','character','roll','dm','session','quest']],
-  ['Wine', ['wine','vineyard','tasting','cabernet','pinot','chardonnay','sommelier','bottle']],
-  ['Beer', ['beer','brewery','ipa','craft','hops','lager','stout','taproom','homebrew']],
-  ['Spirits', ['whiskey','bourbon','cocktail','bartender','neat','rocks','distillery','tequila','mezcal']],
-]
-
-// Domain → topic signal
-const DOMAIN_TOPICS: Record<string, string[]> = {
-  'spotify.com': ['music listening','spotify'],
-  'youtube.com': ['video','youtube'],
-  'youtu.be': ['video','youtube'],
-  'strava.com': ['fitness','strava','cycling','running'],
-  'zillow.com': ['real estate','house'],
-  'redfin.com': ['real estate','house'],
-  'airbnb.com': ['travel','airbnb'],
-  'github.com': ['coding','github'],
-  'stackoverflow.com': ['coding'],
-  'netflix.com': ['tv shows','streaming'],
-  'alltrails.com': ['hiking','trail'],
-  'soundcloud.com': ['music','soundcloud'],
-  'bandcamp.com': ['music','bandcamp'],
-  'twitch.tv': ['gaming','streaming'],
-  'espn.com': ['sports'],
-  'fantasy.espn.com': ['fantasy sports'],
-  'sleeper.com': ['fantasy sports'],
-  'yahoo.com/fantasy': ['fantasy sports'],
-}
+const _TOPIC_ERAS_UNUSED = 0 // placeholder to mark old code removal
 
 export function getTopicEras(): { chapters: TopicChapter[] } {
   const chapters: TopicChapter[] = []
   try {
     const d = initDb()
     const hasMessages = (d.prepare('SELECT COUNT(*) as c FROM messages').get() as { c: number }).c
-    if (hasMessages < 100) return { chapters }
+    if (hasMessages < 200) return { chapters }
 
     const currentYear = new Date().getFullYear()
 
-    // ── Build comprehensive name set ──
-    const nameTokens = new Set<string>()
-    try {
-      for (const table of ['messages', 'attachments']) {
-        try {
-          const rows = d.prepare(`SELECT DISTINCT chat_name FROM ${table} WHERE chat_name IS NOT NULL`).all() as { chat_name: string }[]
-          for (const r of rows) for (const p of r.chat_name.replace(/[^a-zA-Z\s]/g, ' ').toLowerCase().split(/\s+/)) if (p.length >= 2) nameTokens.add(p)
-        } catch { /* table may not exist */ }
-      }
-      const handles = d.prepare(`SELECT DISTINCT sender_handle FROM messages WHERE sender_handle IS NOT NULL`).all() as { sender_handle: string }[]
-      for (const r of handles) for (const p of r.sender_handle.replace(/[^a-zA-Z\s]/g, ' ').toLowerCase().split(/\s+/)) if (p.length >= 2) nameTokens.add(p)
-      // Resolve contact names via Swift helper if available
-      try {
-        const { compileContactsHelper, resolveContactsBatch } = require('./contacts')
-        compileContactsHelper()
-        const allHandleIds = [...new Set(handles.map(h => h.sender_handle))]
-        const resolved = resolveContactsBatch(allHandleIds) as Record<string, string>
-        for (const name of Object.values(resolved)) {
-          for (const p of name.replace(/[^a-zA-Z\s]/g, ' ').toLowerCase().split(/\s+/)) if (p.length >= 2) nameTokens.add(p)
-        }
-      } catch { /* contacts helper may not be available */ }
-    } catch { /* ignore */ }
+    // Step 1: Extract tokens per quarter
+    type QuarterKey = string // "2024-Q1"
+    const quarterTokens = new Map<QuarterKey, Map<string, { count: number; chats: Set<string> }>>()
 
-    // ── Synonym map: normalize variants to canonical form ──
-    const SYNONYMS: Record<string, string> = {}
-    for (const [label, kws] of CONCEPT_MAP) {
-      const canonical = kws[0]
-      for (const kw of kws) if (kw !== canonical && !kw.includes(' ')) SYNONYMS[kw] = canonical
-    }
-    // Common plural/verb forms
-    const simpleStem = (w: string): string => {
-      if (w.endsWith('ing') && w.length > 5) { const base = w.slice(0, -3); if (SYNONYMS[base]) return SYNONYMS[base]; return base }
-      if (w.endsWith('ies') && w.length > 4) return w.slice(0, -3) + 'y'
-      if (w.endsWith('es') && w.length > 4 && !w.endsWith('ses')) return w.slice(0, -2)
-      if (w.endsWith('s') && w.length > 4 && !w.endsWith('ss') && !w.endsWith('us')) return w.slice(0, -1)
-      return w
-    }
-    const normalize = (w: string): string => {
-      if (SYNONYMS[w]) return SYNONYMS[w]
-      const stemmed = simpleStem(w)
-      if (SYNONYMS[stemmed]) return SYNONYMS[stemmed]
-      return stemmed
-    }
-
-    // ── Token validation ──
-    const SYSTEM_PATTERNS = [
-      /^img[_-]?\d/i, /^dsc[_-]?\d/i, /^screenshot/i, /^fullsizerender/i,
-      /^image\d/i, /^photo\d/i, /^video\d/i, /^file\d/i, /^attachment/i,
-      /^[a-f0-9]{8,}$/i, /^[a-z]{1,2}\d{3,}/i, /^tmp/i, /^temp/i,
-      /^screen\s?shot/i, /^img$/i, /^mov$/i, /^jpeg$/i, /^heic$/i, /^png$/i,
-      /^\w*\d{4,}\w*$/, // tokens with 4+ consecutive digits
-    ]
-    const isGarbage = (w: string): boolean => {
-      if (w.length < 3 || w.length > 22) return true
-      if (/\d/.test(w)) return true // contains any digit
-      if (!/[aeiou]/i.test(w) && w.length > 3) return true // no vowels
-      if (/(.)\1{2,}/.test(w)) return true // repeated chars
-      if (/[A-Z]/.test(w) && /[a-z]/.test(w) && w !== w.toLowerCase()) return true // camelCase before lowering
-      for (const pat of SYSTEM_PATTERNS) if (pat.test(w)) return true
-      return false
-    }
-    const isValid = (w: string): boolean => {
-      if (w.length < 3) return false
-      if (TOPIC_STOPS.has(w)) return false
-      if (nameTokens.has(w)) return false
-      return true
-    }
-
-    // ── Collect signals per year with cross-chat + month tracking ──
-    type Signal = { count: number; chats: Set<string>; months: Set<string> }
-    const yearSignals = new Map<number, Map<string, Signal>>()
-    const addSig = (year: number, term: string, chat: string, month: string) => {
-      if (!yearSignals.has(year)) yearSignals.set(year, new Map())
-      const m = yearSignals.get(year)!
-      if (!m.has(term)) m.set(term, { count: 0, chats: new Set(), months: new Set() })
-      const s = m.get(term)!
-      s.count++; s.chats.add(chat); s.months.add(month)
-    }
-
-    // ── Signal 1: Message text ──
-    const msgRows = d.prepare(`
+    const rows = d.prepare(`
       SELECT CAST(strftime('%Y', sent_at) AS INTEGER) as year,
-             strftime('%Y-%m', sent_at) as month, chat_name, body
-      FROM messages WHERE body IS NOT NULL AND length(body) > 3
-    `).all() as { year: number; month: string; chat_name: string; body: string }[]
+        CASE WHEN CAST(strftime('%m', sent_at) AS INTEGER) <= 3 THEN 1
+             WHEN CAST(strftime('%m', sent_at) AS INTEGER) <= 6 THEN 2
+             WHEN CAST(strftime('%m', sent_at) AS INTEGER) <= 9 THEN 3
+             ELSE 4 END as quarter,
+        chat_name, body
+      FROM messages WHERE body IS NOT NULL AND length(body) > 10
+    `).all() as { year: number; quarter: number; chat_name: string; body: string }[]
 
-    for (const r of msgRows) {
+    for (const r of rows) {
       if (r.year < 2006 || r.year > currentYear) continue
+      const qk: QuarterKey = `${r.year}-Q${r.quarter}`
+      if (!quarterTokens.has(qk)) quarterTokens.set(qk, new Map())
+      const qmap = quarterTokens.get(qk)!
+      const tokens = tokenizeWords(r.body)
       const chat = r.chat_name || '__unknown'
-      const raw = r.body.toLowerCase()
-      const text = raw.replace(/[^a-z\s'-]/g, ' ')
-      const words = text.split(/\s+/).filter(w => w.length >= 3 && w.length <= 22 && !/\d/.test(w))
-
-      for (const w of words) {
-        if (!isValid(w)) continue
-        const norm = normalize(w)
-        if (norm.length >= 3 && isValid(norm)) addSig(r.year, norm, chat, r.month)
-      }
-      // Bigrams
-      for (let j = 0; j < words.length - 1; j++) {
-        if (!isValid(words[j]) || !isValid(words[j + 1])) continue
-        addSig(r.year, `${normalize(words[j])} ${normalize(words[j + 1])}`, chat, r.month)
-      }
-      // Link domains
-      const urls = raw.match(/https?:\/\/[^\s]+/gi) || []
-      for (const url of urls) {
-        try {
-          const domain = url.replace(/^https?:\/\//, '').split('/')[0].replace(/^www\./, '')
-          for (const [dom, topics] of Object.entries(DOMAIN_TOPICS)) {
-            if (domain.includes(dom.split('.')[0])) for (const t of topics) addSig(r.year, t, chat, r.month)
-          }
-        } catch { /* skip */ }
+      for (const t of tokens) {
+        if (!qmap.has(t)) qmap.set(t, { count: 0, chats: new Set() })
+        const entry = qmap.get(t)!
+        entry.count++
+        entry.chats.add(chat)
       }
     }
 
-    // ── Signal 2: Attachment filenames ──
-    try {
-      const attRows = d.prepare(`
-        SELECT CAST(strftime('%Y', created_at) AS INTEGER) as year,
-               strftime('%Y-%m', created_at) as month, chat_name, filename
-        FROM attachments WHERE filename IS NOT NULL
-      `).all() as { year: number; month: string; chat_name: string | null; filename: string }[]
-      for (const r of attRows) {
-        if (r.year < 2006 || r.year > currentYear) continue
-        const chat = r.chat_name || '__unknown'
-        const base = r.filename.replace(/\.[^.]+$/, '').toLowerCase()
-        if (isGarbage(base)) continue
-        const fnWords = base.replace(/[^a-z]/g, ' ').split(/\s+/)
-        for (const w of fnWords) {
-          if (w.length >= 4 && isValid(w) && !isGarbage(w)) addSig(r.year, normalize(w), chat, r.month)
-        }
-      }
-    } catch { /* ignore */ }
+    if (quarterTokens.size < 3) return { chapters }
 
-    // ── Filter: require multi-chat presence + minimum count ──
-    for (const [, sigs] of yearSignals) {
-      for (const [term, sig] of [...sigs.entries()]) {
-        if (sig.count < 5 || sig.chats.size < 2 || sig.months.size < 2) sigs.delete(term)
-      }
+    // Step 2: TF-IDF scoring per quarter
+    const totalQuarters = quarterTokens.size
+    const termQuarterPresence = new Map<string, number>()
+    for (const qmap of quarterTokens.values()) {
+      for (const term of qmap.keys()) termQuarterPresence.set(term, (termQuarterPresence.get(term) || 0) + 1)
     }
 
-    // ── Score per year ──
-    const globalTermYears = new Map<string, number>()
-    for (const sigs of yearSignals.values()) for (const term of sigs.keys()) globalTermYears.set(term, (globalTermYears.get(term) || 0) + 1)
-    const totalYearCount = yearSignals.size
-
-    const yearTopics = new Map<number, { term: string; score: number }[]>()
-    for (const [year, sigs] of [...yearSignals.entries()].sort((a, b) => a[0] - b[0])) {
+    const quarterScored = new Map<QuarterKey, { term: string; score: number }[]>()
+    for (const [qk, qmap] of [...quarterTokens.entries()].sort()) {
+      const totalTokens = [...qmap.values()].reduce((s, e) => s + e.count, 0)
+      if (totalTokens < 30) continue
       const scored: { term: string; score: number }[] = []
-      for (const [term, sig] of sigs) {
-        const chatW = Math.min(sig.chats.size, 5)
-        const monthW = Math.min(sig.months.size, 8) / 3
-        const termYrs = globalTermYears.get(term) || 1
-        const idf = Math.log((totalYearCount + 1) / termYrs)
-        const phraseW = term.includes(' ') ? 2.5 : 1
-        let conceptW = 1
-        for (const [, kws] of CONCEPT_MAP) { if (kws.includes(term)) { conceptW = 3; break } }
-        scored.push({ term, score: sig.count * chatW * monthW * idf * phraseW * conceptW })
+      for (const [term, { count, chats }] of qmap) {
+        if (count < 3 || chats.size < 2) continue
+        const tf = count / totalTokens
+        const presence = termQuarterPresence.get(term) || 1
+        // Skip terms in > 60% of quarters (too common)
+        if (presence / totalQuarters > 0.6) continue
+        const idf = Math.log((totalQuarters + 1) / presence)
+        const chatBreadth = Math.min(chats.size, 3)
+        scored.push({ term, score: tf * idf * chatBreadth * 1000 })
       }
       scored.sort((a, b) => b.score - a.score)
-      if (scored.length >= 3) yearTopics.set(year, scored.slice(0, 15))
+      if (scored.length >= 3) quarterScored.set(qk, scored.slice(0, 20))
     }
 
-    // ── Label from keywords ──
-    const labelFor = (keywords: string[]): string | null => {
-      let bestLabel = '', bestScore = 0
-      for (const [label, conceptKws] of CONCEPT_MAP) {
-        let score = 0
-        for (const kw of keywords) {
-          if (conceptKws.includes(kw)) score += 3
-          for (const ck of conceptKws) { if (kw.length >= 4 && ck.length >= 4 && (kw.includes(ck) || ck.includes(kw))) score += 1 }
-        }
-        if (score > bestScore) { bestScore = score; bestLabel = label }
-      }
-      if (bestScore >= 4) return bestLabel
-      // Strict fallback: only if top keyword is clean and long enough
-      const top = keywords[0]
-      if (top && top.length >= 5 && !top.includes(' ') && !TOPIC_STOPS.has(top) && !nameTokens.has(top) && /^[a-z]+$/.test(top)) {
-        return top.charAt(0).toUpperCase() + top.slice(1)
-      }
-      return null // signal too weak — skip era
-    }
+    // Step 3: Group adjacent quarters into eras by topic overlap
+    const sortedQuarters = [...quarterScored.keys()].sort()
+    if (sortedQuarters.length === 0) return { chapters }
 
-    // ── Build eras with stricter splitting ──
-    const sortedYears = [...yearTopics.keys()].sort((a, b) => a - b)
-    if (sortedYears.length === 0) return { chapters }
+    const topTerms = (qk: QuarterKey) => new Set(quarterScored.get(qk)!.slice(0, 10).map(t => t.term))
+    const parseQK = (qk: string) => { const [y, q] = qk.split('-Q'); return { year: parseInt(y), quarter: parseInt(q) } }
+    const quarterMonth = (q: number, which: 'start' | 'end') => which === 'start' ? (q - 1) * 3 + 1 : q * 3
 
-    const topTermSet = (year: number) => new Set(yearTopics.get(year)!.slice(0, 6).map(t => t.term))
+    let cur = { startQK: sortedQuarters[0], endQK: sortedQuarters[0], terms: topTerms(sortedQuarters[0]), scored: [...quarterScored.get(sortedQuarters[0])!.slice(0, 10)] }
 
-    let cur = { start: sortedYears[0], end: sortedYears[0], terms: topTermSet(sortedYears[0]), scored: [...yearTopics.get(sortedYears[0])!.slice(0, 8)] }
-
-    const flush = () => {
-      const kws = cur.scored.sort((a, b) => b.score - a.score).slice(0, 8).map(t => t.term)
-      if (kws.length < 3) return
-      const label = labelFor(kws)
-      if (!label) return
-      const strength = cur.scored.slice(0, 5).reduce((s, t) => s + t.score, 0)
-      if (strength < 50) return
-      // Deduplicate display keywords
-      const display: string[] = []
-      for (const kw of kws) {
-        if (display.length >= 5) break
-        if (!kw.includes(' ') && display.some(dk => dk.includes(kw))) continue
-        display.push(kw)
-      }
-      if (display.length < 2) return
-      chapters.push({ startYear: cur.start, endYear: cur.end, topicLabel: label, keywords: display, strengthScore: Math.round(strength) })
-    }
-
-    for (let i = 1; i < sortedYears.length; i++) {
-      const year = sortedYears[i]
-      const terms = topTermSet(year)
-      // Stricter: need 3+ overlap from top 6 to merge
+    const eras: typeof cur[] = []
+    for (let i = 1; i < sortedQuarters.length; i++) {
+      const qk = sortedQuarters[i]
+      const terms = topTerms(qk)
       const overlap = [...terms].filter(t => cur.terms.has(t)).length
       if (overlap >= 3) {
-        cur.end = year
+        cur.endQK = qk
         for (const t of terms) cur.terms.add(t)
-        cur.scored.push(...yearTopics.get(year)!.slice(0, 8))
+        cur.scored.push(...quarterScored.get(qk)!.slice(0, 10))
       } else {
-        flush()
-        cur = { start: year, end: year, terms: topTermSet(year), scored: [...yearTopics.get(year)!.slice(0, 8)] }
+        eras.push(cur)
+        cur = { startQK: qk, endQK: qk, terms: topTerms(qk), scored: [...quarterScored.get(qk)!.slice(0, 10)] }
       }
     }
-    flush()
+    eras.push(cur)
 
-    // Chronological order, cap at 8 eras max
-    chapters.sort((a, b) => a.startYear - b.startYear)
+    // Step 4: Extract top keywords per era and build chapters
+    for (const era of eras) {
+      const start = parseQK(era.startQK)
+      const end = parseQK(era.endQK)
+      // Must span 2+ quarters
+      const qSpan = (end.year - start.year) * 4 + (end.quarter - start.quarter) + 1
+      if (qSpan < 2) continue
+
+      // Deduplicate and rank keywords
+      const kwMap = new Map<string, number>()
+      for (const s of era.scored) kwMap.set(s.term, (kwMap.get(s.term) || 0) + s.score)
+      const keywords = [...kwMap.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([t]) => t)
+      if (keywords.length < 4) continue
+
+      const strength = [...kwMap.entries()].slice(0, 5).reduce((s, [, v]) => s + v, 0)
+      if (strength < 30) continue
+
+      // Fallback label: capitalize top keyword
+      const topKw = keywords[0]
+      const label = topKw.charAt(0).toUpperCase() + topKw.slice(1) + ' Era'
+
+      chapters.push({
+        startYear: start.year, endYear: end.year,
+        startMonth: quarterMonth(start.quarter, 'start'), endMonth: quarterMonth(end.quarter, 'end'),
+        topicLabel: label, keywords: keywords.slice(0, 6), strengthScore: Math.round(strength)
+      })
+    }
+
+    // Cap at 8, sort chronologically
+    chapters.sort((a, b) => a.startYear - b.startYear || (a.startMonth || 0) - (b.startMonth || 0))
     if (chapters.length > 8) chapters.splice(8)
-  } catch { /* fallback */ }
+  } catch (err) { console.error('[TopicEras] Error:', err) }
   return { chapters }
 }
+
+// Remove old constants (keep this line to prevent search issues)
+const _OLD_TOPIC_STOPS = null
+const _OLD_CONCEPT_MAP = null
+const _OLD_DOMAIN_TOPICS = null
+const _OLD_PHRASE_BLACKLIST = null
+// [Old topic eras code removed — replaced by V3 above]
 
 export interface MemoryMoment {
   type: 'on_this_day' | 'first_message' | 'biggest_day' | 'biggest_month' | 'streak' | 'intensity_echo' | 'comeback' | 'fading' | 'streak_anniversary' | 'heat_peak'
