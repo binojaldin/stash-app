@@ -224,6 +224,9 @@ const api = {
     shared_group_score: number; updated_at: string
   }[]> => ipcRenderer.invoke('get-closeness-scores', chatIdentifier),
   getClosenessRank: (chatIdentifier: string): Promise<number | null> => ipcRenderer.invoke('get-closeness-rank', chatIdentifier),
+  getProactiveItems: (): Promise<{ items: { id: number; chat_identifier: string; item_type: string; description: string; source_message: string; due_date: string | null; status: string; priority: number; contact_name: string }[] }> => ipcRenderer.invoke('get-proactive-items'),
+  dismissProactiveItem: (id: number): Promise<void> => ipcRenderer.invoke('dismiss-proactive-item', id),
+  completeProactiveItem: (id: number): Promise<void> => ipcRenderer.invoke('complete-proactive-item', id),
   onAnalysisProgress: (callback: (data: { analyzed: number; total: number }) => void): (() => void) => {
     const handler = (_event: unknown, data: { analyzed: number; total: number }): void => callback(data)
     ipcRenderer.on('analysis-progress', handler)

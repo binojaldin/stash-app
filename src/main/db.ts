@@ -200,6 +200,23 @@ export function initDb(): Database.Database {
     );
   `)
 
+  // ── V7: proactive intelligence ──
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS proactive_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      chat_identifier TEXT NOT NULL,
+      item_type TEXT NOT NULL,
+      description TEXT NOT NULL,
+      source_message TEXT,
+      detected_at TEXT NOT NULL,
+      due_date TEXT,
+      status TEXT DEFAULT 'active',
+      priority INTEGER DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_proactive_status ON proactive_items(status);
+    CREATE INDEX IF NOT EXISTS idx_proactive_chat ON proactive_items(chat_identifier);
+  `)
+
   // ── V6: relationship signals ──
   db.exec(`
     CREATE TABLE IF NOT EXISTS relationship_signals (

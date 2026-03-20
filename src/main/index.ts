@@ -9,6 +9,7 @@ import { generateWrapped, getAvailableYears } from './wrapped'
 import { runMessageAnalysis, getConversationSignals, getAnalysisProgress } from './messageAnalysis'
 import { computeClosenessScores, getClosenessScores, getClosenessRank } from './closenessRank'
 import { computeSignals, getSignals, getActiveAlerts } from './signalsEngine'
+import { scanForProactiveItems, getProactiveItems, dismissProactiveItem, completeProactiveItem } from './proactiveIntel'
 import { setApiKey, getAIStatus, searchConversationsAI, enrichTopicEras, enrichTopicErasV2, enrichMemoryMoments, interpretSearchQuery, summarizeConversation, generateRelationshipNarrative, generateAttachmentCaption, analyzeRelationshipDynamics, conversationalSearch } from './ai'
 import type { TopicEraSummaryInput, TopicEraContextInput, MemoryMomentSummaryInput } from './ai'
 import { getCachedAnalytics, setCachedAnalytics, getMessageCountSignal, yieldEventLoop, invalidateSignalCache } from './analyticsCache'
@@ -715,6 +716,9 @@ function setupIpc(): void {
   ipcMain.handle('get-signals', (_event, chatIdentifier?: string) => getSignals(chatIdentifier))
   ipcMain.handle('get-active-alerts', () => getActiveAlerts())
   ipcMain.handle('get-closeness-rank', (_event, chatIdentifier: string) => getClosenessRank(chatIdentifier))
+  ipcMain.handle('get-proactive-items', () => getProactiveItems())
+  ipcMain.handle('dismiss-proactive-item', (_event, id: number) => dismissProactiveItem(id))
+  ipcMain.handle('complete-proactive-item', (_event, id: number) => completeProactiveItem(id))
   ipcMain.handle('generate-wrapped', (_event, year: number) => generateWrapped(year))
   ipcMain.handle('get-wrapped-years', () => getAvailableYears())
   ipcMain.handle('open-imessage', (_event, handle: string) => { shell.openExternal(`imessage://${handle}`) })
@@ -842,6 +846,11 @@ app.whenReady().then(() => {
   setTimeout(() => {
     computeSignals().catch(e => console.error('[Signals] Failed:', e))
   }, 15000)
+
+  // Deferred proactive intelligence scan (30s after boot)
+  setTimeout(() => {
+    scanForProactiveItems().catch(e => console.error('[Proactive] Failed:', e))
+  }, 30000)
 
   // Hide to tray instead of quitting on window close
   mainWindow!.on('close', (e) => {

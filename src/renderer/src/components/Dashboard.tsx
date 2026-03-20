@@ -1627,6 +1627,21 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
     window.api.summarizeConversation(scopedPerson, contactName).then(r => { if (r) setConvoSummary(r) }).catch(() => {})
   }, [scopedPerson])
 
+  // ── Proactive Intelligence (must be before early return) ──
+  const [proactiveItems, setProactiveItems] = useState<{ id: number; chat_identifier: string; item_type: string; description: string; source_message: string; due_date: string | null; status: string; priority: number; contact_name: string }[]>([])
+  useEffect(() => {
+    window.api.getProactiveItems().then(r => setProactiveItems(r.items)).catch(() => {})
+    // Re-fetch after proactive scan has had time to run (35s boot + scan time)
+    const timer = setTimeout(() => { window.api.getProactiveItems().then(r => setProactiveItems(r.items)).catch(() => {}) }, 35000)
+    return () => clearTimeout(timer)
+  }, [])
+  const handleDismissProactive = (id: number): void => {
+    window.api.dismissProactiveItem(id).then(() => setProactiveItems(prev => prev.filter(i => i.id !== id))).catch(() => {})
+  }
+  const handleCompleteProactive = (id: number): void => {
+    window.api.completeProactiveItem(id).then(() => setProactiveItems(prev => prev.filter(i => i.id !== id))).catch(() => {})
+  }
+
   // ── Relationship view ──
   if (scopedPerson) {
     const pn = resolveName(scopedPerson, chatNameMap)
@@ -1891,7 +1906,7 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
                       : pd.laughsReceived > pd.laughsGenerated ? `${firstName} has the edge. Barely.`
                       : 'Perfectly matched humor. Rare.'}
                     emoji="🃏" accentColor="#2EC4A0" span={12} />
-                  <button onClick={(e) => { e.stopPropagation(); generateShareCard('JesterMaxxer', pd.laughsGenerated.toLocaleString(), 'laughs from you', `You've made ${firstName} laugh ${pd.laughsGenerated.toLocaleString()} times.`, firstName) }}
+                  <button onClick={(e) => { e.stopPropagation(); generateShareCard('JesterMaxxer', `${Math.round(pd.laughsGenerated / Math.max(pd.messageCount, 1) * 100)}%`, 'laugh rate from you', `You make ${firstName} laugh ${Math.round(pd.laughsGenerated / Math.max(pd.messageCount, 1) * 100)}% of the time.`, firstName) }}
                     style={{ position: 'absolute', top: 10, right: 36, width: 26, height: 26, background: 'rgba(46,196,160,0.1)', border: '0.5px solid rgba(46,196,160,0.3)', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1 }}>
                     <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><path d="M7 1l3 3-3 3M10 4H4a3 3 0 000 6h1" stroke="#2EC4A0" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>
                   </button>
@@ -2753,7 +2768,7 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
 
         {byAttachments[0] && (
           <WinnerCard award="Most files shared" name={resolveName(byAttachments[0].rawName, chatNameMap)}
-            stat={`${byAttachments[0].attachmentCount.toLocaleString()} attachments exchanged`}
+            stat={`${Math.round(byAttachments[0].attachmentCount / Math.max(byAttachments[0].messageCount, 1) * 100)}% media rate (${byAttachments[0].attachmentCount.toLocaleString()} files)`}
             flavor="Your most media-heavy relationship." emoji="📎" accentColor="#7F77DD" span={4} />
         )}
         {isStatsLoading ? <WarmingCard span={4} /> : topGroup ? (
@@ -3220,6 +3235,38 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
           </div>
         )}
 
+        {/* ZONE 0.57 — Follow Up (Proactive Intelligence) */}
+        {proactiveItems.length > 0 && (
+          <div style={{ gridColumn: 'span 6', borderRadius: 16, padding: '20px 22px', background: '#fff', border: '1px solid rgba(0,0,0,0.06)', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}>
+            <div style={{ fontSize: 10, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#E8604A', marginBottom: 4, fontFamily: "'DM Sans'", fontWeight: 600 }}>Follow up</div>
+            <div style={{ fontSize: 12, color: '#9a948f', marginBottom: 10, fontFamily: "'DM Sans'" }}>Commitments and plans from your conversations.</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {proactiveItems.slice(0, 6).map(item => {
+                const typeColor: Record<string, string> = { commitment: '#E8604A', event: '#7F77DD', follow_up: '#2EC4A0', birthday: '#fbbf24', plan: '#9a948f' }
+                const typeLabel: Record<string, string> = { commitment: 'Commitment', event: 'Event', follow_up: 'Follow up', birthday: 'Birthday', plan: 'Plan' }
+                const priorityDot = item.priority === 2 ? '#E8604A' : item.priority === 1 ? '#fbbf24' : '#c8c0ba'
+                return (
+                  <div key={item.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '6px 0', borderBottom: '1px solid rgba(0,0,0,0.03)' }}>
+                    <div style={{ width: 6, height: 6, borderRadius: '50%', background: priorityDot, marginTop: 5, flexShrink: 0 }} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 12, color: '#1A1A1A', lineHeight: 1.5, fontFamily: "'DM Sans'" }}>{item.description}</div>
+                      <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 3 }}>
+                        <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 3, background: `${typeColor[item.item_type] || '#9a948f'}15`, color: typeColor[item.item_type] || '#9a948f', fontFamily: "'DM Sans'", fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{typeLabel[item.item_type] || item.item_type}</span>
+                        <span onClick={() => onSelectConversation(item.chat_identifier)} style={{ fontSize: 10, color: '#2EC4A0', cursor: 'pointer', fontFamily: "'DM Sans'" }}>{item.contact_name}</span>
+                        {item.due_date && <span style={{ fontSize: 10, color: '#9a948f', fontFamily: "'DM Sans'" }}>{item.due_date.slice(5)}</span>}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 4, flexShrink: 0, marginTop: 2 }}>
+                      <button onClick={() => handleCompleteProactive(item.id)} style={{ width: 22, height: 22, borderRadius: '50%', border: '1px solid rgba(46,196,160,0.3)', background: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: '#2EC4A0', padding: 0 }} title="Done">✓</button>
+                      <button onClick={() => handleDismissProactive(item.id)} style={{ width: 22, height: 22, borderRadius: '50%', border: '1px solid rgba(0,0,0,0.08)', background: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: '#9a948f', padding: 0 }} title="Dismiss">✕</button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
         {/* ZONE 0.6 — Media Intelligence */}
         {globalMedia && (globalMedia.topSenders.length > 0 || globalMedia.topReceivers.length > 0) && (
           <div style={{ gridColumn: 'span 6', borderRadius: 16, padding: '20px 22px', background: '#fff', border: '1px solid rgba(0,0,0,0.06)', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}>
@@ -3227,23 +3274,31 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
             {globalMedia.topSenders.length > 0 && (
               <div style={{ marginBottom: 10 }}>
                 <div style={{ fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#9a948f', marginBottom: 4, fontFamily: "'DM Sans'" }}>Who sends you the most</div>
-                {globalMedia.topSenders.slice(0, 3).map((s, i) => (
-                  <div key={s.chatName} onClick={() => onSelectConversation(s.chatName)} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', cursor: 'pointer', fontSize: 12, fontFamily: "'DM Sans'" }}>
-                    <span style={{ color: '#1A1A1A', fontWeight: i === 0 ? 600 : 400 }}>{resolveName(s.chatName, chatNameMap)}</span>
-                    <span style={{ color: '#7F77DD' }}>{s.count.toLocaleString()}</span>
-                  </div>
-                ))}
+                {globalMedia.topSenders.slice(0, 3).map((s, i) => {
+                  const mc = chats.find(c => c.rawName === s.chatName)?.messageCount || 0
+                  const rate = mc > 0 ? Math.round(s.count / mc * 100) : 0
+                  return (
+                    <div key={s.chatName} onClick={() => onSelectConversation(s.chatName)} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', cursor: 'pointer', fontSize: 12, fontFamily: "'DM Sans'" }}>
+                      <span style={{ color: '#1A1A1A', fontWeight: i === 0 ? 600 : 400 }}>{resolveName(s.chatName, chatNameMap)}</span>
+                      <span style={{ color: '#7F77DD' }}>{mc > 0 ? `${rate}% media` : s.count.toLocaleString()}</span>
+                    </div>
+                  )
+                })}
               </div>
             )}
             {globalMedia.topReceivers.length > 0 && (
               <div style={{ marginBottom: 10 }}>
                 <div style={{ fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#9a948f', marginBottom: 4, fontFamily: "'DM Sans'" }}>Who you send the most to</div>
-                {globalMedia.topReceivers.slice(0, 3).map((s, i) => (
-                  <div key={s.chatName} onClick={() => onSelectConversation(s.chatName)} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', cursor: 'pointer', fontSize: 12, fontFamily: "'DM Sans'" }}>
-                    <span style={{ color: '#1A1A1A', fontWeight: i === 0 ? 600 : 400 }}>{resolveName(s.chatName, chatNameMap)}</span>
-                    <span style={{ color: '#E8604A' }}>{s.count.toLocaleString()}</span>
-                  </div>
-                ))}
+                {globalMedia.topReceivers.slice(0, 3).map((s, i) => {
+                  const mc = chats.find(c => c.rawName === s.chatName)?.messageCount || 0
+                  const rate = mc > 0 ? Math.round(s.count / mc * 100) : 0
+                  return (
+                    <div key={s.chatName} onClick={() => onSelectConversation(s.chatName)} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', cursor: 'pointer', fontSize: 12, fontFamily: "'DM Sans'" }}>
+                      <span style={{ color: '#1A1A1A', fontWeight: i === 0 ? 600 : 400 }}>{resolveName(s.chatName, chatNameMap)}</span>
+                      <span style={{ color: '#E8604A' }}>{mc > 0 ? `${rate}% media` : s.count.toLocaleString()}</span>
+                    </div>
+                  )
+                })}
               </div>
             )}
             {globalMedia.mediaHeavy.filter(m => m.ratio > 30).length > 0 && (
@@ -3291,7 +3346,7 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
         {/* ZONE 2 — Named winners */}
         {isStatsLoading ? <WarmingCard span={4} /> : topFunny && topFunny.laughsReceived > 0 ? (
           <WinnerCard award="Makes you laugh most" name={resolveName(topFunny.rawName, chatNameMap)}
-            stat={`${topFunny.laughsReceived.toLocaleString()} times — more than anyone`}
+            stat={`${Math.round(topFunny.laughsReceived / Math.max(topFunny.messageCount, 1) * 100)}% laugh rate (${topFunny.laughsReceived.toLocaleString()} total)`}
             flavor="Your funniest person."
             emoji="😂" accentColor="#2EC4A0" span={4} />
         ) : <div style={{ gridColumn: 'span 4' }} />}
@@ -3358,7 +3413,7 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
 
         {topAttach ? (
           <WinnerCard award="Most files shared" name={resolveName(topAttach.rawName, chatNameMap)}
-            stat={`${topAttach.attachmentCount.toLocaleString()} attachments`}
+            stat={`${Math.round(topAttach.attachmentCount / Math.max(topAttach.messageCount, 1) * 100)}% media rate (${topAttach.attachmentCount.toLocaleString()} files)`}
             flavor="Photos, memes, evidence — all of it."
             emoji="📎" accentColor="#7F77DD" span={4} />
         ) : null}
@@ -3369,7 +3424,7 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
             <TileLabel text="Who makes you laugh most" />
             {byLaughsReceived.filter(c => c.laughsReceived > 0).slice(0, 3).map((c, i) => (
               <LeaderRow key={c.rawName} rank={i + 1} name={resolveName(c.rawName, chatNameMap)}
-                sub={laughLabels[i] || ''} value={`${c.laughsReceived.toLocaleString()} laughs`} />
+                sub={laughLabels[i] || ''} value={`${Math.round(c.laughsReceived / Math.max(c.messageCount, 1) * 100)}% laugh rate`} />
             ))}
             {byLaughsReceived.every(c => c.laughsReceived === 0) && (
               <div style={{ color: '#9a948f', fontSize: 13, padding: '12px 0' }}>No laugh data for this period</div>
@@ -3383,7 +3438,7 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
             {byLaughsGenerated.filter(c => c.laughsGenerated > 0).slice(0, 3).map((c, i) => (
               <LeaderRow key={c.rawName} rank={i + 1} name={resolveName(c.rawName, chatNameMap)}
                 sub={i === 0 ? 'Your best audience' : i === 1 ? 'Close second' : 'Third place'}
-                value={`${c.laughsGenerated.toLocaleString()} laughs`} />
+                value={`${Math.round(c.laughsGenerated / Math.max(c.messageCount, 1) * 100)}% laugh rate`} />
             ))}
             {byLaughsGenerated.every(c => c.laughsGenerated === 0) && (
               <div style={{ color: '#9a948f', fontSize: 13, padding: '12px 0' }}>No laugh data for this period</div>

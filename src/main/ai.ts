@@ -625,6 +625,73 @@ export async function analyzeRelationshipDynamics(chatIdentifier: string, contac
   } catch { return null }
 }
 
+// ── Proactive Intelligence: detect commitments, plans, events ──
+
+export interface DetectedProactiveItem {
+  type: 'commitment' | 'event' | 'follow_up' | 'birthday' | 'plan'
+  description: string
+  dueDate: string | null
+  sourceMessage: string
+}
+
+// 24h cooldown per contact to avoid hammering the API
+const proactiveCooldowns = new Map<string, number>()
+const PROACTIVE_COOLDOWN_MS = 24 * 60 * 60 * 1000
+
+export async function detectProactiveItems(
+  chatIdentifier: string,
+  contactName: string,
+  messages: { body: string; is_from_me: number; sent_at: string }[]
+): Promise<{ items: DetectedProactiveItem[] } | null> {
+  if (!getAIStatus().configured) return null
+
+  // Cooldown check
+  const lastRun = proactiveCooldowns.get(chatIdentifier) || 0
+  if (Date.now() - lastRun < PROACTIVE_COOLDOWN_MS) return null
+  proactiveCooldowns.set(chatIdentifier, Date.now())
+
+  const formatted = messages.map(m =>
+    `[${m.sent_at.slice(0, 10)}] ${m.is_from_me ? 'You' : contactName}: ${m.body.slice(0, 200)}`
+  ).join('\n')
+
+  const system = `You scan iMessage conversations for actionable items the user should be reminded about.
+
+Look for:
+- COMMITMENTS: Things the user promised to do ("I'll send that over", "Let me check and get back to you")
+- EVENTS: Upcoming plans mentioned ("dinner Friday", "meeting next week", "concert on the 15th")
+- FOLLOW-UPS: Things the user should follow up on ("let me know how it goes", "keep me posted")
+- BIRTHDAYS: Any mention of upcoming birthdays
+- PLANS: Tentative plans that need confirmation ("we should grab coffee", "let's do that sometime")
+
+Today is ${new Date().toISOString().slice(0, 10)}.
+
+Return a JSON object:
+{
+  "items": [
+    {
+      "type": "commitment" | "event" | "follow_up" | "birthday" | "plan",
+      "description": "Short, actionable description (1 sentence)",
+      "dueDate": "YYYY-MM-DD" or null if no clear date,
+      "sourceMessage": "The exact message that triggered this (truncated to 100 chars)"
+    }
+  ]
+}
+
+Rules:
+- Only include items that are genuinely actionable
+- Skip vague pleasantries ("we should hang out sometime" with no follow-through)
+- Only include items from the last 14 days
+- Max 3 items per conversation
+- If no actionable items found, return {"items": []}
+- Return ONLY the JSON object`
+
+  const text = await callAnthropic(system, `Conversation with ${contactName}:\n\n${formatted}`, 600)
+  if (!text) return null
+  try {
+    return JSON.parse(text.trim().replace(/^```json?\n?/, '').replace(/\n?```$/, '')) as { items: DetectedProactiveItem[] }
+  } catch { return null }
+}
+
 // ── Conversation search (migrated from index.ts) ──
 
 export async function searchConversationsAI(
