@@ -407,22 +407,76 @@ function setupIpc(): void {
         // Contact resolution runs on main thread (needs compiled Swift binary, fast ~200ms)
         const t1 = Date.now()
         const chatNameMap: Record<string, string> = {}
+        const stashDb = initDb()
         try {
+          // Load cached resolutions first
+          const cachedNames = new Map<string, string>()
+          try {
+            const rows = stashDb.prepare('SELECT chat_identifier, resolved_name FROM resolved_names').all() as { chat_identifier: string; resolved_name: string }[]
+            for (const r of rows) cachedNames.set(r.chat_identifier, r.resolved_name)
+          } catch { /* table may not exist yet */ }
+
           compileContactsHelper()
           const handles = (stats.chatNames as { rawName: string }[]).map(c => c.rawName).filter(n => n && (n.startsWith('+') || n.includes('@')))
           if (handles.length > 0) resolveContactsBatch(handles)
+
+          // For chatNNNN identifiers, look up the associated handle via chat.db
+          let chatHandleMap = new Map<string, string>()
+          try {
+            const { homedir: hd } = require('os'); const { join: jn } = require('path'); const { existsSync: ex } = require('fs')
+            const chatDbPath = jn(hd(), 'Library/Messages/chat.db')
+            if (ex(chatDbPath)) {
+              const Database = require('better-sqlite3')
+              const chatDb = new Database(chatDbPath, { readonly: true })
+              const handleRows = chatDb.prepare(`SELECT c.chat_identifier as ci, h.id as handle FROM chat c JOIN chat_handle_join chj ON c.ROWID = chj.chat_id JOIN handle h ON chj.handle_id = h.ROWID WHERE c.chat_identifier LIKE 'chat%' AND (SELECT COUNT(DISTINCT chj2.handle_id) FROM chat_handle_join chj2 WHERE chj2.chat_id = c.ROWID) = 1`).all() as { ci: string; handle: string }[]
+              for (const r of handleRows) chatHandleMap.set(r.ci, r.handle)
+              chatDb.close()
+            }
+          } catch { /* ignore */ }
+
           for (const chat of stats.chatNames as { rawName: string; isGroup: boolean }[]) {
             const name = chat.rawName
             if (!name) continue
+            // Check cached resolution first
+            if (cachedNames.has(name)) {
+              chatNameMap[name] = cachedNames.get(name)!
+              continue
+            }
             if (name.startsWith('+') || name.includes('@')) {
               const resolved = resolveContact(name)
               chatNameMap[name] = (resolved && resolved !== name) ? resolved : name
             } else if (/^chat\d+/i.test(name) || name.includes(';')) {
-              chatNameMap[name] = chat.isGroup ? `Group · ${name.length > 20 ? 'chat' : name}` : 'Group chat'
+              if (!chat.isGroup) {
+                // Try resolving via handle lookup
+                const handle = chatHandleMap.get(name)
+                if (handle) {
+                  const resolved = resolveContact(handle)
+                  if (resolved && resolved !== handle) {
+                    chatNameMap[name] = resolved
+                    continue
+                  }
+                  chatNameMap[name] = handle // at least show the phone/email
+                  continue
+                }
+              }
+              chatNameMap[name] = chat.isGroup ? `Group · ${name.length > 20 ? 'chat' : name}` : name
             } else {
               chatNameMap[name] = name.startsWith('#') ? 'Group chat' : name
             }
           }
+
+          // Persist resolved names for next launch
+          try {
+            const insertName = stashDb.prepare('INSERT OR REPLACE INTO resolved_names (chat_identifier, resolved_name, source, updated_at) VALUES (?, ?, ?, ?)')
+            const tx = stashDb.transaction(() => {
+              for (const [id, resolved] of Object.entries(chatNameMap)) {
+                if (resolved !== id && !resolved.startsWith('Group') && resolved !== 'unknown' && resolved.length > 1) {
+                  insertName.run(id, resolved, 'contacts', new Date().toISOString())
+                }
+              }
+            })
+            tx()
+          } catch { /* ignore persist errors */ }
         } catch {
           for (const c of stats.chatNames as { rawName: string }[]) chatNameMap[c.rawName] = c.rawName
         }

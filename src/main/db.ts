@@ -200,6 +200,16 @@ export function initDb(): Database.Database {
     );
   `)
 
+  // ── V5: resolved contact names ──
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS resolved_names (
+      chat_identifier TEXT PRIMARY KEY,
+      resolved_name TEXT NOT NULL,
+      source TEXT NOT NULL DEFAULT 'contacts',
+      updated_at TEXT NOT NULL DEFAULT ''
+    );
+  `)
+
   // Backfill null chat_name from Messages chat.db
   // Skip if a previous attempt found 0 fixable records
   try {
