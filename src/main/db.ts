@@ -2865,6 +2865,18 @@ export interface MediaIntelligence {
   mediaHeavy: { chatName: string; mediaCount: number; messageCount: number; ratio: number }[]
 }
 
+export function getMessageContext(chatName: string, sentAt: string, windowSize = 20): { messages: { body: string; is_from_me: number; sent_at: string }[] } {
+  const d = initDb()
+  try {
+    const target = d.prepare('SELECT apple_date FROM messages WHERE chat_name = ? AND sent_at = ? LIMIT 1').get(chatName, sentAt) as { apple_date: number } | undefined
+    if (!target) return { messages: [] }
+    const half = Math.floor(windowSize / 2)
+    const before = d.prepare(`SELECT body, is_from_me, sent_at FROM messages WHERE chat_name = ? AND apple_date <= ? AND body IS NOT NULL ORDER BY apple_date DESC LIMIT ?`).all(chatName, target.apple_date, half) as { body: string; is_from_me: number; sent_at: string }[]
+    const after = d.prepare(`SELECT body, is_from_me, sent_at FROM messages WHERE chat_name = ? AND apple_date > ? AND body IS NOT NULL ORDER BY apple_date ASC LIMIT ?`).all(chatName, target.apple_date, half) as { body: string; is_from_me: number; sent_at: string }[]
+    return { messages: [...before.reverse(), ...after] }
+  } catch { return { messages: [] } }
+}
+
 export function getMediaIntelligence(chatIdentifier?: string): MediaIntelligence {
   const d = initDb()
   const r: MediaIntelligence = { topSenders: [], topReceivers: [], myMediaCount: 0, theirMediaCount: 0, totalMedia: 0, imageCount: 0, videoCount: 0, documentCount: 0, mediaByMonth: [], peakMediaMonth: null, mediaHeavy: [] }

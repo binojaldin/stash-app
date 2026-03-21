@@ -2,7 +2,7 @@ import { app, shell, BrowserWindow, ipcMain, dialog, Menu, Tray, nativeImage, po
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import { checkFullDiskAccess } from './messagesReader'
-import { initDb, searchAttachments, getStats, getFastStats, getTodayInHistory, getUsageStats, getMessagingNetwork, getAttachmentById, closeDb, hideChat, getHiddenChats, getConversationStats, getRelationshipTimeline, getSocialGravity, getTopicEras, getTopicEraContext, getMemoryMoments, searchMessagesAggregated, updateReactionCounts, invalidateLaughCache, searchMessages, getMessageIndexStatus, getVocabStats, getWordOrigins, detectSignalQuery, executeSearchIntent, getMessageSamples, getAttachmentContext, getSignificantPhotos, getRelationshipDynamics, getMonthlyAverages, getMediaIntelligence, detectNicknames, getBehavioralPatterns } from './db'
+import { initDb, searchAttachments, getStats, getFastStats, getTodayInHistory, getUsageStats, getMessagingNetwork, getAttachmentById, closeDb, hideChat, getHiddenChats, getConversationStats, getRelationshipTimeline, getSocialGravity, getTopicEras, getTopicEraContext, getMemoryMoments, searchMessagesAggregated, updateReactionCounts, invalidateLaughCache, searchMessages, getMessageIndexStatus, getVocabStats, getWordOrigins, detectSignalQuery, executeSearchIntent, getMessageSamples, getAttachmentContext, getSignificantPhotos, getRelationshipDynamics, getMonthlyAverages, getMediaIntelligence, detectNicknames, getBehavioralPatterns, getMessageContext } from './db'
 import { startIndexing, getIndexingProgress, fetchChatSummaries, saveChatPriorities, getSavedPriorityChats, resetIndexing, recoverAttachment, resolveNamesInBackground } from './indexer'
 import { compileContactsHelper, resolveContact, resolveContactsBatch } from './contacts'
 import { generateWrapped, getAvailableYears } from './wrapped'
@@ -581,21 +581,7 @@ function setupIpc(): void {
     return false
   })
 
-  ipcMain.handle('get-message-context', (_event, chatName: string, sentAt: string) => {
-    const d = initDb()
-    try {
-      const rows = d.prepare(`
-        SELECT body, is_from_me, sent_at FROM messages
-        WHERE chat_name = ?
-        AND apple_date BETWEEN
-          (SELECT apple_date FROM messages WHERE chat_name = ? AND sent_at = ? LIMIT 1) - 100000000000
-          AND
-          (SELECT apple_date FROM messages WHERE chat_name = ? AND sent_at = ? LIMIT 1) + 100000000000
-        ORDER BY apple_date LIMIT 20
-      `).all(chatName, chatName, sentAt, chatName, sentAt) as { body: string; is_from_me: number; sent_at: string }[]
-      return { messages: rows }
-    } catch { return { messages: [] } }
-  })
+  ipcMain.handle('get-message-context', (_event, chatName: string, sentAt: string) => getMessageContext(chatName, sentAt))
 
   ipcMain.handle('export-file', async (_event, id: number) => {
     const att = getAttachmentById(id)
