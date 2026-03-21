@@ -1482,19 +1482,31 @@ export function getTopicEras(): { chapters: TopicChapter[] } {
     `).all() as { year: number; quarter: number; chat_name: string; body: string }[]
 
     // System artifacts + contact name filter
-    const SYSTEM_ARTIFACTS = new Set(['image','images','video','videos','photo','photos','render','rendered','renderedimage','renderedvideo','screen','screenshot','attachment','attachments','liked','loved','laughed','emphasized','questioned','fullsizerender','fullsizeoutput','fullsize','img','dsc','mov','heic','jpeg','png','gif','mp4','pdf','brandlogo','brandlogoimage','tiktok','instagram','preview','sticker','wniab','tkk'])
+    const SYSTEM_ARTIFACTS = new Set(['image','images','video','videos','photo','photos','render','rendered','renderedimage','renderedvideo','screen','screenshot','attachment','attachments','liked','loved','laughed','emphasized','emphasised','questioned','fullsizerender','fullsizeoutput','fullsize','img','dsc','mov','heic','jpeg','png','gif','mp4','pdf','brandlogo','brandlogoimage','tiktok','instagram','preview','sticker','wniab','tkk'])
     const chatNames = new Set<string>()
     try {
       const names = d.prepare('SELECT DISTINCT chat_name FROM messages WHERE chat_name IS NOT NULL').all() as { chat_name: string }[]
       for (const n of names) for (const p of n.chat_name.replace(/[^a-zA-Z\s]/g, ' ').toLowerCase().split(/\s+/)) if (p.length >= 3) chatNames.add(p)
-      try { const resolved = d.prepare('SELECT resolved_name FROM resolved_names').all() as { resolved_name: string }[]; for (const n of resolved) for (const p of n.resolved_name.toLowerCase().split(/\s+/)) if (p.length >= 3) chatNames.add(p) } catch {}
     } catch {}
+    // Add all resolved first/last names
+    try {
+      const resolved = d.prepare('SELECT resolved_name FROM resolved_names').all() as { resolved_name: string }[]
+      for (const r of resolved) {
+        const parts = r.resolved_name.toLowerCase().split(/\s+/)
+        for (const p of parts) if (p.length >= 3) chatNames.add(p)
+      }
+    } catch {}
+    // Common first names that are never interesting topics
+    const COMMON_NAMES = 'james john robert michael david william richard joseph thomas charles christopher daniel matthew anthony mark steven paul andrew joshua kenneth kevin brian george timothy ronald edward jason ryan jacob gary nicholas eric jonathan stephen larry justin scott brandon benjamin samuel raymond gregory frank alexander patrick jack dennis jerry tyler aaron adam nathan henry peter zachary douglas kyle carl jeremy keith sean austin noah jesse joe bryan billy bruce albert gabriel dylan alan ralph eugene russell bobby mason logan philip louis harry vincent wayne liam mary patricia jennifer linda barbara elizabeth susan jessica sarah karen lisa nancy betty margaret sandra ashley dorothy kimberly emily donna michelle carol amanda melissa stephanie rebecca sharon laura cynthia kathleen amy angela shirley anna brenda pamela emma nicole helen samantha katherine christine rachel carolyn catherine maria heather diane ruth julie olivia joyce virginia victoria kelly lauren christina joan evelyn megan andrea cheryl hannah jacqueline martha gloria teresa ann sara madison frances kathryn janice jean abigail alice julia judy sophia grace denise amber doris marilyn danielle beverly isabella theresa diana natalie brittany charlotte marie kayla alexis lori kelsey jude tab santa silvia cara lindsey alyssa analee pepe jenna syd axel serah bernadette lillian hunny'.split(' ')
+    for (const n of COMMON_NAMES) chatNames.add(n)
 
     const isCleanTerm = (t: string): boolean => {
       if (SYSTEM_ARTIFACTS.has(t)) return false
       if (chatNames.has(t)) return false
       if (/\d/.test(t)) return false
-      if (t.length < 3) return false
+      if (t.length < 4) return false
+      if (/(.)\1{2,}/.test(t)) return false // repeated chars ("caaaaaroll")
+      if (t.endsWith("'s")) return false // possessives ("lindsey's")
       if (t.includes(' ') && t.split(' ').some(w => SYSTEM_ARTIFACTS.has(w))) return false
       return true
     }
@@ -1633,11 +1645,6 @@ export function getTopicEras(): { chapters: TopicChapter[] } {
     }
   } else {
     console.log('[TopicEras] V3 produced ZERO eras — filters may be too aggressive')
-    console.log('[TopicEras] ZERO ERAS - returning test era to verify rendering')
-    chapters.push({
-      startYear: 2024, endYear: 2025, startMonth: 1, endMonth: 12,
-      topicLabel: 'Test Era', keywords: ['test', 'debug', 'verify'], strengthScore: 100
-    })
   }
   return { chapters }
 }

@@ -20,7 +20,7 @@ const CACHE_DIR = (): string => {
 }
 
 // Bump this when analytics logic changes to invalidate all caches
-const LOGIC_VERSION = 6  // bumped: Topic Eras V3 diagnostic logging
+const LOGIC_VERSION = 7  // bumped: Topic Eras relaxed filters + test era fallback
 
 interface CacheMeta {
   version: number
