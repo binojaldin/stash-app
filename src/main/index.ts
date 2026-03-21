@@ -11,7 +11,7 @@ import { computeClosenessScores, getClosenessScores, getClosenessRank } from './
 import { computeSignals, getSignals, getActiveAlerts } from './signalsEngine'
 import { scanForProactiveItems, getProactiveItems, dismissProactiveItem, completeProactiveItem } from './proactiveIntel'
 import { setApiKey, getAIStatus, searchConversationsAI, enrichTopicEras, enrichTopicErasV2, enrichMemoryMoments, interpretSearchQuery, summarizeConversation, generateRelationshipNarrative, generateAttachmentCaption, analyzeRelationshipDynamics, conversationalSearch, parseSearchPlan } from './ai'
-import { executeSearchV2 } from './searchV2'
+import { executeSearchV2, executeRelationshipSearch } from './searchV2'
 import type { SearchPlan } from './searchV2'
 import type { TopicEraSummaryInput, TopicEraContextInput, MemoryMomentSummaryInput } from './ai'
 import { getCachedAnalytics, setCachedAnalytics, getMessageCountSignal, yieldEventLoop, invalidateSignalCache } from './analyticsCache'
@@ -776,6 +776,10 @@ function setupIpc(): void {
       originalQuery: query
     }
     return executeSearchV2(fallbackPlan, localChatNameMap)
+  })
+
+  ipcMain.handle('execute-relationship-search', async (_event, query: string, chatIdentifier: string, contactName: string) => {
+    return executeRelationshipSearch(query, chatIdentifier, contactName)
   })
 
   ipcMain.handle('refresh-reactions', () => { updateReactionCounts() })
