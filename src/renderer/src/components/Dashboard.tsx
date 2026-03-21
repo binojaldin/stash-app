@@ -3348,33 +3348,6 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
       {/* Global relationship insight grid */}
       <div data-surface="relationship" style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 14 }}>
 
-        {/* ZONE 0 — Inner Circle */}
-        {closenessData.length > 0 && (() => {
-          const inner = closenessData.filter(c => c.tier === 'inner_circle').length
-          const close = closenessData.filter(c => c.tier === 'close').length
-          const regular = closenessData.filter(c => c.tier === 'regular').length
-          const top5 = closenessData.slice(0, 5)
-          return (
-            <div style={{ gridColumn: 'span 6', borderRadius: 16, padding: '20px 22px', background: '#fff', border: '1px solid rgba(0,0,0,0.06)', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}>
-              <div style={{ fontSize: 10, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#2EC4A0', marginBottom: 12, fontFamily: "'DM Sans'", fontWeight: 600 }}>Your inner circle</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {top5.map((c, i) => (
-                  <div key={c.chat_identifier} onClick={() => onSelectConversation(c.chat_identifier)}
-                    style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', padding: '4px 0', borderBottom: i < top5.length - 1 ? '1px solid rgba(0,0,0,0.04)' : 'none' }}>
-                    <span style={{ width: 18, fontSize: 11, color: i === 0 ? '#2EC4A0' : '#c8c0ba', fontWeight: 600, fontFamily: "'DM Sans'" }}>{i + 1}</span>
-                    <span style={{ flex: 1, fontSize: 13, color: '#1A1A1A', fontWeight: i === 0 ? 600 : 400, fontFamily: "'DM Sans'", overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{resolveName(c.chat_identifier, chatNameMap)}</span>
-                    <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 4, background: `${tierColor(c.tier)}15`, color: tierColor(c.tier), fontFamily: "'DM Sans'", fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{formatTier(c.tier)}</span>
-                    <span style={{ fontSize: 11, color: '#9a948f', fontFamily: "'DM Sans'", minWidth: 28, textAlign: 'right' }}>{Math.round(c.total_score)}</span>
-                  </div>
-                ))}
-              </div>
-              <div style={{ fontSize: 10, color: '#9a948f', marginTop: 10, fontFamily: "'DM Sans'" }}>
-                {inner > 0 ? `${inner} inner circle` : ''}{inner > 0 && close > 0 ? ' · ' : ''}{close > 0 ? `${close} close` : ''}{(inner > 0 || close > 0) && regular > 0 ? ' · ' : ''}{regular > 0 ? `${regular} regular` : ''}
-              </div>
-            </div>
-          )
-        })()}
-
         {/* ZONE 0.5 — Messaging Pulse */}
         {globalMonthly && globalMonthly.months.length >= 6 && (() => {
           const recent = globalMonthly.months.slice(-12)
