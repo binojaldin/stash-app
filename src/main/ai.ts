@@ -663,7 +663,7 @@ Given a query, extract ALL dimensions:
   "attachmentTypes": [],
   "speaker": "me" | "them" | "both",
   "sort": "relevance" | "recent" | "oldest",
-  "answerMode": "results" | "summary" | "results+summary" | "ranking",
+  "answerMode": "results" | "summary" | "results+summary" | "ranking" | "temporal",
   "confidence": 0.0-1.0
 }
 
@@ -675,6 +675,8 @@ Rules:
 - If the query is just a word/phrase with no other filters, set keywords to that phrase, everything else null/default.
 - "who did I talk to most" / "most active" / "top conversations" / "rank by" → answerMode = "ranking", keywords = [], modalities = "messages"
 - Any query asking to RANK or find the MOST/TOP/BIGGEST when asking about people → answerMode = "ranking"
+- "when did I first talk to..." / "when was the first time..." / "how long have I been talking to..." → answerMode = "temporal"
+- "when did we last..." / "last time I talked to..." → answerMode = "temporal"
 - confidence: 0.9+ if person and topic are clear. 0.5-0.8 if ambiguous.
 
 Return ONLY the JSON object.`

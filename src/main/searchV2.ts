@@ -27,7 +27,7 @@ export interface SearchPlan {
   attachmentTypes: string[]
   speaker: 'me' | 'them' | 'both'
   sort: 'relevance' | 'recent' | 'oldest'
-  answerMode: 'results' | 'summary' | 'results+summary' | 'ranking'
+  answerMode: 'results' | 'summary' | 'results+summary' | 'ranking' | 'temporal'
   confidence: number
   originalQuery: string
 }
@@ -108,13 +108,20 @@ export async function executeSearchV2(
         GROUP BY chat_name ORDER BY msg_count DESC LIMIT 15
       `).all(...params) as { chat_name: string; msg_count: number }[]
 
-      console.log(`[SearchV2] Ranking: ${rows.length} contacts (${Date.now() - t0}ms)`)
+      const filtered = rows.filter(r => {
+        const name = resolve(r.chat_name)
+        if (name === r.chat_name && (r.chat_name.startsWith('+') || /^chat\d+/.test(r.chat_name) || /^[a-f0-9]{8,}/i.test(r.chat_name))) return false
+        if (name === 'Unknown' || name === 'unknown') return false
+        return true
+      })
+
+      console.log(`[SearchV2] Ranking: ${filtered.length} contacts (${rows.length} raw, ${Date.now() - t0}ms)`)
       return {
         plan,
         sections: {
           messages: [],
           attachments: [],
-          conversations: rows.map(r => ({
+          conversations: filtered.map(r => ({
             chat_name: r.chat_name,
             contact_name: resolve(r.chat_name),
             messageCount: r.msg_count,
@@ -124,10 +131,57 @@ export async function executeSearchV2(
           })),
           summary: null
         },
-        totalResults: rows.length,
+        totalResults: filtered.length,
         searchTimeMs: Date.now() - t0
       }
     } catch (err) { console.error('[SearchV2] Ranking error:', err) }
+  }
+
+  // RETRIEVER 0b: Temporal query (short-circuit — "when did I first talk to...")
+  if (plan.answerMode === 'temporal' && plan.peopleIdentifiers.length > 0) {
+    try {
+      const target = plan.peopleIdentifiers[0]
+      const contactName = resolve(target)
+      const first = d.prepare(`SELECT MIN(sent_at) as d FROM messages WHERE chat_name = ?`).get(target) as { d: string } | undefined
+      const last = d.prepare(`SELECT MAX(sent_at) as d FROM messages WHERE chat_name = ?`).get(target) as { d: string } | undefined
+      const total = (d.prepare(`SELECT COUNT(*) as c FROM messages WHERE chat_name = ?`).get(target) as { c: number }).c
+
+      const firstDate = first?.d ? new Date(first.d).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : 'unknown'
+      const lastDate = last?.d ? new Date(last.d).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : 'unknown'
+
+      const firstMessages = d.prepare(`
+        SELECT body, is_from_me, sent_at FROM messages
+        WHERE chat_name = ? ORDER BY apple_date ASC LIMIT 5
+      `).all(target) as { body: string; is_from_me: number; sent_at: string }[]
+
+      console.log(`[SearchV2] Temporal: ${contactName} first=${firstDate} last=${lastDate} (${Date.now() - t0}ms)`)
+      return {
+        plan,
+        sections: {
+          messages: firstMessages.map(m => ({
+            body: m.body.slice(0, 300),
+            chat_name: target,
+            contact_name: contactName,
+            is_from_me: m.is_from_me === 1,
+            sent_at: m.sent_at,
+            matchReason: 'first messages',
+            relevanceScore: 1.0
+          })),
+          attachments: [],
+          conversations: [{
+            chat_name: target,
+            contact_name: contactName,
+            messageCount: total,
+            matchingMessages: total,
+            dateRange: `${firstDate} — ${lastDate}`,
+            preview: `First message: ${firstDate} · ${total.toLocaleString()} messages total`
+          }],
+          summary: `You first talked to ${contactName} on ${firstDate}. Your most recent message was ${lastDate}. You've exchanged ${total.toLocaleString()} messages total.`
+        },
+        totalResults: firstMessages.length + 1,
+        searchTimeMs: Date.now() - t0
+      }
+    } catch (err) { console.error('[SearchV2] Temporal error:', err) }
   }
 
   const [messageResults, attachmentResults, conversationResults] = await Promise.all([
@@ -311,6 +365,50 @@ export async function executeSearchV2(
           })
         }
       } catch (err) { console.log('[SearchV2] Attachment search error:', err) }
+
+      // B. Context-aware: find attachments near messages that match keywords
+      const allKw = [...plan.keywords, ...(plan.topic ? [plan.topic] : []), ...plan.semanticExpansions]
+      if (allKw.length > 0 && results.length < 20) {
+        try {
+          const likeClauses = allKw.slice(0, 5).map(() => 'm.body LIKE ?').join(' OR ')
+          const likeParams = allKw.slice(0, 5).map(k => `%${k}%`)
+
+          let sql = `
+            SELECT DISTINCT a.id, a.filename, a.chat_name, a.created_at,
+                   a.thumbnail_path, a.is_image, a.ocr_text,
+                   m.body as nearby_message
+            FROM messages m
+            JOIN attachments a ON a.chat_name = m.chat_name
+              AND ABS(julianday(a.created_at) - julianday(m.sent_at)) < 0.01
+            WHERE (${likeClauses})`
+          const params: string[] = [...likeParams]
+
+          if (personParams.length > 0) {
+            sql += ` AND a.chat_name IN (${personParams.map(() => '?').join(',')})`
+            params.push(...personParams)
+          }
+          if (dateStart) { sql += ` AND a.created_at >= ?`; params.push(dateStart) }
+          if (dateEnd) { sql += ` AND a.created_at <= ?`; params.push(dateEnd + ' 23:59:59') }
+          sql += ` ORDER BY a.created_at DESC LIMIT 20`
+
+          const contextRows = d.prepare(sql).all(...params) as { id: number; filename: string; chat_name: string; created_at: string; thumbnail_path: string | null; is_image: number; ocr_text: string | null; nearby_message: string }[]
+          const existingIds = new Set(results.map(r => r.id))
+          for (const r of contextRows) {
+            if (existingIds.has(r.id)) continue
+            results.push({
+              id: r.id,
+              filename: r.filename || '',
+              chat_name: r.chat_name,
+              contact_name: resolve(r.chat_name),
+              created_at: r.created_at,
+              thumbnail_path: r.thumbnail_path,
+              is_image: r.is_image === 1,
+              matchReason: `nearby: "${(r.nearby_message || '').slice(0, 40)}…"`,
+              ocrSnippet: r.ocr_text?.slice(0, 100) || undefined
+            })
+          }
+        } catch (err) { console.log('[SearchV2] Context attachment search error:', err) }
+      }
 
       return results
     })(),
