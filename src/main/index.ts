@@ -14,7 +14,9 @@ import { setApiKey, getAIStatus, searchConversationsAI, enrichTopicEras, enrichT
 import { executeSearchV2 } from './searchV2'
 import type { SearchPlan } from './searchV2'
 import type { TopicEraSummaryInput, TopicEraContextInput, MemoryMomentSummaryInput } from './ai'
-import { getCachedAnalytics, setCachedAnalytics, getMessageCountSignal, yieldEventLoop, invalidateSignalCache } from './analyticsCache'
+import { getCachedAnalytics, setCachedAnalytics, getMessageCountSignal, yieldEventLoop, invalidateSignalCache, invalidateAiCaches } from './analyticsCache'
+import { getAiEnabled, setAiEnabled } from './prefs'
+import { getFeatureFlags } from './featureFlags'
 import { Worker } from 'worker_threads'
 import { copyFileSync, existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
 import { extname } from 'path'
@@ -605,19 +607,30 @@ function setupIpc(): void {
   ipcMain.handle('recover-from-icloud', async (_event, id: number) => recoverAttachment(id))
   ipcMain.handle('get-conversation-stats', (_event, chatIdentifier: string, isGroup: boolean) => getConversationStats(chatIdentifier, isGroup))
 
+  // ── AI kill switch + feature flags ──
+  ipcMain.handle('get-ai-enabled', () => getAiEnabled())
+  ipcMain.handle('set-ai-enabled', (_event, val: boolean) => {
+    setAiEnabled(val)
+    if (!val) invalidateAiCaches()
+  })
+  ipcMain.handle('get-feature-flags', () => getFeatureFlags())
+
   // ── AI service layer (centralized in ai.ts) ──
   ipcMain.handle('set-anthropic-key', (_event, key: string) => setApiKey(key))
   ipcMain.handle('get-ai-status', () => getAIStatus())
   ipcMain.handle('search-conversations-ai', async (_event, description: string, conversations: { display: string; identifier: string }[]) => {
+    if (!getAiEnabled()) return { error: 'AI_DISABLED', results: null }
     return searchConversationsAI(description, conversations)
   })
   ipcMain.handle('enrich-topic-eras', async (_event, eras: TopicEraSummaryInput[]) => {
+    if (!getAiEnabled()) return null
     console.log('[IPC] enrich-topic-eras called, eras:', eras.length)
     const result = await enrichTopicEras(eras)
     console.log('[IPC] enrich-topic-eras result:', result ? result.length + ' items' : 'null')
     return result
   })
   ipcMain.handle('get-topic-era-context', async (_event, chapters: { startYear: number; endYear: number; topicLabel: string; keywords: string[] }[]) => {
+    if (!getAiEnabled()) return { contexts: [] }
     const signal = getMessageCountSignal() + ':' + JSON.stringify(chapters.map(c => `${c.startYear}-${c.endYear}`))
     const cached = getCachedAnalytics<ReturnType<typeof getTopicEraContext>>('topicEraContext', signal)
     if (cached) return cached
@@ -629,13 +642,20 @@ function setupIpc(): void {
     return result
   })
   ipcMain.handle('enrich-topic-eras-v2', async (_event, contexts: TopicEraContextInput[]) => {
+    if (!getAiEnabled()) return null
     console.log('[IPC] enrich-topic-eras-v2 called, contexts:', contexts.length)
     const result = await enrichTopicErasV2(contexts)
     console.log('[IPC] enrich-topic-eras-v2 result:', result ? result.length + ' items' : 'null')
     return result
   })
-  ipcMain.handle('enrich-memory-moments', async (_event, moments: MemoryMomentSummaryInput[]) => enrichMemoryMoments(moments))
-  ipcMain.handle('interpret-search-query', async (_event, query: string) => interpretSearchQuery(query))
+  ipcMain.handle('enrich-memory-moments', async (_event, moments: MemoryMomentSummaryInput[]) => {
+    if (!getAiEnabled()) return null
+    return enrichMemoryMoments(moments)
+  })
+  ipcMain.handle('interpret-search-query', async (_event, query: string) => {
+    if (!getAiEnabled()) return null
+    return interpretSearchQuery(query)
+  })
   ipcMain.handle('search-messages-aggregated', (_event, phrase: string, chatName?: string) => searchMessagesAggregated(phrase, chatName))
   ipcMain.handle('execute-search-intent', async (_event, query: string, chatName?: string) => {
     // 1. Try local signal detection first (no AI needed)
@@ -653,7 +673,7 @@ function setupIpc(): void {
       }
     } catch { /* fall through */ }
     // 3. Conversational AI search (for any question)
-    if (getAIStatus().configured) {
+    if (getAiEnabled() && getAIStatus().configured) {
       try {
         console.log(`[Search] Conversational AI search for: "${query}"`)
         const stashDb = initDb()
@@ -726,7 +746,7 @@ function setupIpc(): void {
     }
 
     // AI-powered query planning
-    if (getAIStatus().configured) {
+    if (getAiEnabled() && getAIStatus().configured) {
       try {
         const plan = await parseSearchPlan(query, contacts, new Date().toISOString().slice(0, 10))
         if (plan && plan.confidence > 0.3) {
@@ -769,6 +789,7 @@ function setupIpc(): void {
   ipcMain.handle('get-monthly-averages', (_event, chatIdentifier?: string) => getMonthlyAverages(chatIdentifier))
   ipcMain.handle('get-media-intelligence', (_event, chatIdentifier?: string) => getMediaIntelligence(chatIdentifier))
   ipcMain.handle('analyze-relationship-dynamics', async (_event, chatIdentifier: string, contactName: string, stats: unknown) => {
+    if (!getAiEnabled()) return null
     const samples = getMessageSamples(chatIdentifier)
     const allSamples = [...samples.recent, ...samples.old]
     return analyzeRelationshipDynamics(chatIdentifier, contactName, allSamples, stats as Parameters<typeof analyzeRelationshipDynamics>[3])
@@ -776,15 +797,18 @@ function setupIpc(): void {
   ipcMain.handle('get-message-samples', (_event, chatIdentifier: string) => getMessageSamples(chatIdentifier))
   ipcMain.handle('get-attachment-context', (_event, attachmentId: number) => getAttachmentContext(attachmentId))
   ipcMain.handle('summarize-conversation', async (_event, chatIdentifier: string, contactName: string) => {
+    if (!getAiEnabled()) return null
     const samples = getMessageSamples(chatIdentifier)
     return summarizeConversation(chatIdentifier, contactName, samples)
   })
-  ipcMain.handle('generate-relationship-narrative', async (_event, chatIdentifier: string, contactName: string, stats: unknown) =>
-    generateRelationshipNarrative(chatIdentifier, contactName, stats as Parameters<typeof generateRelationshipNarrative>[2])
-  )
-  ipcMain.handle('generate-attachment-caption', async (_event, chatIdentifier: string, contactName: string, attachmentInfo: unknown, surroundingMessages: unknown[]) =>
-    generateAttachmentCaption(chatIdentifier, contactName, attachmentInfo as Parameters<typeof generateAttachmentCaption>[2], surroundingMessages as Parameters<typeof generateAttachmentCaption>[3])
-  )
+  ipcMain.handle('generate-relationship-narrative', async (_event, chatIdentifier: string, contactName: string, stats: unknown) => {
+    if (!getAiEnabled()) return null
+    return generateRelationshipNarrative(chatIdentifier, contactName, stats as Parameters<typeof generateRelationshipNarrative>[2])
+  })
+  ipcMain.handle('generate-attachment-caption', async (_event, chatIdentifier: string, contactName: string, attachmentInfo: unknown, surroundingMessages: unknown[]) => {
+    if (!getAiEnabled()) return null
+    return generateAttachmentCaption(chatIdentifier, contactName, attachmentInfo as Parameters<typeof generateAttachmentCaption>[2], surroundingMessages as Parameters<typeof generateAttachmentCaption>[3])
+  })
   ipcMain.handle('get-closeness-scores', (_event, chatIdentifier?: string) => getClosenessScores(chatIdentifier))
   ipcMain.handle('get-signals', (_event, chatIdentifier?: string) => getSignals(chatIdentifier))
   ipcMain.handle('get-active-alerts', () => getActiveAlerts())

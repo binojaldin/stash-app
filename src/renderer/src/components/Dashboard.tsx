@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Lock } from 'lucide-react'
 import type { Stats, ChatNameEntry } from '../types'
+import { ProLock } from './ProLock'
 
 type NetworkNode = { rawName: string; messageCount: number }
 type NetworkEdge = { a: string; b: string; sharedGroups: number }
@@ -55,6 +56,7 @@ interface Props {
   onSurfaceChange?: (s: InsightSurface) => void
   isStatsLoading?: boolean
   onDrillThrough?: (title: string, subtitle: string, freeStats: { label: string; value: string }[]) => void
+  onOpenSettings?: () => void
 }
 
 function heroTitle(range: string): string {
@@ -1316,7 +1318,7 @@ export function DrillThroughPanel({ title, subtitle, freeStats, onClose }: {
   )
 }
 
-export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange = 'all', scopedPerson, onClearScope, insightSurface = 'relationship', onSurfaceChange, isStatsLoading, onDrillThrough }: Props): JSX.Element {
+export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange = 'all', scopedPerson, onClearScope, insightSurface = 'relationship', onSurfaceChange, isStatsLoading, onDrillThrough, onOpenSettings }: Props): JSX.Element {
   const currentMonth = MONTH_NAMES[new Date().getMonth()]
   const heroText = heroTitle(dateRange)
   const chats = stats.chatNames as ChatNameEntry[]
@@ -1822,7 +1824,9 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
                 {/* Nicknames — disabled (detection quality too low, will rebuild with AI) */}
                 {/* AI narrative or stats fallback */}
                 {relNarrative ? (
-                  <div style={{ fontSize: 15, color: 'rgba(255,255,255,0.65)', lineHeight: 1.7, maxWidth: 540, fontStyle: 'italic' }}>{relNarrative.narrative}</div>
+                  <ProLock feature="ai_relationship_narrative" onOpenSettings={onOpenSettings}>
+                    <div style={{ fontSize: 15, color: 'rgba(255,255,255,0.65)', lineHeight: 1.7, maxWidth: 540, fontStyle: 'italic' }}>{relNarrative.narrative}</div>
+                  </ProLock>
                 ) : (
                   <div style={{ fontSize: 15, color: 'rgba(255,255,255,0.65)', lineHeight: 1.7 }}>
                     {pd ? `${pd.messageCount.toLocaleString()} messages exchanged.` : ''}
@@ -1851,16 +1855,18 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
 
           {/* ── CONVERSATION SUMMARY CARD (AI) ── */}
           {convoSummary && (
-            <div style={{ background: '#fff', borderRadius: 16, padding: '18px 22px', marginBottom: 16, border: '1px solid rgba(0,0,0,0.06)', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}>
-              <div style={{ fontSize: 10, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#2EC4A0', marginBottom: 8, fontFamily: "'DM Sans'", fontWeight: 600 }}>Conversation summary</div>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
-                {convoSummary.topics.map(t => (
-                  <span key={t} style={{ fontSize: 11, padding: '3px 10px', borderRadius: 20, background: 'rgba(46,196,160,0.08)', color: '#2EC4A0', fontFamily: "'DM Sans'" }}>{t}</span>
-                ))}
-                <span style={{ fontSize: 11, padding: '3px 10px', borderRadius: 20, background: 'rgba(127,119,221,0.08)', color: '#7F77DD', fontFamily: "'DM Sans'" }}>{convoSummary.tone}</span>
+            <ProLock feature="ai_summaries" onOpenSettings={onOpenSettings}>
+              <div style={{ background: '#fff', borderRadius: 16, padding: '18px 22px', marginBottom: 16, border: '1px solid rgba(0,0,0,0.06)', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}>
+                <div style={{ fontSize: 10, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#2EC4A0', marginBottom: 8, fontFamily: "'DM Sans'", fontWeight: 600 }}>Conversation summary</div>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
+                  {convoSummary.topics.map(t => (
+                    <span key={t} style={{ fontSize: 11, padding: '3px 10px', borderRadius: 20, background: 'rgba(46,196,160,0.08)', color: '#2EC4A0', fontFamily: "'DM Sans'" }}>{t}</span>
+                  ))}
+                  <span style={{ fontSize: 11, padding: '3px 10px', borderRadius: 20, background: 'rgba(127,119,221,0.08)', color: '#7F77DD', fontFamily: "'DM Sans'" }}>{convoSummary.tone}</span>
+                </div>
+                <div style={{ fontSize: 14, color: '#4a4542', lineHeight: 1.7, fontFamily: "'DM Sans'" }}>{convoSummary.summary}</div>
               </div>
-              <div style={{ fontSize: 14, color: '#4a4542', lineHeight: 1.7, fontFamily: "'DM Sans'" }}>{convoSummary.summary}</div>
-            </div>
+            </ProLock>
           )}
 
           {!isStatsLoading && trophies.length > 0 && (
@@ -2497,12 +2503,20 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
         )}
         {topicEras.length === 0 && memoryMoments.length === 0 && gravityIndiv.length > 0 && <WarmingCard span={6} />}
         {topicEras.length >= 1 && (
-          <TopicErasCard chapters={topicEras} aiEnhanced={aiEnrichedTopics} />
+          aiEnrichedTopics ? (
+            <ProLock feature="ai_topic_eras" onOpenSettings={onOpenSettings}>
+              <TopicErasCard chapters={topicEras} aiEnhanced={aiEnrichedTopics} />
+            </ProLock>
+          ) : (
+            <TopicErasCard chapters={topicEras} aiEnhanced={false} />
+          )
         )}
 
         {/* ── TIER 1.7: MEMORY ── */}
         {memoryMoments.length >= 1 && (
-          <MemoryCard moments={memoryMoments} chatNameMap={chatNameMap} />
+          <ProLock feature="ai_memory_moments" onOpenSettings={onOpenSettings}>
+            <MemoryCard moments={memoryMoments} chatNameMap={chatNameMap} />
+          </ProLock>
         )}
 
         {/* ── TIER 1.8: BEHAVIORAL PATTERNS ── */}
@@ -3378,25 +3392,28 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
 
         {/* ZONE 0.55 — Signals Feed */}
         {activeAlerts.length > 0 && (
-          <div style={{ gridColumn: 'span 6', borderRadius: 16, padding: '20px 22px', background: '#fff', border: '1px solid rgba(0,0,0,0.06)', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}>
-            <div style={{ fontSize: 10, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#E8604A', marginBottom: 4, fontFamily: "'DM Sans'", fontWeight: 600 }}>Signals</div>
-            <div style={{ fontSize: 12, color: '#9a948f', marginBottom: 10, fontFamily: "'DM Sans'" }}>What's changing in your relationships.</div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {activeAlerts.slice(0, 6).map((a, i) => {
-                const dotColor = a.severity === 'significant' ? '#E8604A' : a.severity === 'notable' ? '#fbbf24' : '#2EC4A0'
-                return (
-                  <div key={i} onClick={() => onSelectConversation(a.chat_identifier)} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer', padding: '4px 0' }}>
-                    <div style={{ width: 6, height: 6, borderRadius: '50%', background: dotColor, marginTop: 5, flexShrink: 0 }} />
-                    <div style={{ fontSize: 12, color: '#4a4542', lineHeight: 1.5, fontFamily: "'DM Sans'" }}>{a.message}</div>
-                  </div>
-                )
-              })}
+          <ProLock feature="ai_summaries" onOpenSettings={onOpenSettings}>
+            <div style={{ gridColumn: 'span 6', borderRadius: 16, padding: '20px 22px', background: '#fff', border: '1px solid rgba(0,0,0,0.06)', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}>
+              <div style={{ fontSize: 10, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#E8604A', marginBottom: 4, fontFamily: "'DM Sans'", fontWeight: 600 }}>Signals</div>
+              <div style={{ fontSize: 12, color: '#9a948f', marginBottom: 10, fontFamily: "'DM Sans'" }}>What's changing in your relationships.</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {activeAlerts.slice(0, 6).map((a, i) => {
+                  const dotColor = a.severity === 'significant' ? '#E8604A' : a.severity === 'notable' ? '#fbbf24' : '#2EC4A0'
+                  return (
+                    <div key={i} onClick={() => onSelectConversation(a.chat_identifier)} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer', padding: '4px 0' }}>
+                      <div style={{ width: 6, height: 6, borderRadius: '50%', background: dotColor, marginTop: 5, flexShrink: 0 }} />
+                      <div style={{ fontSize: 12, color: '#4a4542', lineHeight: 1.5, fontFamily: "'DM Sans'" }}>{a.message}</div>
+                    </div>
+                  )
+                })}
+              </div>
             </div>
-          </div>
+          </ProLock>
         )}
 
         {/* ZONE 0.57 — Follow Up (Proactive Intelligence) */}
         {proactiveItems.length > 0 && (
+          <ProLock feature="ai_proactive_intel" onOpenSettings={onOpenSettings}>
           <div style={{ gridColumn: 'span 6', borderRadius: 16, padding: '20px 22px', background: '#fff', border: '1px solid rgba(0,0,0,0.06)', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}>
             <div style={{ fontSize: 10, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#E8604A', marginBottom: 4, fontFamily: "'DM Sans'", fontWeight: 600 }}>Follow up</div>
             <div style={{ fontSize: 12, color: '#9a948f', marginBottom: 10, fontFamily: "'DM Sans'" }}>Commitments and plans from your conversations.</div>
@@ -3425,6 +3442,7 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
               })}
             </div>
           </div>
+          </ProLock>
         )}
 
         {/* ZONE 0.6 — Media Intelligence */}

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Settings } from 'lucide-react'
 
 interface IconRailProps {
@@ -7,6 +7,7 @@ interface IconRailProps {
   indexProgress: number
   attachmentCount: number
   hasNewInsights: boolean
+  onOpenSettings?: () => void
 }
 
 const ICONS = [
@@ -53,8 +54,17 @@ function RingIcon({ ringPct, ringColor, isActive, pulse, icon, activeColor, onCl
   )
 }
 
-export function IconRail({ mainView, onNavigate, indexProgress, attachmentCount, hasNewInsights }: IconRailProps): JSX.Element {
+export function IconRail({ mainView, onNavigate, indexProgress, attachmentCount, hasNewInsights, onOpenSettings }: IconRailProps): JSX.Element {
   const [tooltip, setTooltip] = useState<{ label: string; meta: string; y: number } | null>(null)
+  const [aiActive, setAiActive] = useState(false)
+
+  useEffect(() => {
+    window.api.getAiEnabled().then(setAiActive).catch(() => {})
+    const interval = setInterval(() => {
+      window.api.getAiEnabled().then(setAiActive).catch(() => {})
+    }, 5000)
+    return () => clearInterval(interval)
+  }, [])
 
   const activeId = mainView.kind === 'global-attachments' || mainView.kind === 'person-attachments' ? 'explore'
     : mainView.kind === 'global-insights' || mainView.kind === 'person-insights' ? 'insights' : 'index'
@@ -99,11 +109,12 @@ export function IconRail({ mainView, onNavigate, indexProgress, attachmentCount,
       </div>
 
       {/* Settings */}
-      <div className="flex items-center justify-center" style={{ paddingBottom: 12 }}>
-        <button title="Settings" style={{ width: 36, height: 36, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', cursor: 'pointer' }}
+      <div className="flex items-center justify-center" style={{ paddingBottom: 12, position: 'relative' }}>
+        <button title="Settings" onClick={() => onOpenSettings?.()} style={{ width: 36, height: 36, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', cursor: 'pointer', position: 'relative' }}
           onMouseEnter={(e) => { e.currentTarget.style.background = '#1A1A1A' }}
           onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>
-          <Settings style={{ width: 16, height: 16, stroke: '#333' }} />
+          <Settings style={{ width: 16, height: 16, stroke: '#555' }} />
+          {aiActive && <div style={{ position: 'absolute', top: 6, right: 6, width: 6, height: 6, borderRadius: '50%', background: '#2EC4A0' }} />}
         </button>
       </div>
 

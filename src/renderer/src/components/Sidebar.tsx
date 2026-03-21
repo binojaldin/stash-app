@@ -1,6 +1,7 @@
 import { useState, useRef, useMemo } from 'react'
 import { Search, Sparkles, Loader2, Settings } from 'lucide-react'
 import type { Stats, Filters, IndexingProgress, ChatNameEntry } from '../types'
+import { ProLock } from './ProLock'
 
 interface Props {
   stats: Stats
@@ -17,6 +18,7 @@ interface Props {
   onScopePerson?: (rawName: string | null) => void
   onNavigate?: (view: { kind: string; person?: string }) => void
   availableYears?: number[]
+  onOpenSettings?: () => void
 }
 
 function getVibeTag(c: ChatNameEntry): { label: string; color: string }[] {
@@ -85,7 +87,7 @@ function getRangeLabel(range: string): string {
   return 'All time'
 }
 
-export function Sidebar({ stats, filters, onFilterChange, onManageConversations, onHideChat, isIndexing, indexingProgress, onGoHome, selectedRange, onDateRangeChange, scopedPerson, onScopePerson, onNavigate, availableYears }: Props): JSX.Element {
+export function Sidebar({ stats, filters, onFilterChange, onManageConversations, onHideChat, isIndexing, indexingProgress, onGoHome, selectedRange, onDateRangeChange, scopedPerson, onScopePerson, onNavigate, availableYears, onOpenSettings }: Props): JSX.Element {
   const [chatFilter, setChatFilter] = useState('')
   const [aiMode, setAiMode] = useState(false)
   const [aiQuery, setAiQuery] = useState('')
@@ -253,7 +255,12 @@ export function Sidebar({ stats, filters, onFilterChange, onManageConversations,
             {aiLoading ? <Loader2 style={{ width: 13, height: 13, color: '#2EC4A0', animation: 'spin 0.7s linear infinite' }} /> : <Sparkles style={{ width: 13, height: 13, color: aiMode ? '#2EC4A0' : 'rgba(255,255,255,0.25)' }} />}
           </button>
         </div>
-        {aiMode && aiError === 'NO_KEY' && <div style={{ fontSize: 10, color: '#E8604A', marginBottom: 10, fontFamily: "'DM Sans'", lineHeight: 1.4 }}>No API key — add anthropic-key.txt to app data folder</div>}
+        {aiMode && (
+          <ProLock feature="ai_search" onOpenSettings={onOpenSettings}>
+            {aiError === 'NO_KEY' && <div style={{ fontSize: 10, color: '#E8604A', marginBottom: 10, fontFamily: "'DM Sans'", lineHeight: 1.4 }}>No API key — add anthropic-key.txt to app data folder</div>}
+            {aiError === 'AI_DISABLED' && <div style={{ fontSize: 10, color: '#E8604A', marginBottom: 10, fontFamily: "'DM Sans'", lineHeight: 1.4 }}>AI features are disabled. Enable them in Settings.</div>}
+          </ProLock>
+        )}
         <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
 
         {/* Sort pill */}
@@ -352,9 +359,11 @@ export function Sidebar({ stats, filters, onFilterChange, onManageConversations,
         </div>
 
         {aiResults !== null && (
-          <button onClick={exitAiMode} style={{ fontSize: 10, color: '#2EC4A0', background: 'none', border: 'none', cursor: 'pointer', padding: '0 0 8px', display: 'block', fontFamily: "'DM Sans'" }}>
-            ✕ Clear AI results ({aiResults.length} found)
-          </button>
+          <ProLock feature="ai_search" onOpenSettings={onOpenSettings}>
+            <button onClick={exitAiMode} style={{ fontSize: 10, color: '#2EC4A0', background: 'none', border: 'none', cursor: 'pointer', padding: '0 0 8px', display: 'block', fontFamily: "'DM Sans'" }}>
+              ✕ Clear AI results ({aiResults.length} found)
+            </button>
+          </ProLock>
         )}
         {displayChats.map((chat) => {
           const dn = resolveName(chat.rawName, stats.chatNameMap)

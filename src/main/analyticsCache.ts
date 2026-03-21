@@ -10,7 +10,7 @@
 
 import { app } from 'electron'
 import { join } from 'path'
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
+import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, unlinkSync } from 'fs'
 import { createHash } from 'crypto'
 
 const CACHE_DIR = (): string => {
@@ -84,6 +84,25 @@ export function getMessageCountSignal(): string {
 }
 
 export function invalidateSignalCache(): void { _signalCache = null }
+
+/**
+ * AI cache prefix convention: cache entries whose name starts with 'ai:' are
+ * AI-derived. When AI is disabled, call this to clear them.
+ */
+const AI_CACHE_PREFIXES = ['ai:', 'topicEraContext']
+
+export function invalidateAiCaches(): void {
+  try {
+    const dir = CACHE_DIR()
+    const files = readdirSync(dir)
+    for (const file of files) {
+      if (AI_CACHE_PREFIXES.some(p => file.startsWith(p))) {
+        try { unlinkSync(join(dir, file)) } catch { /* ignore */ }
+      }
+    }
+    console.log('[CACHE] AI caches invalidated')
+  } catch { /* ignore */ }
+}
 
 /**
  * Yield to the event loop between heavy operations.

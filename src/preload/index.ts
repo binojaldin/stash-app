@@ -1,6 +1,9 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
 const api = {
+  getAiEnabled: (): Promise<boolean> => ipcRenderer.invoke('get-ai-enabled'),
+  setAiEnabled: (val: boolean): Promise<void> => ipcRenderer.invoke('set-ai-enabled', val),
+  getFeatureFlags: (): Promise<{ aiEnabled: boolean; tier: 'local' | 'pro' }> => ipcRenderer.invoke('get-feature-flags'),
   checkDiskAccess: (): Promise<boolean> => ipcRenderer.invoke('check-disk-access'),
   searchAttachments: (
     query: string, filters: Record<string, string>, page?: number, limit?: number, sortOrder?: string
