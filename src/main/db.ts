@@ -1484,16 +1484,11 @@ export function getTopicEras(): { chapters: TopicChapter[] } {
     // System artifacts + contact name filter
     const SYSTEM_ARTIFACTS = new Set(['image','images','video','videos','photo','photos','render','rendered','renderedimage','renderedvideo','screen','screenshot','attachment','attachments','liked','loved','laughed','emphasized','emphasised','questioned','fullsizerender','fullsizeoutput','fullsize','img','dsc','mov','heic','jpeg','png','gif','mp4','pdf','brandlogo','brandlogoimage','tiktok','instagram','preview','sticker','wniab','tkk'])
     const chatNames = new Set<string>()
-    try {
-      const names = d.prepare('SELECT DISTINCT chat_name FROM messages WHERE chat_name IS NOT NULL').all() as { chat_name: string }[]
-      for (const n of names) for (const p of n.chat_name.replace(/[^a-zA-Z\s]/g, ' ').toLowerCase().split(/\s+/)) if (p.length >= 3) chatNames.add(p)
-    } catch {}
-    // Add all resolved first/last names
+    // Only add resolved contact names (not group chat display names which produce false positives like "cream", "team")
     try {
       const resolved = d.prepare('SELECT resolved_name FROM resolved_names').all() as { resolved_name: string }[]
       for (const r of resolved) {
-        const parts = r.resolved_name.toLowerCase().split(/\s+/)
-        for (const p of parts) if (p.length >= 3) chatNames.add(p)
+        for (const p of r.resolved_name.toLowerCase().split(/\s+/)) if (p.length >= 3) chatNames.add(p)
       }
     } catch {}
     // Common first names that are never interesting topics
@@ -2863,6 +2858,18 @@ export interface MediaIntelligence {
   mediaByMonth: { month: string; count: number }[]
   peakMediaMonth: { month: string; count: number } | null
   mediaHeavy: { chatName: string; mediaCount: number; messageCount: number; ratio: number }[]
+}
+
+export function getMessageContext(chatName: string, sentAt: string, windowSize = 20): { messages: { body: string; is_from_me: number; sent_at: string }[] } {
+  const d = initDb()
+  try {
+    const target = d.prepare('SELECT apple_date FROM messages WHERE chat_name = ? AND sent_at = ? LIMIT 1').get(chatName, sentAt) as { apple_date: number } | undefined
+    if (!target) return { messages: [] }
+    const half = Math.floor(windowSize / 2)
+    const before = d.prepare(`SELECT body, is_from_me, sent_at FROM messages WHERE chat_name = ? AND apple_date <= ? AND body IS NOT NULL ORDER BY apple_date DESC LIMIT ?`).all(chatName, target.apple_date, half) as { body: string; is_from_me: number; sent_at: string }[]
+    const after = d.prepare(`SELECT body, is_from_me, sent_at FROM messages WHERE chat_name = ? AND apple_date > ? AND body IS NOT NULL ORDER BY apple_date ASC LIMIT ?`).all(chatName, target.apple_date, half) as { body: string; is_from_me: number; sent_at: string }[]
+    return { messages: [...before.reverse(), ...after] }
+  } catch { return { messages: [] } }
 }
 
 export function getMediaIntelligence(chatIdentifier?: string): MediaIntelligence {

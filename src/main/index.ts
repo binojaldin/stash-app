@@ -2,7 +2,7 @@ import { app, shell, BrowserWindow, ipcMain, dialog, Menu, Tray, nativeImage, po
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import { checkFullDiskAccess } from './messagesReader'
-import { initDb, searchAttachments, getStats, getFastStats, getTodayInHistory, getUsageStats, getMessagingNetwork, getAttachmentById, closeDb, hideChat, getHiddenChats, getConversationStats, getRelationshipTimeline, getSocialGravity, getTopicEras, getTopicEraContext, getMemoryMoments, searchMessagesAggregated, updateReactionCounts, invalidateLaughCache, searchMessages, getMessageIndexStatus, getVocabStats, getWordOrigins, detectSignalQuery, executeSearchIntent, getMessageSamples, getAttachmentContext, getSignificantPhotos, getRelationshipDynamics, getMonthlyAverages, getMediaIntelligence, detectNicknames, getBehavioralPatterns } from './db'
+import { initDb, searchAttachments, getStats, getFastStats, getTodayInHistory, getUsageStats, getMessagingNetwork, getAttachmentById, closeDb, hideChat, getHiddenChats, getConversationStats, getRelationshipTimeline, getSocialGravity, getTopicEras, getTopicEraContext, getMemoryMoments, searchMessagesAggregated, updateReactionCounts, invalidateLaughCache, searchMessages, getMessageIndexStatus, getVocabStats, getWordOrigins, detectSignalQuery, executeSearchIntent, getMessageSamples, getAttachmentContext, getSignificantPhotos, getRelationshipDynamics, getMonthlyAverages, getMediaIntelligence, detectNicknames, getBehavioralPatterns, getMessageContext } from './db'
 import { startIndexing, getIndexingProgress, fetchChatSummaries, saveChatPriorities, getSavedPriorityChats, resetIndexing, recoverAttachment, resolveNamesInBackground } from './indexer'
 import { compileContactsHelper, resolveContact, resolveContactsBatch } from './contacts'
 import { generateWrapped, getAvailableYears } from './wrapped'
@@ -581,21 +581,7 @@ function setupIpc(): void {
     return false
   })
 
-  ipcMain.handle('get-message-context', (_event, chatName: string, sentAt: string) => {
-    const d = initDb()
-    try {
-      const rows = d.prepare(`
-        SELECT body, is_from_me, sent_at FROM messages
-        WHERE chat_name = ?
-        AND apple_date BETWEEN
-          (SELECT apple_date FROM messages WHERE chat_name = ? AND sent_at = ? LIMIT 1) - 100000000000
-          AND
-          (SELECT apple_date FROM messages WHERE chat_name = ? AND sent_at = ? LIMIT 1) + 100000000000
-        ORDER BY apple_date LIMIT 20
-      `).all(chatName, chatName, sentAt, chatName, sentAt) as { body: string; is_from_me: number; sent_at: string }[]
-      return { messages: rows }
-    } catch { return { messages: [] } }
-  })
+  ipcMain.handle('get-message-context', (_event, chatName: string, sentAt: string) => getMessageContext(chatName, sentAt))
 
   ipcMain.handle('export-file', async (_event, id: number) => {
     const att = getAttachmentById(id)
@@ -924,28 +910,33 @@ app.whenReady().then(() => {
   createWindow()
   console.log(`[PERF][BOOT] Total boot to window created: ${Date.now()-bootStart}ms`)
 
-  // Deferred reaction count sync
-  setTimeout(() => { try { updateReactionCounts() } catch (e) { console.error('[Reactions]', e) } }, 3000)
+  // Chain background tasks — each waits for the previous to finish
+  async function runBackgroundTasks(): Promise<void> {
+    const t0 = Date.now()
+    await new Promise(resolve => setTimeout(resolve, 5000))
 
-  // Deferred message analysis pipeline (5s after boot — after reactions, after cache is warm)
-  setTimeout(() => {
-    runMessageAnalysis(mainWindow!).catch(e => console.error('[MessageAnalysis] Failed:', e))
-  }, 5000)
+    try { console.log('[Background] Reactions...'); updateReactionCounts(); console.log(`[Background] Reactions done (${Date.now()-t0}ms)`) }
+    catch (e) { console.error('[Reactions]', e) }
 
-  // Deferred closeness computation (10s after boot — after pipeline has had time to run)
-  setTimeout(() => {
-    computeClosenessScores(mainWindow!).catch(e => console.error('[Closeness] Failed:', e))
-  }, 10000)
+    try { console.log('[Background] Message analysis...'); await runMessageAnalysis(mainWindow!); console.log(`[Background] Analysis done (${Date.now()-t0}ms)`) }
+    catch (e) { console.error('[MessageAnalysis]', e) }
 
-  // Deferred signals computation (15s after boot)
-  setTimeout(() => {
-    computeSignals().catch(e => console.error('[Signals] Failed:', e))
-  }, 15000)
+    try { console.log('[Background] Closeness...'); await computeClosenessScores(mainWindow!); console.log(`[Background] Closeness done (${Date.now()-t0}ms)`) }
+    catch (e) { console.error('[Closeness]', e) }
 
-  // Deferred proactive intelligence scan (30s after boot)
-  setTimeout(() => {
-    scanForProactiveItems().catch(e => console.error('[Proactive] Failed:', e))
-  }, 30000)
+    try { console.log('[Background] Signals...'); await computeSignals(); console.log(`[Background] Signals done (${Date.now()-t0}ms)`) }
+    catch (e) { console.error('[Signals]', e) }
+
+    // Proactive intel runs last — 20 API calls, wait at least 60s from boot
+    try {
+      const elapsed = Date.now() - t0
+      if (elapsed < 60000) await new Promise(resolve => setTimeout(resolve, 60000 - elapsed))
+      console.log('[Background] Proactive scan...'); await scanForProactiveItems(); console.log(`[Background] Proactive done (${Date.now()-t0}ms)`)
+    } catch (e) { console.error('[Proactive]', e) }
+
+    console.log(`[Background] All tasks complete in ${((Date.now()-t0)/1000).toFixed(1)}s`)
+  }
+  setTimeout(() => { runBackgroundTasks().catch(e => console.error('[Background] Chain failed:', e)) }, 3000)
 
   // Hide to tray instead of quitting on window close
   mainWindow!.on('close', (e) => {
