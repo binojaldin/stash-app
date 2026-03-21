@@ -910,28 +910,33 @@ app.whenReady().then(() => {
   createWindow()
   console.log(`[PERF][BOOT] Total boot to window created: ${Date.now()-bootStart}ms`)
 
-  // Deferred reaction count sync
-  setTimeout(() => { try { updateReactionCounts() } catch (e) { console.error('[Reactions]', e) } }, 3000)
+  // Chain background tasks — each waits for the previous to finish
+  async function runBackgroundTasks(): Promise<void> {
+    const t0 = Date.now()
+    await new Promise(resolve => setTimeout(resolve, 5000))
 
-  // Deferred message analysis pipeline (5s after boot — after reactions, after cache is warm)
-  setTimeout(() => {
-    runMessageAnalysis(mainWindow!).catch(e => console.error('[MessageAnalysis] Failed:', e))
-  }, 5000)
+    try { console.log('[Background] Reactions...'); updateReactionCounts(); console.log(`[Background] Reactions done (${Date.now()-t0}ms)`) }
+    catch (e) { console.error('[Reactions]', e) }
 
-  // Deferred closeness computation (10s after boot — after pipeline has had time to run)
-  setTimeout(() => {
-    computeClosenessScores(mainWindow!).catch(e => console.error('[Closeness] Failed:', e))
-  }, 10000)
+    try { console.log('[Background] Message analysis...'); await runMessageAnalysis(mainWindow!); console.log(`[Background] Analysis done (${Date.now()-t0}ms)`) }
+    catch (e) { console.error('[MessageAnalysis]', e) }
 
-  // Deferred signals computation (15s after boot)
-  setTimeout(() => {
-    computeSignals().catch(e => console.error('[Signals] Failed:', e))
-  }, 15000)
+    try { console.log('[Background] Closeness...'); await computeClosenessScores(mainWindow!); console.log(`[Background] Closeness done (${Date.now()-t0}ms)`) }
+    catch (e) { console.error('[Closeness]', e) }
 
-  // Deferred proactive intelligence scan (30s after boot)
-  setTimeout(() => {
-    scanForProactiveItems().catch(e => console.error('[Proactive] Failed:', e))
-  }, 30000)
+    try { console.log('[Background] Signals...'); await computeSignals(); console.log(`[Background] Signals done (${Date.now()-t0}ms)`) }
+    catch (e) { console.error('[Signals]', e) }
+
+    // Proactive intel runs last — 20 API calls, wait at least 60s from boot
+    try {
+      const elapsed = Date.now() - t0
+      if (elapsed < 60000) await new Promise(resolve => setTimeout(resolve, 60000 - elapsed))
+      console.log('[Background] Proactive scan...'); await scanForProactiveItems(); console.log(`[Background] Proactive done (${Date.now()-t0}ms)`)
+    } catch (e) { console.error('[Proactive]', e) }
+
+    console.log(`[Background] All tasks complete in ${((Date.now()-t0)/1000).toFixed(1)}s`)
+  }
+  setTimeout(() => { runBackgroundTasks().catch(e => console.error('[Background] Chain failed:', e)) }, 3000)
 
   // Hide to tray instead of quitting on window close
   mainWindow!.on('close', (e) => {

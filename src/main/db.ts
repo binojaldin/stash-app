@@ -1484,16 +1484,11 @@ export function getTopicEras(): { chapters: TopicChapter[] } {
     // System artifacts + contact name filter
     const SYSTEM_ARTIFACTS = new Set(['image','images','video','videos','photo','photos','render','rendered','renderedimage','renderedvideo','screen','screenshot','attachment','attachments','liked','loved','laughed','emphasized','emphasised','questioned','fullsizerender','fullsizeoutput','fullsize','img','dsc','mov','heic','jpeg','png','gif','mp4','pdf','brandlogo','brandlogoimage','tiktok','instagram','preview','sticker','wniab','tkk'])
     const chatNames = new Set<string>()
-    try {
-      const names = d.prepare('SELECT DISTINCT chat_name FROM messages WHERE chat_name IS NOT NULL').all() as { chat_name: string }[]
-      for (const n of names) for (const p of n.chat_name.replace(/[^a-zA-Z\s]/g, ' ').toLowerCase().split(/\s+/)) if (p.length >= 3) chatNames.add(p)
-    } catch {}
-    // Add all resolved first/last names
+    // Only add resolved contact names (not group chat display names which produce false positives like "cream", "team")
     try {
       const resolved = d.prepare('SELECT resolved_name FROM resolved_names').all() as { resolved_name: string }[]
       for (const r of resolved) {
-        const parts = r.resolved_name.toLowerCase().split(/\s+/)
-        for (const p of parts) if (p.length >= 3) chatNames.add(p)
+        for (const p of r.resolved_name.toLowerCase().split(/\s+/)) if (p.length >= 3) chatNames.add(p)
       }
     } catch {}
     // Common first names that are never interesting topics

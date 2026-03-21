@@ -8,6 +8,7 @@
  */
 
 import { initDb } from './db'
+import { callAnthropic, conversationalSearch } from './ai'
 
 // ── Search Plan Schema ──
 
@@ -500,7 +501,6 @@ export async function executeSearchV2(
   let summary: string | null = null
   if (plan.answerMode.includes('summary') && messageResults.length > 0) {
     try {
-      const { conversationalSearch } = require('./ai')
       const topMessages = messageResults.slice(0, 10).map(m => ({
         contact: m.contact_name, snippet: m.body.slice(0, 80), date: m.sent_at.slice(0, 10)
       }))
