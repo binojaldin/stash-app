@@ -64,6 +64,7 @@ const api = {
   openFile: (path: string): Promise<boolean> => ipcRenderer.invoke('open-file', path),
   getMessageContext: (chatName: string, sentAt: string, windowSize?: number): Promise<{ messages: { body: string; is_from_me: number; sent_at: string }[] }> => ipcRenderer.invoke('get-message-context', chatName, sentAt, windowSize),
   getConversationWindows: (chatIdentifier?: string, limit?: number): Promise<unknown[]> => ipcRenderer.invoke('get-conversation-windows', chatIdentifier, limit),
+  getDashboardData: (scopedPerson?: string): Promise<Record<string, unknown>> => ipcRenderer.invoke('get-dashboard-data', scopedPerson),
   exportFile: (id: number): Promise<boolean> => ipcRenderer.invoke('export-file', id),
   getIndexingProgress: (): Promise<{ total: number; processed: number; currentFile: string; phase?: string }> =>
     ipcRenderer.invoke('get-indexing-progress'),

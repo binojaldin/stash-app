@@ -45,6 +45,13 @@ export async function computeClosenessScores(_mainWindow?: BrowserWindow): Promi
   const t0 = Date.now()
   const stashDb = initDb()
 
+  // Skip if unchanged
+  try {
+    const currentCount = (stashDb.prepare('SELECT COUNT(*) as c FROM messages').get() as { c: number }).c
+    const meta = stashDb.prepare("SELECT value FROM _meta WHERE key = 'closeness_msg_count'").get() as { value: string } | undefined
+    if (meta && parseInt(meta.value) === currentCount) { console.log('[Closeness] Skipping — no new messages'); return }
+  } catch {}
+
   // ── Gather ChatNameEntry-equivalent data from stash.db cached stats ──
   // Read from the attachments + messages tables to get per-contact stats
   // This avoids calling getStats() which is heavy
@@ -277,6 +284,7 @@ export async function computeClosenessScores(_mainWindow?: BrowserWindow): Promi
   console.log(`[Closeness] Level 2 (pipeline): ${level2Count} contacts with signals`)
   console.log(`[Closeness] Results: ${tierCounts.inner_circle || 0} inner_circle, ${tierCounts.close || 0} close, ${tierCounts.regular || 0} regular, ${tierCounts.peripheral || 0} peripheral, ${tierCounts.distant || 0} distant`)
   console.log(`[Closeness] Complete in ${elapsed}s`)
+  try { stashDb.prepare("INSERT OR REPLACE INTO _meta (key, value) VALUES ('closeness_msg_count', ?)").run(String((stashDb.prepare('SELECT COUNT(*) as c FROM messages').get() as { c: number }).c)) } catch {}
 }
 
 // ── Query functions ──

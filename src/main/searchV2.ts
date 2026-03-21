@@ -7,7 +7,7 @@
  * 3. Result fusion → scored, sectioned results
  */
 
-import { initDb, extractOCRSnippet } from './db'
+import { initDb, extractOCRSnippet, buildConversationWindows } from './db'
 import { callAnthropic, conversationalSearch } from './ai'
 
 // ── Search Plan Schema ──
@@ -103,6 +103,12 @@ export async function executeSearchV2(
   const t0 = Date.now()
   const d = initDb()
   const resolve = (raw: string): string => chatNameMap[raw] || raw
+
+  // Lazy-build conversation windows on first search
+  try {
+    const windowCount = (d.prepare('SELECT COUNT(*) as c FROM conversation_windows').get() as { c: number }).c
+    if (windowCount === 0) { console.log('[SearchV2] Lazy-building conversation windows...'); buildConversationWindows() }
+  } catch {}
 
   // Post-process: strip modality words from topic (AI sometimes gets this wrong)
   const MODALITY_WORDS = new Set(['photos','photo','pictures','picture','pics','images','image','videos','video','clips','screenshots','screenshot','links','urls','files','documents','memes','selfies','recordings','media'])

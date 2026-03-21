@@ -43,6 +43,13 @@ export async function computeSignals(): Promise<void> {
   const t0 = Date.now()
   const stashDb = initDb()
 
+  // Skip if unchanged
+  try {
+    const currentCount = (stashDb.prepare('SELECT COUNT(*) as c FROM message_signals').get() as { c: number }).c
+    const meta = stashDb.prepare("SELECT value FROM _meta WHERE key = 'signals_msg_count'").get() as { value: string } | undefined
+    if (meta && parseInt(meta.value) === currentCount) { console.log('[Signals] Skipping — no new analyzed messages'); return }
+  } catch {}
+
   // Get contacts with 100+ analyzed messages
   const contacts = stashDb.prepare(`SELECT chat_identifier, total_analyzed FROM conversation_signals WHERE total_analyzed >= 100`).all() as { chat_identifier: string; total_analyzed: number }[]
   if (contacts.length === 0) { console.log('[Signals] No contacts with 100+ analyzed messages'); return }
@@ -106,6 +113,7 @@ export async function computeSignals(): Promise<void> {
 
   const elapsed = ((Date.now() - t0) / 1000).toFixed(1)
   console.log(`[Signals] Complete: ${significantCount} significant, ${notableCount} notable, rest stable (${elapsed}s)`)
+  try { stashDb.prepare("INSERT OR REPLACE INTO _meta (key, value) VALUES ('signals_msg_count', ?)").run(String((stashDb.prepare('SELECT COUNT(*) as c FROM message_signals').get() as { c: number }).c)) } catch {}
 }
 
 function emitSignal(stmt: Database.Statement, ci: string, type: string, period: string, current: number, baseline: number, now: Date): void {

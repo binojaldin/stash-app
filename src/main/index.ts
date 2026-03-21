@@ -594,6 +594,21 @@ function setupIpc(): void {
     return d.prepare(`SELECT * FROM conversation_windows${filter} ORDER BY start_date DESC LIMIT ?`).all(...params)
   })
 
+  ipcMain.handle('get-dashboard-data', async (_event, scopedPerson?: string) => {
+    const t0 = Date.now()
+    const result: Record<string, unknown> = {}
+    try { result.closenessScores = getClosenessScores() } catch { result.closenessScores = [] }
+    try { result.msgIndexStatus = getMessageIndexStatus() } catch { result.msgIndexStatus = { total: 0, indexed: 0 } }
+    try { result.analysisProgress = getAnalysisProgress() } catch { result.analysisProgress = null }
+    if (!scopedPerson) {
+      try { result.todayInHistory = getTodayInHistory() } catch { result.todayInHistory = [] }
+      try { result.proactiveItems = getProactiveItems() } catch { result.proactiveItems = { items: [] } }
+      try { result.activeAlerts = getActiveAlerts() } catch { result.activeAlerts = [] }
+    }
+    console.log(`[PERF] get-dashboard-data: ${Date.now()-t0}ms`)
+    return result
+  })
+
   ipcMain.handle('export-file', async (_event, id: number) => {
     const att = getAttachmentById(id)
     if (!att || !existsSync(att.original_path)) return false
@@ -958,6 +973,7 @@ app.whenReady().then(() => {
   console.log(`[PERF][BOOT] Total boot to window created: ${Date.now()-bootStart}ms`)
 
   // Chain background tasks — each waits for the previous to finish
+  // Windows + signals are lazy (built on first search, not boot)
   async function runBackgroundTasks(): Promise<void> {
     const t0 = Date.now()
     await new Promise(resolve => setTimeout(resolve, 5000))
@@ -971,9 +987,6 @@ app.whenReady().then(() => {
     try { console.log('[Background] Closeness...'); await computeClosenessScores(mainWindow!); console.log(`[Background] Closeness done (${Date.now()-t0}ms)`) }
     catch (e) { console.error('[Closeness]', e) }
 
-    try { console.log('[Background] Conversation windows...'); buildConversationWindows(); console.log(`[Background] Windows done (${Date.now()-t0}ms)`) }
-    catch (e) { console.error('[Windows]', e) }
-
     try { console.log('[Background] Signals...'); await computeSignals(); console.log(`[Background] Signals done (${Date.now()-t0}ms)`) }
     catch (e) { console.error('[Signals]', e) }
 
@@ -984,7 +997,10 @@ app.whenReady().then(() => {
       console.log('[Background] Proactive scan...'); await scanForProactiveItems(); console.log(`[Background] Proactive done (${Date.now()-t0}ms)`)
     } catch (e) { console.error('[Proactive]', e) }
 
-    console.log(`[Background] All tasks complete in ${((Date.now()-t0)/1000).toFixed(1)}s`)
+    console.log(`\u2554${'═'.repeat(40)}\u2557`)
+    console.log(`\u2551 Boot complete: ${((Date.now()-bootStart)/1000).toFixed(1)}s`)
+    console.log(`\u2551 Background tasks: ${((Date.now()-t0)/1000).toFixed(1)}s`)
+    console.log(`\u255A${'═'.repeat(40)}\u255D`)
   }
   setTimeout(() => { runBackgroundTasks().catch(e => console.error('[Background] Chain failed:', e)) }, 3000)
 

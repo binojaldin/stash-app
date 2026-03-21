@@ -1348,7 +1348,6 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
   const [todayMemories, setTodayMemories] = useState<MemoryItem[]>([])
   const [networkData, setNetworkData] = useState<NetworkData | null>(null)
   const [closenessData, setClosenessData] = useState<{ chat_identifier: string; total_score: number; tier: string }[]>([])
-  useEffect(() => { window.api.getClosenessScores().then(d => setClosenessData(d as { chat_identifier: string; total_score: number; tier: string }[])).catch(() => {}) }, [])
   type UsageData = { totalMessages: number; sentMessages: number; receivedMessages: number; messagesPerYear: { year: number; count: number }[]; busiestDay: { date: string; count: number } | null; busiestYear: { year: number; count: number } | null; activeConversations: number }
   const [usageData, setUsageData] = useState<UsageData | null>(null)
   const [gravityIndiv, setGravityIndiv] = useState<GravityYear[]>([])
@@ -1375,13 +1374,20 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
     window.api.getUsageStats(bounds.from, bounds.to).then(r => { setUsageData(r); console.log(`[PERF] getUsageStats: ${Date.now()-t0}ms`) }).catch(() => {})
   }, [dateRange])
 
-  // Stage B: lightweight above-the-fold (next tick after mount)
+  // Stage B: batched initial load (single IPC round trip)
   useEffect(() => {
     const t0 = Date.now()
-    window.api.getTodayInHistory().then(r => { setTodayMemories(r); console.log(`[PERF] getTodayInHistory: ${Date.now()-t0}ms`) }).catch(() => {})
-  }, [])
+    window.api.getDashboardData(scopedPerson || undefined).then((data: Record<string, unknown>) => {
+      if (data.closenessScores) setClosenessData(data.closenessScores as typeof closenessData)
+      if (data.msgIndexStatus) setMsgIndexStatus(data.msgIndexStatus as typeof msgIndexStatus)
+      if (data.todayInHistory) setTodayMemories(data.todayInHistory as MemoryItem[])
+      if (data.proactiveItems) setProactiveItems(((data.proactiveItems as { items?: unknown[] })?.items || []) as typeof proactiveItems)
+      if (data.activeAlerts) setActiveAlerts(data.activeAlerts as typeof activeAlerts)
+      console.log(`[PERF] Dashboard batch load: ${Date.now()-t0}ms`)
+    }).catch(() => {})
+  }, [scopedPerson])
 
-  // Stage C: heavy network/gravity (deferred 80ms to let shell paint)
+  // Stage C: heavy network/gravity (deferred 2s to let shell paint)
   useEffect(() => {
     const timer = setTimeout(() => {
       const t0 = Date.now()
@@ -1389,16 +1395,15 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
         window.api.getMessagingNetwork().then(r => { setNetworkData(r); console.log(`[PERF] getMessagingNetwork: ${Date.now()-t0}ms`) }),
         window.api.getSocialGravity().then(r => { setGravityIndiv(r.individualYears); setGravityGroups(r.groupYears); console.log(`[PERF] getSocialGravity: ${Date.now()-t0}ms`) }),
       ]).catch(() => {})
-    }, 80)
+    }, 2000)
     return () => clearTimeout(timer)
   }, [])
 
-  // Stage D: heaviest deterministic sections (deferred 250ms)
+  // Stage D: heaviest deterministic sections (deferred 4s)
   useEffect(() => {
     let cancelled = false
     const timer = setTimeout(async () => {
       const t0 = Date.now()
-      // Topic Eras + Memory in parallel (deterministic first)
       const [erasResult, momentsResult] = await Promise.all([
         window.api.getTopicEras().then(r => { console.log(`[PERF] getTopicEras: ${Date.now()-t0}ms`); return r }).catch(() => ({ chapters: [] as TopicChapter[] })),
         window.api.getMemoryMoments().then(r => { console.log(`[PERF] getMemoryMoments: ${Date.now()-t0}ms`); return r }).catch(() => ({ moments: [] as MemoryMoment[] })),
@@ -1457,7 +1462,7 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
 
         console.log(`[PERF] Total hydrate (with AI): ${Date.now()-hydrateStart.current}ms`)
       } catch (err) { console.error('[PERF] AI enrichment failed:', err) }
-    }, 250)
+    }, 4000)
     return () => { cancelled = true; clearTimeout(timer) }
   }, [])
 
@@ -1496,7 +1501,7 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
   const [wordOrigins, setWordOrigins] = useState<{ word: string; firstUsed: string; chatName: string; totalUses: number; firstMessage: string | null }[]>([])
 
   useEffect(() => {
-    window.api.getMessageIndexStatus().then(setMsgIndexStatus).catch(() => {})
+    // msgIndexStatus loaded in batch; vocab/origins still per-person
     window.api.getVocabStats(scopedPerson || undefined).then(setVocabStats).catch(() => {})
     window.api.getWordOrigins(scopedPerson || undefined).then(setWordOrigins).catch(() => {})
   }, [scopedPerson])
@@ -1635,10 +1640,8 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
   // ── Signals (must be before early return) ──
   const [activeAlerts, setActiveAlerts] = useState<{ chat_identifier: string; signal_type: string; message: string; severity: string; delta_pct: number }[]>([])
   const [contactSignals, setContactSignals] = useState<{ signal_type: string; period: string; current_value: number; baseline_value: number; delta_pct: number; direction: string }[]>([])
-  // Fetch alerts with delay — signals engine runs 15s after boot
+  // Re-fetch alerts after signals engine has had time to compute (initial fetch is in batch)
   useEffect(() => {
-    window.api.getActiveAlerts().then(setActiveAlerts).catch(() => {})
-    // Re-fetch after signals engine has had time to compute
     const timer = setTimeout(() => { window.api.getActiveAlerts().then(a => { console.log('[UI] Alerts re-fetched:', a.length); setActiveAlerts(a) }).catch(() => {}) }, 20000)
     return () => clearTimeout(timer)
   }, [])
@@ -1693,9 +1696,8 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
 
   // ── Proactive Intelligence (must be before early return) ──
   const [proactiveItems, setProactiveItems] = useState<{ id: number; chat_identifier: string; item_type: string; description: string; source_message: string; due_date: string | null; status: string; priority: number; contact_name: string }[]>([])
+  // Re-fetch proactive items after scan completes (initial fetch is in batch)
   useEffect(() => {
-    window.api.getProactiveItems().then(r => setProactiveItems(r.items)).catch(() => {})
-    // Re-fetch after proactive scan has had time to run (35s boot + scan time)
     const timer = setTimeout(() => { window.api.getProactiveItems().then(r => setProactiveItems(r.items)).catch(() => {}) }, 35000)
     return () => clearTimeout(timer)
   }, [])

@@ -2902,24 +2902,56 @@ export function getMessageContext(chatName: string, sentAt: string, windowSize =
 export function buildConversationWindows(): void {
   const d = initDb()
   const t0 = Date.now()
-  d.prepare('DELETE FROM conversation_windows').run()
 
-  const chats = d.prepare(`SELECT DISTINCT chat_name FROM messages WHERE body IS NOT NULL GROUP BY chat_name HAVING COUNT(*) >= 10`).all() as { chat_name: string }[]
+  // Skip if unchanged
+  const currentMsgCount = (d.prepare('SELECT COUNT(*) as c FROM messages').get() as { c: number }).c
+  const existingWindows = (d.prepare('SELECT COUNT(*) as c FROM conversation_windows').get() as { c: number }).c
+  const meta = d.prepare("SELECT value FROM _meta WHERE key = 'windows_msg_count'").get() as { value: string } | undefined
+  const lastMsgCount = meta ? parseInt(meta.value) : 0
+
+  if (existingWindows > 0 && currentMsgCount === lastMsgCount) {
+    console.log(`[Windows] Skipping — ${existingWindows} windows already built for ${currentMsgCount} messages`)
+    return
+  }
+
+  // Incremental: only rebuild chats with new messages
+  let chats: { chat_name: string }[]
+  if (existingWindows > 0 && lastMsgCount > 0) {
+    const lastWindowDate = (d.prepare('SELECT MAX(end_date) as d FROM conversation_windows').get() as { d: string } | undefined)?.d
+    if (lastWindowDate) {
+      chats = d.prepare(`SELECT DISTINCT chat_name FROM messages WHERE sent_at > ? AND body IS NOT NULL`).all(lastWindowDate) as { chat_name: string }[]
+      if (chats.length === 0) { console.log('[Windows] No new messages since last build'); d.prepare("INSERT OR REPLACE INTO _meta (key, value) VALUES ('windows_msg_count', ?)").run(String(currentMsgCount)); return }
+      for (const c of chats) d.prepare('DELETE FROM conversation_windows WHERE chat_identifier = ?').run(c.chat_name)
+      console.log(`[Windows] Incremental: rebuilding ${chats.length} chats with new messages`)
+    } else {
+      d.prepare('DELETE FROM conversation_windows').run()
+      chats = d.prepare(`SELECT DISTINCT chat_name FROM messages WHERE body IS NOT NULL GROUP BY chat_name HAVING COUNT(*) >= 10`).all() as { chat_name: string }[]
+    }
+  } else {
+    d.prepare('DELETE FROM conversation_windows').run()
+    chats = d.prepare(`SELECT DISTINCT chat_name FROM messages WHERE body IS NOT NULL GROUP BY chat_name HAVING COUNT(*) >= 10`).all() as { chat_name: string }[]
+  }
+
+  // Pre-batch attachment counts and OCR text
+  const attCountMap = new Map<string, number>()
+  try {
+    const rows = d.prepare(`SELECT chat_name || ':' || date(created_at) as key, COUNT(*) as c FROM attachments WHERE chat_name IS NOT NULL GROUP BY chat_name, date(created_at)`).all() as { key: string; c: number }[]
+    for (const r of rows) attCountMap.set(r.key, (attCountMap.get(r.key) || 0) + r.c)
+  } catch {}
+
+  const ocrByChat = new Map<string, { date: string; text: string }[]>()
+  try {
+    const rows = d.prepare(`SELECT chat_name, date(created_at) as d, ocr_text FROM attachments WHERE ocr_text IS NOT NULL AND length(ocr_text) > 10`).all() as { chat_name: string; d: string; ocr_text: string }[]
+    for (const r of rows) { if (!ocrByChat.has(r.chat_name)) ocrByChat.set(r.chat_name, []); ocrByChat.get(r.chat_name)!.push({ date: r.d, text: r.ocr_text }) }
+  } catch {}
 
   const insertWindow = d.prepare(`INSERT INTO conversation_windows (chat_identifier, start_date, end_date, message_count, participants, has_attachments, attachment_count, summary_text, top_keywords, avg_heat, has_question, has_link) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-
   let totalWindows = 0
 
   const tx = d.transaction(() => {
     for (const chat of chats) {
-      const messages = d.prepare(`
-        SELECT m.body, m.is_from_me, m.sent_at, m.apple_date, m.sender_handle,
-               ms.heat_score, ms.has_question, ms.has_link
-        FROM messages m LEFT JOIN message_signals ms ON m.chat_name = ms.chat_identifier AND m.sent_at = ms.sent_at
-        WHERE m.chat_name = ? AND m.body IS NOT NULL AND length(m.body) > 2
-        ORDER BY m.apple_date ASC
-      `).all(chat.chat_name) as { body: string; is_from_me: number; sent_at: string; apple_date: number; sender_handle: string; heat_score: number; has_question: number; has_link: number }[]
-
+      // No JOIN to message_signals — compute from text directly
+      const messages = d.prepare(`SELECT body, is_from_me, sent_at, apple_date, sender_handle FROM messages WHERE chat_name = ? AND body IS NOT NULL AND length(body) > 2 ORDER BY apple_date ASC`).all(chat.chat_name) as { body: string; is_from_me: number; sent_at: string; apple_date: number; sender_handle: string }[]
       if (messages.length < 3) continue
 
       let windowStart = 0
@@ -2930,29 +2962,29 @@ export function buildConversationWindows(): void {
           if (wm.length >= 3) {
             const senders = [...new Set(wm.map(m => m.sender_handle || (m.is_from_me ? 'me' : 'them')))]
             let summary = wm.map(m => m.body).join(' ').slice(0, 500)
-
             const allTokens = wm.flatMap(m => tokenizeWords(m.body))
             const freq = new Map<string, number>()
             for (const t of allTokens) freq.set(t, (freq.get(t) || 0) + 1)
             const topKw = [...freq.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([w]) => w)
+            const hasQuestion = wm.some(m => m.body.includes('?')) ? 1 : 0
+            const hasLink = wm.some(m => /https?:\/\//.test(m.body)) ? 1 : 0
 
-            const avgHeat = wm.reduce((s, m) => s + (m.heat_score || 0), 0) / wm.length
-            const hasQuestion = wm.some(m => m.has_question) ? 1 : 0
-            const hasLink = wm.some(m => m.has_link) ? 1 : 0
-
+            // Batched attachment count
+            const startDate = wm[0].sent_at.slice(0, 10)
+            const endDate = wm[wm.length - 1].sent_at.slice(0, 10)
             let attCount = 0
-            try {
-              attCount = (d.prepare(`SELECT COUNT(*) as c FROM attachments WHERE chat_name = ? AND created_at >= ? AND created_at <= ?`).get(chat.chat_name, wm[0].sent_at, wm[wm.length - 1].sent_at) as { c: number }).c
-            } catch {}
+            for (let d2 = startDate; d2 <= endDate; d2 = new Date(new Date(d2).getTime() + 86400000).toISOString().slice(0, 10)) {
+              attCount += attCountMap.get(chat.chat_name + ':' + d2) || 0
+            }
 
-            // Include OCR text from attachments in this window
-            try {
-              const ocrRows = d.prepare(`SELECT ocr_text FROM attachments WHERE chat_name = ? AND created_at >= ? AND created_at <= ? AND ocr_text IS NOT NULL AND length(ocr_text) > 10`).all(chat.chat_name, wm[0].sent_at, wm[wm.length - 1].sent_at) as { ocr_text: string }[]
-              const ocrText = ocrRows.map(r => r.ocr_text).join(' ').slice(0, 200)
+            // Batched OCR text
+            const ocrEntries = ocrByChat.get(chat.chat_name)
+            if (ocrEntries) {
+              const ocrText = ocrEntries.filter(o => o.date >= startDate && o.date <= endDate).map(o => o.text).join(' ').slice(0, 200)
               if (ocrText) summary = (summary + ' ' + ocrText).slice(0, 700)
-            } catch {}
+            }
 
-            insertWindow.run(chat.chat_name, wm[0].sent_at, wm[wm.length - 1].sent_at, wm.length, JSON.stringify(senders), attCount > 0 ? 1 : 0, attCount, summary, JSON.stringify(topKw), Math.round(avgHeat * 100) / 100, hasQuestion, hasLink)
+            insertWindow.run(chat.chat_name, wm[0].sent_at, wm[wm.length - 1].sent_at, wm.length, JSON.stringify(senders), attCount > 0 ? 1 : 0, attCount, summary, JSON.stringify(topKw), 0, hasQuestion, hasLink)
             totalWindows++
           }
           windowStart = i
@@ -2963,7 +2995,8 @@ export function buildConversationWindows(): void {
   tx()
 
   try { d.exec(`INSERT INTO conversation_windows_fts(conversation_windows_fts) VALUES('rebuild')`) } catch {}
-  console.log(`[Windows] Built ${totalWindows} conversation windows from ${chats.length} chats in ${((Date.now() - t0) / 1000).toFixed(1)}s`)
+  d.prepare("INSERT OR REPLACE INTO _meta (key, value) VALUES ('windows_msg_count', ?)").run(String(currentMsgCount))
+  console.log(`[Windows] Built ${totalWindows} windows from ${chats.length} chats in ${((Date.now() - t0) / 1000).toFixed(1)}s`)
 }
 
 export function extractOCRSnippet(ocrText: string, keyword: string): string {
