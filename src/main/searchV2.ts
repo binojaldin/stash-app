@@ -27,7 +27,7 @@ export interface SearchPlan {
   attachmentTypes: string[]
   speaker: 'me' | 'them' | 'both'
   sort: 'relevance' | 'recent' | 'oldest'
-  answerMode: 'results' | 'summary' | 'results+summary'
+  answerMode: 'results' | 'summary' | 'results+summary' | 'ranking'
   confidence: number
   originalQuery: string
 }
@@ -90,6 +90,45 @@ export async function executeSearchV2(
   const personParams = plan.peopleIdentifiers
   const dateStart = plan.timeRange?.start || null
   const dateEnd = plan.timeRange?.end || null
+
+  // RETRIEVER 0: Ranking query (short-circuit — returns early)
+  if (plan.answerMode === 'ranking') {
+    try {
+      const whereParts: string[] = []
+      const params: string[] = []
+      if (dateStart) { whereParts.push(`sent_at >= ?`); params.push(dateStart) }
+      if (dateEnd) { whereParts.push(`sent_at <= ?`); params.push(dateEnd + ' 23:59:59') }
+      if (plan.speaker === 'me') whereParts.push('is_from_me = 1')
+      else if (plan.speaker === 'them') whereParts.push('is_from_me = 0')
+
+      const whereClause = whereParts.length > 0 ? `WHERE ${whereParts.join(' AND ')}` : ''
+      const rows = d.prepare(`
+        SELECT chat_name, COUNT(*) as msg_count
+        FROM messages ${whereClause}
+        GROUP BY chat_name ORDER BY msg_count DESC LIMIT 15
+      `).all(...params) as { chat_name: string; msg_count: number }[]
+
+      console.log(`[SearchV2] Ranking: ${rows.length} contacts (${Date.now() - t0}ms)`)
+      return {
+        plan,
+        sections: {
+          messages: [],
+          attachments: [],
+          conversations: rows.map(r => ({
+            chat_name: r.chat_name,
+            contact_name: resolve(r.chat_name),
+            messageCount: r.msg_count,
+            matchingMessages: r.msg_count,
+            dateRange: plan.timeRange?.description || 'all time',
+            preview: `${r.msg_count.toLocaleString()} messages`
+          })),
+          summary: null
+        },
+        totalResults: rows.length,
+        searchTimeMs: Date.now() - t0
+      }
+    } catch (err) { console.error('[SearchV2] Ranking error:', err) }
+  }
 
   const [messageResults, attachmentResults, conversationResults] = await Promise.all([
 

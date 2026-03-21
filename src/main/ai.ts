@@ -663,7 +663,7 @@ Given a query, extract ALL dimensions:
   "attachmentTypes": [],
   "speaker": "me" | "them" | "both",
   "sort": "relevance" | "recent" | "oldest",
-  "answerMode": "results" | "summary" | "results+summary",
+  "answerMode": "results" | "summary" | "results+summary" | "ranking",
   "confidence": 0.0-1.0
 }
 
@@ -673,7 +673,8 @@ Rules:
 - If the query mentions photos/images/screenshots → set modalities to "attachments" or "both" and add attachment types.
 - semanticExpansions: add 3-5 related words. "cabo trip" → ["vacation", "beach", "flight", "hotel", "mexico"]
 - If the query is just a word/phrase with no other filters, set keywords to that phrase, everything else null/default.
-- "who did I talk to most" → answerMode = "summary", no keywords needed
+- "who did I talk to most" / "most active" / "top conversations" / "rank by" → answerMode = "ranking", keywords = [], modalities = "messages"
+- Any query asking to RANK or find the MOST/TOP/BIGGEST when asking about people → answerMode = "ranking"
 - confidence: 0.9+ if person and topic are clear. 0.5-0.8 if ambiguous.
 
 Return ONLY the JSON object.`

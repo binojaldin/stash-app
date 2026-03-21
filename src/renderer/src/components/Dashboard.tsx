@@ -99,6 +99,31 @@ function TileLabel({ text }: { text: string }): JSX.Element {
   return <div style={{ fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase', color: '#6f6a65', marginBottom: 14 }}>{text}</div>
 }
 
+function SearchAttachmentRow({ att, onSelect }: { att: { id: number; filename: string; chat_name: string; contact_name: string; created_at: string; thumbnail_path: string | null; is_image: boolean; matchReason: string }; onSelect: () => void }): JSX.Element {
+  const [thumbUrl, setThumbUrl] = useState<string | null>(null)
+  useEffect(() => {
+    if (att.is_image && att.thumbnail_path) {
+      window.api.getFileUrl(att.thumbnail_path).then(url => { if (url) setThumbUrl(url) }).catch(() => {})
+    }
+  }, [att.thumbnail_path, att.is_image])
+  return (
+    <div onClick={onSelect}
+      style={{ padding: '10px 16px', borderRadius: 12, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', cursor: 'pointer', display: 'flex', gap: 12, alignItems: 'center' }}
+      onMouseEnter={e => (e.currentTarget.style.background = '#F8F4F0')} onMouseLeave={e => (e.currentTarget.style.background = '#fff')}>
+      {thumbUrl ? (
+        <img src={thumbUrl} style={{ width: 36, height: 36, borderRadius: 8, objectFit: 'cover', flexShrink: 0 }} />
+      ) : (
+        <div style={{ width: 36, height: 36, borderRadius: 8, background: '#F8F4F0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 }}>{att.is_image ? '\u{1F5BC}' : '\u{1F4CE}'}</div>
+      )}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 12, color: '#1A1A1A', fontFamily: "'DM Sans'", overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{att.filename || 'Attachment'}</div>
+        <div style={{ fontSize: 10, color: '#9a948f', fontFamily: "'DM Sans'" }}>{att.contact_name} · {new Date(att.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</div>
+      </div>
+      <span style={{ fontSize: 9, padding: '1px 6px', borderRadius: 4, background: 'rgba(0,0,0,0.04)', color: '#9a948f', fontFamily: "'DM Sans'", flexShrink: 0 }}>{att.matchReason}</span>
+    </div>
+  )
+}
+
 function Metric({ value, sub }: { value: string; sub: string }): JSX.Element {
   return (
     <>
@@ -3048,22 +3073,38 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
           )}
 
           {/* Conversations section */}
-          {searchResultV2.sections.conversations.length > 0 && (
-            <div style={{ marginBottom: 16 }}>
-              <div style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#2EC4A0', marginBottom: 8, fontFamily: "'DM Sans'", fontWeight: 600 }}>Conversations ({searchResultV2.sections.conversations.length})</div>
-              {searchResultV2.sections.conversations.map((c, i) => (
-                <div key={i} onClick={() => onSelectConversation(c.chat_name)}
-                  style={{ padding: '12px 16px', borderRadius: 12, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', cursor: 'pointer', marginBottom: 6 }}
-                  onMouseEnter={e => (e.currentTarget.style.background = '#F8F4F0')} onMouseLeave={e => (e.currentTarget.style.background = '#fff')}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ fontSize: 14, fontWeight: 600, color: '#1A1A1A', fontFamily: "'DM Sans'" }}>{c.contact_name}</span>
-                    {c.matchingMessages > 0 && <span style={{ fontSize: 12, color: '#E8604A', fontFamily: "'DM Sans'" }}>{c.matchingMessages} matches</span>}
-                  </div>
-                  <div style={{ fontSize: 11, color: '#9a948f', fontFamily: "'DM Sans'", marginTop: 2 }}>{c.messageCount.toLocaleString()} messages · {c.dateRange}</div>
+          {searchResultV2.sections.conversations.length > 0 && (() => {
+            const isRanking = searchResultV2.plan.answerMode === 'ranking'
+            const maxMsg = Math.max(...searchResultV2.sections.conversations.map(c => c.matchingMessages), 1)
+            return (
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#2EC4A0', marginBottom: 8, fontFamily: "'DM Sans'", fontWeight: 600 }}>
+                  {isRanking ? `Top conversations · ${searchResultV2.sections.conversations[0]?.dateRange || 'all time'}` : `Conversations (${searchResultV2.sections.conversations.length})`}
                 </div>
-              ))}
-            </div>
-          )}
+                {searchResultV2.sections.conversations.map((c, i) => (
+                  <div key={i} onClick={() => onSelectConversation(c.chat_name)}
+                    style={{ padding: '12px 16px', borderRadius: 12, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', cursor: 'pointer', marginBottom: 6 }}
+                    onMouseEnter={e => (e.currentTarget.style.background = '#F8F4F0')} onMouseLeave={e => (e.currentTarget.style.background = '#fff')}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: isRanking ? 6 : 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        {isRanking && <span style={{ fontSize: 12, color: i === 0 ? '#E8604A' : '#c8c0ba', fontWeight: 600, width: 18, fontFamily: "'DM Sans'" }}>{i + 1}</span>}
+                        <span style={{ fontSize: 14, fontWeight: i === 0 && isRanking ? 600 : 400, color: '#1A1A1A', fontFamily: "'DM Sans'" }}>{c.contact_name}</span>
+                      </div>
+                      <span style={{ fontFamily: isRanking ? "'Unbounded', sans-serif" : "'DM Sans'", fontWeight: isRanking ? 200 : 400, fontSize: isRanking ? 15 : 12, color: i === 0 && isRanking ? '#E8604A' : '#9a948f' }}>
+                        {c.matchingMessages.toLocaleString()} {isRanking ? '' : 'matches'}
+                      </span>
+                    </div>
+                    {isRanking && (
+                      <div style={{ height: 3, borderRadius: 2, background: '#EAE5DF', overflow: 'hidden' }}>
+                        <div style={{ height: '100%', width: `${Math.round((c.matchingMessages / maxMsg) * 100)}%`, background: i === 0 ? '#E8604A' : '#D4CFC9', borderRadius: 2 }} />
+                      </div>
+                    )}
+                    {!isRanking && <div style={{ fontSize: 11, color: '#9a948f', fontFamily: "'DM Sans'", marginTop: 2 }}>{c.messageCount.toLocaleString()} messages · {c.dateRange}</div>}
+                  </div>
+                ))}
+              </div>
+            )
+          })()}
 
           {/* Messages section */}
           {searchResultV2.sections.messages.length > 0 && (
@@ -3094,16 +3135,7 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
               <div style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#7F77DD', marginBottom: 8, fontFamily: "'DM Sans'", fontWeight: 600 }}>Attachments ({searchResultV2.sections.attachments.length})</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {searchResultV2.sections.attachments.slice(0, 12).map((a, i) => (
-                  <div key={i} onClick={() => onSelectConversation(a.chat_name)}
-                    style={{ padding: '10px 16px', borderRadius: 12, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', cursor: 'pointer', display: 'flex', gap: 12, alignItems: 'center' }}
-                    onMouseEnter={e => (e.currentTarget.style.background = '#F8F4F0')} onMouseLeave={e => (e.currentTarget.style.background = '#fff')}>
-                    <div style={{ width: 36, height: 36, borderRadius: 8, background: '#F8F4F0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 }}>{a.is_image ? '🖼' : '📎'}</div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 12, color: '#1A1A1A', fontFamily: "'DM Sans'", overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.filename || 'Attachment'}</div>
-                      <div style={{ fontSize: 10, color: '#9a948f', fontFamily: "'DM Sans'" }}>{a.contact_name} · {new Date(a.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</div>
-                    </div>
-                    <span style={{ fontSize: 9, padding: '1px 6px', borderRadius: 4, background: 'rgba(0,0,0,0.04)', color: '#9a948f', fontFamily: "'DM Sans'", flexShrink: 0 }}>{a.matchReason}</span>
-                  </div>
+                  <SearchAttachmentRow key={i} att={a} onSelect={() => onSelectConversation(a.chat_name)} />
                 ))}
               </div>
             </div>
