@@ -1531,7 +1531,7 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
 
   // Search V2 state
   type SearchResultV2Data = {
-    plan: { people: string[]; topic: string | null; keywords: string[]; timeRange: { start: string | null; end: string | null; description: string } | null; modalities: string; originalQuery: string; confidence: number }
+    plan: { people: string[]; topic: string | null; keywords: string[]; timeRange: { start: string | null; end: string | null; description: string } | null; modalities: string; answerMode?: string; originalQuery: string; confidence: number }
     sections: {
       messages: { body: string; chat_name: string; contact_name: string; is_from_me: boolean; sent_at: string; matchReason: string; relevanceScore: number }[]
       attachments: { id: number; filename: string; chat_name: string; contact_name: string; created_at: string; thumbnail_path: string | null; is_image: boolean; matchReason: string; ocrSnippet?: string }[]
@@ -1539,9 +1539,27 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
       summary: string | null
     }
     totalResults: number; searchTimeMs: number
+    redirect?: { message: string; person: string; chatIdentifier: string; suggestedQuery: string }
   }
   const [searchResultV2, setSearchResultV2] = useState<SearchResultV2Data | null>(null)
   const [messageContext, setMessageContext] = useState<{ messages: { body: string; is_from_me: boolean; sent_at: string; contact_name: string }[]; highlightIndex: number; chat_name: string } | null>(null)
+
+  // Relationship search state (must be before scopedPerson early return)
+  const [relQuery, setRelQuery] = useState('')
+  const [relSearching, setRelSearching] = useState(false)
+  type RelSearchResult = { answer: string; episodes: { title: string; messages: { body: string; is_from_me: boolean; sent_at: string }[]; insight: string }[]; evidence: { label: string; value: string }[]; suggestedFollowUps: string[] }
+  const [relSearchResult, setRelSearchResult] = useState<RelSearchResult | null>(null)
+  useEffect(() => { setRelSearchResult(null); setRelQuery('') }, [scopedPerson])
+  const REL_SEARCH_EXAMPLES = ['Show me times we argued', 'When was I being sweet?', 'Our funniest conversation', 'Times I forgot something', 'Our longest messages', 'When did things get tense?', 'A time we made big plans']
+  const handleRelSearch = async (): Promise<void> => {
+    if (!relQuery.trim() || relSearching || !scopedPerson) return
+    setRelSearching(true)
+    try {
+      const result = await window.api.executeRelationshipSearch(relQuery.trim(), scopedPerson, resolveName(scopedPerson, chatNameMap))
+      setRelSearchResult(result || null)
+    } catch {}
+    setRelSearching(false)
+  }
 
   const SEARCH_EXAMPLES = [
     'Messages with Ash about the cabo trip',
@@ -1869,6 +1887,78 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
                 <span style={{ fontSize: 11, padding: '3px 10px', borderRadius: 20, background: 'rgba(127,119,221,0.08)', color: '#7F77DD', fontFamily: "'DM Sans'" }}>{convoSummary.tone}</span>
               </div>
               <div style={{ fontSize: 14, color: '#4a4542', lineHeight: 1.7, fontFamily: "'DM Sans'" }}>{convoSummary.summary}</div>
+            </div>
+          )}
+
+          {/* ── RELATIONSHIP SEARCH ── */}
+          <div style={{ borderRadius: 14, background: 'rgba(46,196,160,0.04)', border: '1px solid rgba(46,196,160,0.15)', padding: '16px 20px', marginBottom: 16 }}>
+            <div style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#2EC4A0', marginBottom: 8, fontFamily: "'DM Sans'", fontWeight: 600 }}>Ask about this relationship</div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input type="text" value={relQuery} onChange={e => setRelQuery(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleRelSearch()}
+                placeholder={REL_SEARCH_EXAMPLES[placeholderIdx % REL_SEARCH_EXAMPLES.length]}
+                style={{ flex: 1, padding: '10px 14px', borderRadius: 8, background: '#fff', border: '1px solid rgba(0,0,0,0.08)', color: '#1A1A1A', fontSize: 13, outline: 'none', fontFamily: "'DM Sans'" }} />
+              <button onClick={handleRelSearch} disabled={relSearching}
+                style={{ padding: '10px 18px', borderRadius: 8, background: '#2EC4A0', border: 'none', color: '#fff', fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: "'DM Sans'", opacity: relSearching ? 0.6 : 1 }}>
+                {relSearching ? 'Thinking\u2026' : 'Ask'}
+              </button>
+            </div>
+            <div style={{ fontSize: 9, color: '#9a948f', marginTop: 6, fontFamily: "'DM Sans'" }}>AI reads your conversation to find specific moments and patterns</div>
+          </div>
+
+          {/* Relationship search results */}
+          {relSearchResult && (
+            <div style={{ marginBottom: 16 }}>
+              {/* AI Answer */}
+              <div style={{ borderRadius: 14, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', padding: '20px 24px', marginBottom: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+                  <span style={{ fontSize: 8, padding: '2px 6px', borderRadius: 4, background: 'rgba(127,119,221,0.12)', color: '#7F77DD', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 600 }}>AI</span>
+                </div>
+                <div style={{ fontSize: 15, color: '#1A1A1A', lineHeight: 1.7, fontFamily: "'DM Sans'" }}>{relSearchResult.answer}</div>
+              </div>
+
+              {/* Episodes */}
+              {relSearchResult.episodes.map((ep, i) => (
+                <div key={i} style={{ borderRadius: 14, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', padding: '18px 22px', marginBottom: 10 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: '#1A1A1A', marginBottom: 4, fontFamily: "'DM Sans'" }}>{ep.title}</div>
+                  <div style={{ fontSize: 11, color: '#9a948f', marginBottom: 12, fontFamily: "'DM Sans'", fontStyle: 'italic' }}>{ep.insight}</div>
+                  {ep.messages.map((m, j) => (
+                    <div key={j} style={{
+                      padding: '8px 12px', marginBottom: 3, borderRadius: 10,
+                      background: m.is_from_me ? 'rgba(46,196,160,0.06)' : '#F8F4F0',
+                      maxWidth: '85%', marginLeft: m.is_from_me ? 'auto' : 0, marginRight: m.is_from_me ? 0 : 'auto'
+                    }}>
+                      <div style={{ fontSize: 12, color: '#4a4542', lineHeight: 1.5, fontFamily: "'DM Sans'" }}>{m.body}</div>
+                      <div style={{ fontSize: 9, color: '#c8c0ba', marginTop: 2 }}>
+                        {m.is_from_me ? 'You' : firstName} · {m.sent_at}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ))}
+
+              {/* Patterns */}
+              {relSearchResult.evidence.length > 0 && (
+                <div style={{ borderRadius: 14, background: 'rgba(46,196,160,0.04)', border: '1px solid rgba(46,196,160,0.1)', padding: '16px 20px', marginBottom: 10 }}>
+                  <div style={{ fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#2EC4A0', marginBottom: 8, fontWeight: 600 }}>Patterns</div>
+                  {relSearchResult.evidence.map((e, i) => (
+                    <div key={i} style={{ fontSize: 12, color: '#4a4542', lineHeight: 1.6, marginBottom: 4, fontFamily: "'DM Sans'" }}>
+                      <span style={{ fontWeight: 600 }}>{e.label}:</span> {e.value}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Follow-ups */}
+              {relSearchResult.suggestedFollowUps.length > 0 && (
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {relSearchResult.suggestedFollowUps.map((f, i) => (
+                    <button key={i} onClick={() => { setRelQuery(f); setTimeout(handleRelSearch, 50) }}
+                      style={{ fontSize: 11, padding: '6px 12px', borderRadius: 8, background: 'rgba(127,119,221,0.08)', color: '#7F77DD', border: 'none', cursor: 'pointer', fontFamily: "'DM Sans'" }}>
+                      {f}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
@@ -3070,6 +3160,15 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
             )}
             <span style={{ fontSize: 10, color: '#c8c0ba', fontFamily: "'DM Sans'", alignSelf: 'center' }}>{searchResultV2.searchTimeMs}ms · {searchResultV2.totalResults} results</span>
           </div>
+
+          {/* Redirect card */}
+          {searchResultV2.redirect && (
+            <div style={{ borderRadius: 14, background: 'linear-gradient(135deg, rgba(46,196,160,0.06) 0%, rgba(127,119,221,0.06) 100%)', border: '1px solid rgba(46,196,160,0.15)', padding: '16px 20px', marginBottom: 12, cursor: 'pointer' }}
+              onClick={() => { onSelectConversation(searchResultV2.redirect!.chatIdentifier); setTimeout(() => setRelQuery(searchResultV2.redirect!.suggestedQuery), 100) }}>
+              <div style={{ fontSize: 13, color: '#1A1A1A', fontFamily: "'DM Sans'", marginBottom: 4 }}>{searchResultV2.redirect.message}</div>
+              <div style={{ fontSize: 12, color: '#2EC4A0', fontFamily: "'DM Sans'", fontWeight: 500 }}>&rarr; Ask in {searchResultV2.redirect.person}&rsquo;s relationship view</div>
+            </div>
+          )}
 
           {/* AI Summary */}
           {searchResultV2.sections.summary && (
