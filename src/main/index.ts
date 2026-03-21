@@ -576,6 +576,27 @@ function setupIpc(): void {
     return false
   })
 
+  ipcMain.handle('open-file', (_event, filePath: string) => {
+    if (existsSync(filePath)) { shell.openPath(filePath); return true }
+    return false
+  })
+
+  ipcMain.handle('get-message-context', (_event, chatName: string, sentAt: string) => {
+    const d = initDb()
+    try {
+      const rows = d.prepare(`
+        SELECT body, is_from_me, sent_at FROM messages
+        WHERE chat_name = ?
+        AND apple_date BETWEEN
+          (SELECT apple_date FROM messages WHERE chat_name = ? AND sent_at = ? LIMIT 1) - 100000000000
+          AND
+          (SELECT apple_date FROM messages WHERE chat_name = ? AND sent_at = ? LIMIT 1) + 100000000000
+        ORDER BY apple_date LIMIT 20
+      `).all(chatName, chatName, sentAt, chatName, sentAt) as { body: string; is_from_me: number; sent_at: string }[]
+      return { messages: rows }
+    } catch { return { messages: [] } }
+  })
+
   ipcMain.handle('export-file', async (_event, id: number) => {
     const att = getAttachmentById(id)
     if (!att || !existsSync(att.original_path)) return false

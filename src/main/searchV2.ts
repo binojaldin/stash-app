@@ -27,7 +27,7 @@ export interface SearchPlan {
   attachmentTypes: string[]
   speaker: 'me' | 'them' | 'both'
   sort: 'relevance' | 'recent' | 'oldest'
-  answerMode: 'results' | 'summary' | 'results+summary' | 'ranking' | 'temporal'
+  answerMode: 'results' | 'summary' | 'results+summary' | 'ranking' | 'temporal' | 'signal_ranking'
   confidence: number
   originalQuery: string
 }
@@ -86,6 +86,13 @@ export async function executeSearchV2(
   const t0 = Date.now()
   const d = initDb()
   const resolve = (raw: string): string => chatNameMap[raw] || raw
+
+  // Post-process: strip modality words from topic (AI sometimes gets this wrong)
+  const MODALITY_WORDS = new Set(['photos','photo','pictures','picture','pics','images','image','videos','video','clips','screenshots','screenshot','links','urls','files','documents','memes','selfies','recordings','media'])
+  if (plan.topic && MODALITY_WORDS.has(plan.topic.toLowerCase())) {
+    plan.topic = null
+    plan.keywords = plan.keywords.filter(k => !MODALITY_WORDS.has(k.toLowerCase()))
+  }
 
   const personParams = plan.peopleIdentifiers
   const dateStart = plan.timeRange?.start || null
@@ -182,6 +189,53 @@ export async function executeSearchV2(
         searchTimeMs: Date.now() - t0
       }
     } catch (err) { console.error('[SearchV2] Temporal error:', err) }
+  }
+
+  // RETRIEVER 0c: Signal-based ranking ("who do I argue with most" → heat)
+  if (plan.answerMode === 'signal_ranking') {
+    try {
+      const signalMap: Record<string, { column: string; label: string }> = {
+        heat: { column: 'avg_heat', label: 'avg heat' },
+        laugh: { column: 'CAST(laugh_count AS REAL) / NULLIF(total_analyzed, 0)', label: 'laugh rate' },
+        positive: { column: 'positive_rate', label: '% positive' },
+        negative: { column: 'negative_rate', label: '% negative' },
+        emoji: { column: 'emoji_rate', label: '% emoji' },
+        question: { column: 'CAST(question_count AS REAL) / NULLIF(total_analyzed, 0)', label: 'question rate' },
+      }
+      const sig = signalMap[plan.topic?.toLowerCase() || ''] || signalMap['heat']
+      const rows = d.prepare(`
+        SELECT chat_identifier, ${sig.column} as value, total_analyzed
+        FROM conversation_signals WHERE total_analyzed >= 50
+        ORDER BY ${sig.column} DESC LIMIT 15
+      `).all() as { chat_identifier: string; value: number; total_analyzed: number }[]
+
+      const filtered = rows.filter(r => {
+        const name = resolve(r.chat_identifier)
+        if (name === r.chat_identifier && (r.chat_identifier.startsWith('+') || /^chat\d+/.test(r.chat_identifier) || /^[a-f0-9]{8,}/i.test(r.chat_identifier))) return false
+        if (name === 'Unknown' || name === 'unknown') return false
+        return true
+      })
+
+      console.log(`[SearchV2] Signal ranking (${plan.topic}): ${filtered.length} contacts (${Date.now() - t0}ms)`)
+      return {
+        plan,
+        sections: {
+          messages: [],
+          attachments: [],
+          conversations: filtered.map(r => ({
+            chat_name: r.chat_identifier,
+            contact_name: resolve(r.chat_identifier),
+            messageCount: r.total_analyzed,
+            matchingMessages: Math.round(r.value * 100) / 100,
+            dateRange: sig.label,
+            preview: `${Math.round(r.value * 100) / 100} ${sig.label}`
+          })),
+          summary: null
+        },
+        totalResults: filtered.length,
+        searchTimeMs: Date.now() - t0
+      }
+    } catch (err) { console.error('[SearchV2] Signal ranking error:', err) }
   }
 
   const [messageResults, attachmentResults, conversationResults] = await Promise.all([
@@ -367,50 +421,6 @@ export async function executeSearchV2(
         }
       } catch (err) { console.log('[SearchV2] Attachment search error:', err) }
 
-      // B. Context-aware: find attachments near messages that match keywords (capped at 3 LIKE terms)
-      const allKw = [...plan.keywords, ...(plan.topic ? [plan.topic] : []), ...plan.semanticExpansions].slice(0, 3)
-      if (allKw.length > 0 && results.length < 20) {
-        try {
-          const likeClauses = allKw.map(() => 'm.body LIKE ?').join(' OR ')
-          const likeParams = allKw.map(k => `%${k}%`)
-
-          let sql = `
-            SELECT DISTINCT a.id, a.filename, a.chat_name, a.created_at,
-                   a.thumbnail_path, a.is_image, a.ocr_text,
-                   m.body as nearby_message
-            FROM messages m
-            JOIN attachments a ON a.chat_name = m.chat_name
-              AND ABS(julianday(a.created_at) - julianday(m.sent_at)) < 0.01
-            WHERE (${likeClauses})`
-          const params: string[] = [...likeParams]
-
-          if (personParams.length > 0) {
-            sql += ` AND a.chat_name IN (${personParams.map(() => '?').join(',')})`
-            params.push(...personParams)
-          }
-          if (dateStart) { sql += ` AND a.created_at >= ?`; params.push(dateStart) }
-          if (dateEnd) { sql += ` AND a.created_at <= ?`; params.push(dateEnd + ' 23:59:59') }
-          sql += ` ORDER BY a.created_at DESC LIMIT 20`
-
-          const contextRows = d.prepare(sql).all(...params) as { id: number; filename: string; chat_name: string; created_at: string; thumbnail_path: string | null; is_image: number; ocr_text: string | null; nearby_message: string }[]
-          const existingIds = new Set(results.map(r => r.id))
-          for (const r of contextRows) {
-            if (existingIds.has(r.id)) continue
-            results.push({
-              id: r.id,
-              filename: r.filename || '',
-              chat_name: r.chat_name,
-              contact_name: resolve(r.chat_name),
-              created_at: r.created_at,
-              thumbnail_path: r.thumbnail_path,
-              is_image: r.is_image === 1,
-              matchReason: `nearby: "${(r.nearby_message || '').slice(0, 40)}…"`,
-              ocrSnippet: r.ocr_text?.slice(0, 100) || undefined
-            })
-          }
-        } catch (err) { console.log('[SearchV2] Context attachment search error:', err) }
-      }
-
       return results
     })(),
 
@@ -456,6 +466,32 @@ export async function executeSearchV2(
       return results
     })()
   ])
+
+  // Lightweight context: find attachments near matched message dates
+  if (messageResults.length > 0 && plan.modalities !== 'messages' && attachmentResults.length < 10) {
+    const existingIds = new Set(attachmentResults.map(a => a.id))
+    const msgDates = [...new Set(messageResults.slice(0, 10).map(m => m.sent_at.slice(0, 10)))]
+    for (const date of msgDates.slice(0, 5)) {
+      try {
+        const chatFilter = personParams.length > 0 ? ` AND chat_name IN (${personParams.map(() => '?').join(',')})` : ''
+        const nearby = d.prepare(`
+          SELECT id, filename, chat_name, created_at, thumbnail_path, is_image, ocr_text
+          FROM attachments WHERE date(created_at) = ?${chatFilter}
+          LIMIT 5
+        `).all(date, ...(personParams.length > 0 ? personParams : [])) as { id: number; filename: string; chat_name: string; created_at: string; thumbnail_path: string | null; is_image: number; ocr_text: string | null }[]
+        for (const r of nearby) {
+          if (existingIds.has(r.id)) continue
+          existingIds.add(r.id)
+          attachmentResults.push({
+            id: r.id, filename: r.filename || '', chat_name: r.chat_name,
+            contact_name: resolve(r.chat_name), created_at: r.created_at,
+            thumbnail_path: r.thumbnail_path, is_image: r.is_image === 1,
+            matchReason: 'near matching messages', ocrSnippet: r.ocr_text?.slice(0, 100) || undefined
+          })
+        }
+      } catch {}
+    }
+  }
 
   // AI summary (only if requested and we have message results)
   let summary: string | null = null

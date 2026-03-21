@@ -106,8 +106,14 @@ function SearchAttachmentRow({ att, onSelect }: { att: { id: number; filename: s
       window.api.getFileUrl(att.thumbnail_path).then(url => { if (url) setThumbUrl(url) }).catch(() => {})
     }
   }, [att.thumbnail_path, att.is_image])
+  const handleOpen = async (): Promise<void> => {
+    try {
+      const full = await window.api.getAttachment(att.id) as { original_path?: string } | null
+      if (full?.original_path) await window.api.openFile(full.original_path)
+    } catch {}
+  }
   return (
-    <div onClick={onSelect}
+    <div onClick={handleOpen}
       style={{ padding: '10px 16px', borderRadius: 12, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', cursor: 'pointer', display: 'flex', gap: 12, alignItems: 'center' }}
       onMouseEnter={e => (e.currentTarget.style.background = '#F8F4F0')} onMouseLeave={e => (e.currentTarget.style.background = '#fff')}>
       {thumbUrl ? (
@@ -120,6 +126,8 @@ function SearchAttachmentRow({ att, onSelect }: { att: { id: number; filename: s
         <div style={{ fontSize: 10, color: '#9a948f', fontFamily: "'DM Sans'" }}>{att.contact_name} · {new Date(att.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</div>
       </div>
       <span style={{ fontSize: 9, padding: '1px 6px', borderRadius: 4, background: 'rgba(0,0,0,0.04)', color: '#9a948f', fontFamily: "'DM Sans'", flexShrink: 0 }}>{att.matchReason}</span>
+      <span onClick={(e) => { e.stopPropagation(); onSelect() }}
+        style={{ fontSize: 9, color: '#2EC4A0', cursor: 'pointer', fontFamily: "'DM Sans'", flexShrink: 0 }}>view chat</span>
     </div>
   )
 }
@@ -1533,6 +1541,7 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
     totalResults: number; searchTimeMs: number
   }
   const [searchResultV2, setSearchResultV2] = useState<SearchResultV2Data | null>(null)
+  const [messageContext, setMessageContext] = useState<{ messages: { body: string; is_from_me: boolean; sent_at: string; contact_name: string }[]; highlightIndex: number; chat_name: string } | null>(null)
 
   const SEARCH_EXAMPLES = [
     'Messages with Ash about the cabo trip',
@@ -3111,7 +3120,16 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
             <div style={{ marginBottom: 16 }}>
               <div style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#E8604A', marginBottom: 8, fontFamily: "'DM Sans'", fontWeight: 600 }}>Messages ({searchResultV2.sections.messages.length})</div>
               {searchResultV2.sections.messages.slice(0, 15).map((r, i) => (
-                <div key={i} onClick={() => onSelectConversation(r.chat_name)}
+                <div key={i} onClick={async () => {
+                    try {
+                      const ctx = await window.api.getMessageContext(r.chat_name, r.sent_at)
+                      setMessageContext({
+                        messages: ctx.messages.map(m => ({ body: m.body, is_from_me: m.is_from_me === 1, sent_at: m.sent_at, contact_name: r.contact_name })),
+                        highlightIndex: ctx.messages.findIndex(m => m.sent_at === r.sent_at),
+                        chat_name: r.chat_name
+                      })
+                    } catch { onSelectConversation(r.chat_name) }
+                  }}
                   style={{ padding: '12px 16px', borderRadius: 12, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', cursor: 'pointer', marginBottom: 6 }}
                   onMouseEnter={e => (e.currentTarget.style.background = '#F8F4F0')} onMouseLeave={e => (e.currentTarget.style.background = '#fff')}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
@@ -3608,6 +3626,36 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
 
       </div>
       </>}
+
+      {/* Message context modal */}
+      {messageContext && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          onClick={() => setMessageContext(null)}>
+          <div onClick={e => e.stopPropagation()} style={{ background: '#fff', borderRadius: 16, padding: 24, maxWidth: 500, width: '90%', maxHeight: '70vh', overflow: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
+            <div style={{ fontSize: 12, color: '#E8604A', marginBottom: 12, fontFamily: "'DM Sans'", fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase' }}>Message context</div>
+            <div style={{ fontSize: 11, color: '#9a948f', marginBottom: 16, fontFamily: "'DM Sans'" }}>
+              {messageContext.messages[0]?.contact_name} · click outside to close
+            </div>
+            {messageContext.messages.map((m, i) => (
+              <div key={i} style={{
+                padding: '8px 12px', marginBottom: 4, borderRadius: 10,
+                background: i === messageContext.highlightIndex ? 'rgba(232,96,74,0.08)' : m.is_from_me ? 'rgba(46,196,160,0.06)' : '#F8F4F0',
+                border: i === messageContext.highlightIndex ? '1px solid rgba(232,96,74,0.2)' : '1px solid transparent',
+                maxWidth: '80%', marginLeft: m.is_from_me ? 'auto' : 0, marginRight: m.is_from_me ? 0 : 'auto'
+              }}>
+                <div style={{ fontSize: 12, color: '#4a4542', lineHeight: 1.5, fontFamily: "'DM Sans'" }}>{m.body}</div>
+                <div style={{ fontSize: 9, color: '#c8c0ba', marginTop: 2 }}>
+                  {new Date(m.sent_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                </div>
+              </div>
+            ))}
+            <button onClick={() => { onSelectConversation(messageContext.chat_name); setMessageContext(null) }}
+              style={{ marginTop: 12, fontSize: 11, color: '#2EC4A0', background: 'none', border: 'none', cursor: 'pointer', fontFamily: "'DM Sans'" }}>
+              View full conversation →
+            </button>
+          </div>
+        </div>
+      )}
     </div>
     </div>
   )

@@ -638,12 +638,21 @@ export async function parseSearchPlan(
 ): Promise<SearchPlan | null> {
   if (!getAIStatus().configured) return null
 
-  const cached = getCached<SearchPlan>('search-plan', query)
+  const cached = getCached<SearchPlan>('search-plan-v3', query)
   if (cached) return cached
 
   const contactList = availableContacts.slice(0, 100).map(c => `- "${c.name}" → ${c.identifier}`).join('\n')
 
   const system = `You parse natural language search queries about someone's iMessage history into a structured search plan. You are NOT answering the question — you are creating a search strategy.
+
+FIRST RULE — MODALITY WORDS ARE NEVER TOPICS:
+photos/pictures/pics/images/selfies → topic: null, modalities: "attachments", attachmentTypes: ["image"], keywords: []
+videos/clips/recordings → topic: null, modalities: "attachments", attachmentTypes: ["video"], keywords: []
+screenshots → topic: null, modalities: "attachments", attachmentTypes: ["image"], keywords: []
+links/urls/articles → topic: null, keywords: ["http"], modalities: "messages"
+files/documents/pdfs → topic: null, modalities: "attachments", attachmentTypes: ["document"], keywords: []
+memes → topic: null, modalities: "attachments", attachmentTypes: ["image"], keywords: []
+This is NON-NEGOTIABLE. "photos ash sent me" has topic: null, NOT topic: "photos".
 
 Available contacts (name → identifier):
 ${contactList}
@@ -663,17 +672,9 @@ Given a query, extract ALL dimensions:
   "attachmentTypes": [],
   "speaker": "me" | "them" | "both",
   "sort": "relevance" | "recent" | "oldest",
-  "answerMode": "results" | "summary" | "results+summary" | "ranking" | "temporal",
+  "answerMode": "results" | "summary" | "results+summary" | "ranking" | "temporal" | "signal_ranking",
   "confidence": 0.0-1.0
 }
-
-CRITICAL: These words describe WHAT KIND OF CONTENT to find, NOT a topic to search for. Set the modality/attachment type, NOT the topic:
-- photos, pictures, pics, images, media → modalities: "attachments", attachmentTypes: ["image"], topic: null, keywords: []
-- videos, clips, recordings → modalities: "attachments", attachmentTypes: ["video"], topic: null, keywords: []
-- screenshots → modalities: "attachments", attachmentTypes: ["image"], topic: null, keywords: []
-- links, urls, articles → keywords: ["http"], topic: null
-- files, documents, pdfs → modalities: "attachments", attachmentTypes: ["document"], topic: null, keywords: []
-- memes → modalities: "attachments", attachmentTypes: ["image"], topic: null, keywords: []
 
 Examples:
 - "photos ash sent me this year" → people: ["Ash"], topic: null, modalities: "attachments", attachmentTypes: ["image"], speaker: "them", timeRange: this year, keywords: []
@@ -686,7 +687,12 @@ Rules:
 - semanticExpansions: add 3-5 related words. "cabo trip" → ["vacation", "beach", "flight", "hotel", "mexico"]
 - If the query is just a word/phrase with no other filters, set keywords to that phrase, everything else null/default.
 - "who did I talk to most" / "most active" / "top conversations" / "rank by" → answerMode = "ranking", keywords = [], modalities = "messages"
-- Any query asking to RANK or find the MOST/TOP/BIGGEST when asking about people → answerMode = "ranking"
+- Any query asking to RANK or find the MOST/TOP/BIGGEST when asking about people by message count → answerMode = "ranking"
+- "who do I argue with" / "most heated" / "most intense" → answerMode = "signal_ranking", topic = the signal: "heat"
+- "who makes me laugh" / "funniest" → answerMode = "signal_ranking", topic = "laugh"
+- "most positive" / "happiest" → answerMode = "signal_ranking", topic = "positive"
+- "most negative" / "toxic" → answerMode = "signal_ranking", topic = "negative"
+- "most emoji" → answerMode = "signal_ranking", topic = "emoji"
 - "when did I first talk to..." / "when was the first time..." / "how long have I been talking to..." → answerMode = "temporal"
 - "when did we last..." / "last time I talked to..." → answerMode = "temporal"
 - confidence: 0.9+ if person and topic are clear. 0.5-0.8 if ambiguous.
@@ -722,7 +728,7 @@ Return ONLY the JSON object.`
       .map(p => nameMap.get(p.toLowerCase()))
       .filter(Boolean) as string[]
 
-    setCache('search-plan', query, plan)
+    setCache('search-plan-v3', query, plan)
     return plan
   } catch { return null }
 }

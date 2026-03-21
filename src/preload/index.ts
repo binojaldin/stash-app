@@ -49,6 +49,8 @@ const api = {
   }> => ipcRenderer.invoke('get-fast-stats', chatNameFilter, dateFrom, dateTo),
   getAttachment: (id: number): Promise<unknown> => ipcRenderer.invoke('get-attachment', id),
   openInFinder: (path: string): Promise<boolean> => ipcRenderer.invoke('open-in-finder', path),
+  openFile: (path: string): Promise<boolean> => ipcRenderer.invoke('open-file', path),
+  getMessageContext: (chatName: string, sentAt: string): Promise<{ messages: { body: string; is_from_me: number; sent_at: string }[] }> => ipcRenderer.invoke('get-message-context', chatName, sentAt),
   exportFile: (id: number): Promise<boolean> => ipcRenderer.invoke('export-file', id),
   getIndexingProgress: (): Promise<{ total: number; processed: number; currentFile: string; phase?: string }> =>
     ipcRenderer.invoke('get-indexing-progress'),
