@@ -233,6 +233,33 @@ export function initDb(): Database.Database {
     );
   `)
 
+  // ── V8: conversation windows ──
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS conversation_windows (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      chat_identifier TEXT NOT NULL,
+      start_date TEXT NOT NULL,
+      end_date TEXT NOT NULL,
+      message_count INTEGER NOT NULL,
+      participants TEXT,
+      has_attachments INTEGER DEFAULT 0,
+      attachment_count INTEGER DEFAULT 0,
+      summary_text TEXT,
+      top_keywords TEXT,
+      avg_heat REAL DEFAULT 0,
+      has_question INTEGER DEFAULT 0,
+      has_link INTEGER DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_cw_chat ON conversation_windows(chat_identifier);
+    CREATE INDEX IF NOT EXISTS idx_cw_date ON conversation_windows(start_date);
+  `)
+  try {
+    db.exec(`CREATE VIRTUAL TABLE IF NOT EXISTS conversation_windows_fts USING fts5(
+      summary_text, top_keywords,
+      content='conversation_windows', content_rowid='id'
+    )`)
+  } catch { /* FTS table may already exist */ }
+
   // ── V5: resolved contact names ──
   db.exec(`
     CREATE TABLE IF NOT EXISTS resolved_names (
@@ -2870,6 +2897,82 @@ export function getMessageContext(chatName: string, sentAt: string, windowSize =
     const after = d.prepare(`SELECT body, is_from_me, sent_at FROM messages WHERE chat_name = ? AND apple_date > ? AND body IS NOT NULL ORDER BY apple_date ASC LIMIT ?`).all(chatName, target.apple_date, half) as { body: string; is_from_me: number; sent_at: string }[]
     return { messages: [...before.reverse(), ...after] }
   } catch { return { messages: [] } }
+}
+
+export function buildConversationWindows(): void {
+  const d = initDb()
+  const t0 = Date.now()
+  d.prepare('DELETE FROM conversation_windows').run()
+
+  const chats = d.prepare(`SELECT DISTINCT chat_name FROM messages WHERE body IS NOT NULL GROUP BY chat_name HAVING COUNT(*) >= 10`).all() as { chat_name: string }[]
+
+  const insertWindow = d.prepare(`INSERT INTO conversation_windows (chat_identifier, start_date, end_date, message_count, participants, has_attachments, attachment_count, summary_text, top_keywords, avg_heat, has_question, has_link) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+
+  let totalWindows = 0
+
+  const tx = d.transaction(() => {
+    for (const chat of chats) {
+      const messages = d.prepare(`
+        SELECT m.body, m.is_from_me, m.sent_at, m.apple_date, m.sender_handle,
+               ms.heat_score, ms.has_question, ms.has_link
+        FROM messages m LEFT JOIN message_signals ms ON m.chat_name = ms.chat_identifier AND m.sent_at = ms.sent_at
+        WHERE m.chat_name = ? AND m.body IS NOT NULL AND length(m.body) > 2
+        ORDER BY m.apple_date ASC
+      `).all(chat.chat_name) as { body: string; is_from_me: number; sent_at: string; apple_date: number; sender_handle: string; heat_score: number; has_question: number; has_link: number }[]
+
+      if (messages.length < 3) continue
+
+      let windowStart = 0
+      for (let i = 1; i <= messages.length; i++) {
+        const gapHours = i === messages.length ? 999 : Math.abs(messages[i].apple_date - messages[i - 1].apple_date) / 1e9 / 3600
+        if (gapHours >= 4 || i === messages.length) {
+          const wm = messages.slice(windowStart, i)
+          if (wm.length >= 3) {
+            const senders = [...new Set(wm.map(m => m.sender_handle || (m.is_from_me ? 'me' : 'them')))]
+            let summary = wm.map(m => m.body).join(' ').slice(0, 500)
+
+            const allTokens = wm.flatMap(m => tokenizeWords(m.body))
+            const freq = new Map<string, number>()
+            for (const t of allTokens) freq.set(t, (freq.get(t) || 0) + 1)
+            const topKw = [...freq.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([w]) => w)
+
+            const avgHeat = wm.reduce((s, m) => s + (m.heat_score || 0), 0) / wm.length
+            const hasQuestion = wm.some(m => m.has_question) ? 1 : 0
+            const hasLink = wm.some(m => m.has_link) ? 1 : 0
+
+            let attCount = 0
+            try {
+              attCount = (d.prepare(`SELECT COUNT(*) as c FROM attachments WHERE chat_name = ? AND created_at >= ? AND created_at <= ?`).get(chat.chat_name, wm[0].sent_at, wm[wm.length - 1].sent_at) as { c: number }).c
+            } catch {}
+
+            // Include OCR text from attachments in this window
+            try {
+              const ocrRows = d.prepare(`SELECT ocr_text FROM attachments WHERE chat_name = ? AND created_at >= ? AND created_at <= ? AND ocr_text IS NOT NULL AND length(ocr_text) > 10`).all(chat.chat_name, wm[0].sent_at, wm[wm.length - 1].sent_at) as { ocr_text: string }[]
+              const ocrText = ocrRows.map(r => r.ocr_text).join(' ').slice(0, 200)
+              if (ocrText) summary = (summary + ' ' + ocrText).slice(0, 700)
+            } catch {}
+
+            insertWindow.run(chat.chat_name, wm[0].sent_at, wm[wm.length - 1].sent_at, wm.length, JSON.stringify(senders), attCount > 0 ? 1 : 0, attCount, summary, JSON.stringify(topKw), Math.round(avgHeat * 100) / 100, hasQuestion, hasLink)
+            totalWindows++
+          }
+          windowStart = i
+        }
+      }
+    }
+  })
+  tx()
+
+  try { d.exec(`INSERT INTO conversation_windows_fts(conversation_windows_fts) VALUES('rebuild')`) } catch {}
+  console.log(`[Windows] Built ${totalWindows} conversation windows from ${chats.length} chats in ${((Date.now() - t0) / 1000).toFixed(1)}s`)
+}
+
+export function extractOCRSnippet(ocrText: string, keyword: string): string {
+  const lower = ocrText.toLowerCase()
+  const idx = lower.indexOf(keyword.toLowerCase())
+  if (idx === -1) return ocrText.slice(0, 100)
+  const start = Math.max(0, idx - 40)
+  const end = Math.min(ocrText.length, idx + keyword.length + 40)
+  return (start > 0 ? '\u2026' : '') + ocrText.slice(start, end) + (end < ocrText.length ? '\u2026' : '')
 }
 
 export function getMediaIntelligence(chatIdentifier?: string): MediaIntelligence {

@@ -101,7 +101,7 @@ function TileLabel({ text }: { text: string }): JSX.Element {
   return <div style={{ fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase', color: '#6f6a65', marginBottom: 14 }}>{text}</div>
 }
 
-function SearchAttachmentRow({ att, onSelect }: { att: { id: number; filename: string; chat_name: string; contact_name: string; created_at: string; thumbnail_path: string | null; original_path?: string | null; is_image: boolean; matchReason: string }; onSelect: () => void }): JSX.Element {
+function SearchAttachmentRow({ att, onSelect }: { att: { id: number; filename: string; chat_name: string; contact_name: string; created_at: string; thumbnail_path: string | null; original_path?: string | null; is_image: boolean; matchReason: string; ocrSnippet?: string }; onSelect: () => void }): JSX.Element {
   const [thumbUrl, setThumbUrl] = useState<string | null>(null)
   useEffect(() => {
     if (att.is_image && att.thumbnail_path) {
@@ -127,6 +127,7 @@ function SearchAttachmentRow({ att, onSelect }: { att: { id: number; filename: s
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 12, color: '#1A1A1A', fontFamily: "'DM Sans'", overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{att.filename || 'Attachment'}</div>
         <div style={{ fontSize: 10, color: '#9a948f', fontFamily: "'DM Sans'" }}>{att.contact_name} · {new Date(att.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</div>
+        {att.ocrSnippet && <div style={{ fontSize: 11, color: '#6f6a65', marginTop: 2, fontFamily: "'DM Sans'", fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>&ldquo;{att.ocrSnippet}&rdquo;</div>}
       </div>
       <span style={{ fontSize: 9, padding: '1px 6px', borderRadius: 4, background: 'rgba(0,0,0,0.04)', color: '#9a948f', fontFamily: "'DM Sans'", flexShrink: 0 }}>{att.matchReason}</span>
       <span onClick={(e) => { e.stopPropagation(); onSelect() }}
@@ -1539,6 +1540,7 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
       messages: { body: string; chat_name: string; contact_name: string; is_from_me: boolean; sent_at: string; matchReason: string; relevanceScore: number }[]
       attachments: { id: number; filename: string; chat_name: string; contact_name: string; created_at: string; thumbnail_path: string | null; original_path: string | null; is_image: boolean; matchReason: string; ocrSnippet?: string }[]
       conversations: { chat_name: string; contact_name: string; messageCount: number; matchingMessages: number; dateRange: string; preview: string }[]
+      windows: { id: number; chat_identifier: string; contact_name: string; start_date: string; end_date: string; message_count: number; summary: string; keywords: string[]; has_attachments: boolean; attachment_count: number; avg_heat: number }[]
       summary: string | null
     }
     totalResults: number; searchTimeMs: number
@@ -3129,6 +3131,40 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
               </div>
             )
           })()}
+
+          {/* Episodes (conversation windows) */}
+          {searchResultV2.sections.windows && searchResultV2.sections.windows.length > 0 && (
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#2EC4A0', marginBottom: 8, fontFamily: "'DM Sans'", fontWeight: 600 }}>Episodes ({searchResultV2.sections.windows.length})</div>
+              {searchResultV2.sections.windows.map((w, i) => (
+                <div key={i} onClick={async () => {
+                    try {
+                      const ctx = await window.api.getMessageContext(w.chat_identifier, w.start_date, w.message_count + 4)
+                      setMessageContext({ messages: ctx.messages.map(m => ({ body: m.body, is_from_me: m.is_from_me === 1, sent_at: m.sent_at })), highlightSentAt: w.start_date, contactName: w.contact_name, chatName: w.chat_identifier })
+                    } catch {}
+                  }}
+                  style={{ padding: '14px 18px', borderRadius: 12, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', cursor: 'pointer', marginBottom: 8 }}
+                  onMouseEnter={e => (e.currentTarget.style.background = '#F8F4F0')} onMouseLeave={e => (e.currentTarget.style.background = '#fff')}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: '#1A1A1A', fontFamily: "'DM Sans'" }}>{w.contact_name}</span>
+                    <span style={{ fontSize: 10, color: '#9a948f' }}>
+                      {new Date(w.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                      {' \u00b7 '}{w.message_count} messages
+                      {w.attachment_count > 0 ? ` \u00b7 ${w.attachment_count} files` : ''}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 12, color: '#6f6a65', lineHeight: 1.5, fontFamily: "'DM Sans'" }}>{w.summary}</div>
+                  {w.keywords.length > 0 && (
+                    <div style={{ display: 'flex', gap: 4, marginTop: 8, flexWrap: 'wrap' }}>
+                      {w.keywords.map((kw, j) => (
+                        <span key={j} style={{ fontSize: 9, padding: '2px 8px', borderRadius: 10, background: 'rgba(46,196,160,0.08)', color: '#2EC4A0', fontFamily: "'DM Sans'" }}>{kw}</span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
 
           {/* Messages section */}
           {searchResultV2.sections.messages.length > 0 && (

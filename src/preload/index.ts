@@ -62,7 +62,8 @@ const api = {
   getAttachment: (id: number): Promise<unknown> => ipcRenderer.invoke('get-attachment', id),
   openInFinder: (path: string): Promise<boolean> => ipcRenderer.invoke('open-in-finder', path),
   openFile: (path: string): Promise<boolean> => ipcRenderer.invoke('open-file', path),
-  getMessageContext: (chatName: string, sentAt: string): Promise<{ messages: { body: string; is_from_me: number; sent_at: string }[] }> => ipcRenderer.invoke('get-message-context', chatName, sentAt),
+  getMessageContext: (chatName: string, sentAt: string, windowSize?: number): Promise<{ messages: { body: string; is_from_me: number; sent_at: string }[] }> => ipcRenderer.invoke('get-message-context', chatName, sentAt, windowSize),
+  getConversationWindows: (chatIdentifier?: string, limit?: number): Promise<unknown[]> => ipcRenderer.invoke('get-conversation-windows', chatIdentifier, limit),
   exportFile: (id: number): Promise<boolean> => ipcRenderer.invoke('export-file', id),
   getIndexingProgress: (): Promise<{ total: number; processed: number; currentFile: string; phase?: string }> =>
     ipcRenderer.invoke('get-indexing-progress'),
@@ -170,6 +171,7 @@ const api = {
       messages: { body: string; chat_name: string; contact_name: string; is_from_me: boolean; sent_at: string; matchReason: string; relevanceScore: number }[]
       attachments: { id: number; filename: string; chat_name: string; contact_name: string; created_at: string; thumbnail_path: string | null; original_path: string | null; is_image: boolean; matchReason: string; ocrSnippet?: string }[]
       conversations: { chat_name: string; contact_name: string; messageCount: number; matchingMessages: number; dateRange: string; preview: string }[]
+      windows: { id: number; chat_identifier: string; contact_name: string; start_date: string; end_date: string; message_count: number; summary: string; keywords: string[]; has_attachments: boolean; attachment_count: number; avg_heat: number }[]
       summary: string | null
     }
     totalResults: number; searchTimeMs: number

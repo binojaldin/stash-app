@@ -2,7 +2,7 @@ import { app, shell, BrowserWindow, ipcMain, dialog, Menu, Tray, nativeImage, po
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import { checkFullDiskAccess } from './messagesReader'
-import { initDb, searchAttachments, getStats, getFastStats, getTodayInHistory, getUsageStats, getMessagingNetwork, getAttachmentById, closeDb, hideChat, getHiddenChats, getConversationStats, getRelationshipTimeline, getSocialGravity, getTopicEras, getTopicEraContext, getMemoryMoments, searchMessagesAggregated, updateReactionCounts, invalidateLaughCache, searchMessages, getMessageIndexStatus, getVocabStats, getWordOrigins, detectSignalQuery, executeSearchIntent, getMessageSamples, getAttachmentContext, getSignificantPhotos, getRelationshipDynamics, getMonthlyAverages, getMediaIntelligence, detectNicknames, getBehavioralPatterns, getMessageContext } from './db'
+import { initDb, searchAttachments, getStats, getFastStats, getTodayInHistory, getUsageStats, getMessagingNetwork, getAttachmentById, closeDb, hideChat, getHiddenChats, getConversationStats, getRelationshipTimeline, getSocialGravity, getTopicEras, getTopicEraContext, getMemoryMoments, searchMessagesAggregated, updateReactionCounts, invalidateLaughCache, searchMessages, getMessageIndexStatus, getVocabStats, getWordOrigins, detectSignalQuery, executeSearchIntent, getMessageSamples, getAttachmentContext, getSignificantPhotos, getRelationshipDynamics, getMonthlyAverages, getMediaIntelligence, detectNicknames, getBehavioralPatterns, getMessageContext, buildConversationWindows } from './db'
 import { startIndexing, getIndexingProgress, fetchChatSummaries, saveChatPriorities, getSavedPriorityChats, resetIndexing, recoverAttachment, resolveNamesInBackground } from './indexer'
 import { compileContactsHelper, resolveContact, resolveContactsBatch } from './contacts'
 import { generateWrapped, getAvailableYears } from './wrapped'
@@ -584,7 +584,15 @@ function setupIpc(): void {
     return false
   })
 
-  ipcMain.handle('get-message-context', (_event, chatName: string, sentAt: string) => getMessageContext(chatName, sentAt))
+  ipcMain.handle('get-message-context', (_event, chatName: string, sentAt: string, windowSize?: number) => getMessageContext(chatName, sentAt, windowSize))
+
+  ipcMain.handle('get-conversation-windows', (_event, chatIdentifier?: string, limit?: number) => {
+    const d = initDb()
+    const filter = chatIdentifier ? ' WHERE chat_identifier = ?' : ''
+    const params: (string | number)[] = chatIdentifier ? [chatIdentifier] : []
+    params.push(limit || 50)
+    return d.prepare(`SELECT * FROM conversation_windows${filter} ORDER BY start_date DESC LIMIT ?`).all(...params)
+  })
 
   ipcMain.handle('export-file', async (_event, id: number) => {
     const att = getAttachmentById(id)
@@ -962,6 +970,9 @@ app.whenReady().then(() => {
 
     try { console.log('[Background] Closeness...'); await computeClosenessScores(mainWindow!); console.log(`[Background] Closeness done (${Date.now()-t0}ms)`) }
     catch (e) { console.error('[Closeness]', e) }
+
+    try { console.log('[Background] Conversation windows...'); buildConversationWindows(); console.log(`[Background] Windows done (${Date.now()-t0}ms)`) }
+    catch (e) { console.error('[Windows]', e) }
 
     try { console.log('[Background] Signals...'); await computeSignals(); console.log(`[Background] Signals done (${Date.now()-t0}ms)`) }
     catch (e) { console.error('[Signals]', e) }

@@ -7,7 +7,7 @@
  * 3. Result fusion → scored, sectioned results
  */
 
-import { initDb } from './db'
+import { initDb, extractOCRSnippet } from './db'
 import { callAnthropic, conversationalSearch } from './ai'
 
 // ── Search Plan Schema ──
@@ -67,12 +67,27 @@ export interface ConversationResult {
   preview: string
 }
 
+export interface ConversationWindowResult {
+  id: number
+  chat_identifier: string
+  contact_name: string
+  start_date: string
+  end_date: string
+  message_count: number
+  summary: string
+  keywords: string[]
+  has_attachments: boolean
+  attachment_count: number
+  avg_heat: number
+}
+
 export interface SearchResultV2 {
   plan: SearchPlan
   sections: {
     messages: MessageResult[]
     attachments: AttachmentResult[]
     conversations: ConversationResult[]
+    windows: ConversationWindowResult[]
     summary: string | null
   }
   totalResults: number
@@ -139,6 +154,7 @@ export async function executeSearchV2(
             dateRange: plan.timeRange?.description || 'all time',
             preview: `${r.msg_count.toLocaleString()} messages`
           })),
+          windows: [],
           summary: null
         },
         totalResults: filtered.length,
@@ -186,6 +202,7 @@ export async function executeSearchV2(
             dateRange: `${firstDate} — ${lastDate}`,
             preview: `First message: ${firstDate} · ${total.toLocaleString()} messages total`
           }],
+          windows: [],
           summary: `You first talked to ${contactName} on ${firstDate}. Your most recent message was ${lastDate}. You've exchanged ${total.toLocaleString()} messages total.`
         },
         totalResults: firstMessages.length + 1,
@@ -241,7 +258,7 @@ export async function executeSearchV2(
     } catch (err) { console.error('[SearchV2] Signal ranking error:', err) }
   }
 
-  const [messageResults, attachmentResults, conversationResults] = await Promise.all([
+  const [messageResults, attachmentResults, conversationResults, windowResults] = await Promise.all([
 
     // RETRIEVER 1: Message search (FTS + filters)
     (async (): Promise<MessageResult[]> => {
@@ -419,8 +436,8 @@ export async function executeSearchV2(
             thumbnail_path: r.thumbnail_path,
             original_path: r.original_path,
             is_image: r.is_image === 1,
-            matchReason: r.ocr_text && allKeywords.some(k => r.ocr_text!.toLowerCase().includes(k.toLowerCase())) ? 'OCR match' : 'metadata match',
-            ocrSnippet: r.ocr_text?.slice(0, 100) || undefined
+            matchReason: r.ocr_text && allKeywords.some(k => r.ocr_text!.toLowerCase().includes(k.toLowerCase())) ? 'OCR text match' : 'filename match',
+            ocrSnippet: r.ocr_text && allKeywords.length > 0 ? extractOCRSnippet(r.ocr_text, allKeywords[0]) : undefined
           })
         }
       } catch (err) { console.log('[SearchV2] Attachment search error:', err) }
@@ -467,6 +484,35 @@ export async function executeSearchV2(
         }
       } catch {}
 
+      return results
+    })(),
+
+    // RETRIEVER 4: Conversation window search
+    (async (): Promise<ConversationWindowResult[]> => {
+      const allKeywords = [...plan.keywords, ...(plan.topic ? [plan.topic] : [])]
+      if (allKeywords.length === 0) return []
+      const results: ConversationWindowResult[] = []
+      try {
+        const ftsTerms = allKeywords.map(w => `"${w.replace(/"/g, '""')}"*`).join(' OR ')
+        let sql = `SELECT cw.* FROM conversation_windows_fts cwf JOIN conversation_windows cw ON cwf.rowid = cw.id WHERE conversation_windows_fts MATCH ?`
+        const params: (string | number)[] = [ftsTerms]
+        if (personParams.length > 0) {
+          sql += ` AND cw.chat_identifier IN (${personParams.map(() => '?').join(',')})`
+          params.push(...personParams)
+        }
+        if (dateStart) { sql += ` AND cw.start_date >= ?`; params.push(dateStart) }
+        if (dateEnd) { sql += ` AND cw.end_date <= ?`; params.push(dateEnd + ' 23:59:59') }
+        sql += ` ORDER BY rank LIMIT 10`
+        const rows = d.prepare(sql).all(...params) as { id: number; chat_identifier: string; start_date: string; end_date: string; message_count: number; summary_text: string; top_keywords: string; has_attachments: number; attachment_count: number; avg_heat: number }[]
+        for (const r of rows) {
+          results.push({
+            id: r.id, chat_identifier: r.chat_identifier, contact_name: resolve(r.chat_identifier),
+            start_date: r.start_date, end_date: r.end_date, message_count: r.message_count,
+            summary: (r.summary_text || '').slice(0, 200), keywords: JSON.parse(r.top_keywords || '[]'),
+            has_attachments: r.has_attachments === 1, attachment_count: r.attachment_count, avg_heat: r.avg_heat
+          })
+        }
+      } catch {}
       return results
     })()
   ])
@@ -516,8 +562,8 @@ export async function executeSearchV2(
 
   return {
     plan,
-    sections: { messages: messageResults, attachments: attachmentResults, conversations: conversationResults, summary },
-    totalResults: messageResults.length + attachmentResults.length + conversationResults.length,
+    sections: { messages: messageResults, attachments: attachmentResults, conversations: conversationResults, windows: windowResults, summary },
+    totalResults: messageResults.length + attachmentResults.length + conversationResults.length + windowResults.length,
     searchTimeMs: Date.now() - t0
   }
 }
