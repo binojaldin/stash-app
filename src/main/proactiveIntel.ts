@@ -5,6 +5,7 @@
 
 import { initDb } from './db'
 import { detectProactiveItems } from './ai'
+import { getAiEnabled } from './prefs'
 
 export interface ProactiveItem {
   id: number; chat_identifier: string; item_type: string; description: string
@@ -13,6 +14,7 @@ export interface ProactiveItem {
 }
 
 export async function scanForProactiveItems(): Promise<void> {
+  if (!getAiEnabled()) return
   const t0 = Date.now()
   const d = initDb()
 

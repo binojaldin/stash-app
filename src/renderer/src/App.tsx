@@ -8,6 +8,8 @@ import { Sidebar } from './components/Sidebar'
 import { Dashboard, DrillThroughPanel } from './components/Dashboard'
 import { AttachmentsView } from './components/AttachmentsView'
 import { WrappedView } from './components/WrappedView'
+import { SettingsPanel } from './components/SettingsPanel'
+import { LockScreen } from './components/LockScreen'
 import type { ChatSummary, Filters, IndexingProgress, Stats } from './types'
 
 type AppState = 'checking' | 'loading' | 'no-access' | 'priority' | 'main'
@@ -38,6 +40,61 @@ function dateRangeToBounds(range: string): { from: string | null; to: string | n
 }
 
 export default function App(): JSX.Element {
+  // ── Lock screen state (checked before anything else) ──
+  const [isLocked, setIsLocked] = useState<boolean | null>(null) // null = loading
+  const [authTouchIdAvailable, setAuthTouchIdAvailable] = useState(false)
+  const [authTouchIdEnabled, setAuthTouchIdEnabled] = useState(true)
+
+  useEffect(() => {
+    window.api.authGetConfig().then(config => {
+      if (config.enabled && config.hasPassword) {
+        setIsLocked(true)
+        setAuthTouchIdAvailable(config.touchIdAvailable)
+        setAuthTouchIdEnabled(config.touchIdEnabled)
+      } else {
+        setIsLocked(false)
+      }
+    }).catch(() => setIsLocked(false))
+  }, [])
+
+  // Idle check — every 30s, check if we should re-lock
+  useEffect(() => {
+    if (isLocked) return
+    const interval = setInterval(async () => {
+      try {
+        const should = await window.api.authShouldLock()
+        if (should) {
+          const config = await window.api.authGetConfig()
+          setAuthTouchIdAvailable(config.touchIdAvailable)
+          setAuthTouchIdEnabled(config.touchIdEnabled)
+          setIsLocked(true)
+        }
+      } catch { /* ignore */ }
+    }, 30000)
+    return () => clearInterval(interval)
+  }, [isLocked])
+
+  // Activity tracking — throttled to once per 30s
+  useEffect(() => {
+    if (isLocked) return
+    let lastReport = 0
+    const handler = (): void => {
+      const now = Date.now()
+      if (now - lastReport > 30000) {
+        lastReport = now
+        window.api.authUpdateActivity().catch(() => {})
+      }
+    }
+    window.addEventListener('mousemove', handler)
+    window.addEventListener('keydown', handler)
+    window.addEventListener('mousedown', handler)
+    return () => {
+      window.removeEventListener('mousemove', handler)
+      window.removeEventListener('keydown', handler)
+      window.removeEventListener('mousedown', handler)
+    }
+  }, [isLocked])
+
   // ── Navigation + global state ──
   const [appState, setAppState] = useState<AppState>('checking')
   const [isIndexing, setIsIndexing] = useState(false)
@@ -48,6 +105,7 @@ export default function App(): JSX.Element {
   const [stats, setStats] = useState<Stats>({ total: 0, images: 0, videos: 0, documents: 0, audio: 0, unavailable: 0, chatNames: [], chatNameMap: {} })
   const [showSidebar, setShowSidebar] = useState(true)
   const [showWrapped, setShowWrapped] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
   const [wordmarkReady, setWordmarkReady] = useState(false)
   const [dateRange, setDateRange] = useState<string>('all')
   const [filters, setFilters] = useState<Filters>({ type: 'all' })
@@ -191,6 +249,14 @@ export default function App(): JSX.Element {
   const scopePerson = (rawName: string): void => { setMainView({ kind: 'person-insights', person: rawName }) }
 
   // ── Early returns ──
+  // Lock screen — renders before anything else, no flash of content
+  if (isLocked === null) {
+    return <div style={{ background: '#0A0A0A', height: '100vh', width: '100vw' }} />
+  }
+  if (isLocked) {
+    return <LockScreen onUnlock={() => { setIsLocked(false); window.api.authUpdateActivity() }} touchIdAvailable={authTouchIdAvailable} touchIdEnabled={authTouchIdEnabled} />
+  }
+
   if (appState === 'checking' || appState === 'loading') {
     return (<div className="flex flex-col items-center justify-center h-screen bg-[#0a0a0a] gap-3"><div className="w-6 h-6 border-2 border-teal-500 border-t-transparent rounded-full animate-spin" /><p className="text-xs text-[#636363]">Loading your library...</p></div>)
   }
@@ -201,12 +267,14 @@ export default function App(): JSX.Element {
 
   return (
     <div className="flex" style={{ background: '#0A0A0A', height: '100vh', width: '100vw' }}>
-      {showWrapped && <WrappedView onClose={() => setShowWrapped(false)} />}
+      {showWrapped && <WrappedView onClose={() => setShowWrapped(false)} onOpenSettings={() => setShowSettings(true)} />}
+      {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} />}
       {isIndexing && showIndexing && indexingProgress.total > 0 && <IndexingOverlay progress={indexingProgress} onBrowse={() => setShowIndexing(false)} />}
 
       <IconRail mainView={mainView} onNavigate={(kind) => setMainView({ kind })}
         indexProgress={isIndexing ? Math.round((indexingProgress.processed / Math.max(indexingProgress.total, 1)) * 100) : stats.total > 0 ? 100 : 0}
-        attachmentCount={stats.total} hasNewInsights={stats.total > 0} />
+        attachmentCount={stats.total} hasNewInsights={stats.total > 0}
+        onOpenSettings={() => setShowSettings(true)} />
 
       <div className="flex flex-col" style={{ background: '#0F0F0F' }}>
         {showSidebar && (
@@ -221,6 +289,7 @@ export default function App(): JSX.Element {
             selectedRange={dateRange} onDateRangeChange={setDateRange}
             availableYears={availableYears}
             onNavigate={(view) => setMainView(view as MainView)}
+            onOpenSettings={() => setShowSettings(true)}
           />
         )}
       </div>
@@ -255,7 +324,8 @@ export default function App(): JSX.Element {
             dateRange={dateRange} scopedPerson={scopedPerson} onClearScope={goHome}
             insightSurface={insightSurface} onSurfaceChange={setInsightSurface}
             isStatsLoading={isStatsLoading}
-            onDrillThrough={(title, subtitle, freeStats) => setDrillThrough({ title, subtitle, freeStats })} />
+            onDrillThrough={(title, subtitle, freeStats) => setDrillThrough({ title, subtitle, freeStats })}
+            onOpenSettings={() => setShowSettings(true)} />
         ) : (
           <AttachmentsView mainView={mainView} dateRange={dateRange} stats={stats} chatNameMap={stats.chatNameMap} onNavigate={setMainView} />
         )}
