@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { X, ChevronLeft, ChevronRight, Crown } from 'lucide-react'
+import { ProLock } from './ProLock'
 
 interface WrappedData {
   year: number
@@ -29,7 +30,7 @@ interface WrappedData {
   narrative: { headline: string; topRelationshipLine: string; mostActivePeriodLine: string; personalityLine: string; momentLine: string | null }
 }
 
-interface Props { onClose: () => void }
+interface Props { onClose: () => void; onOpenSettings?: () => void }
 
 const TOTAL_SLIDES = 11
 const MEMBER_COLORS = ['#60a5fa', '#a78bfa', '#fbbf24', '#f472b6', '#34d399', '#f87171', '#22d3ee', '#fb923c']
@@ -47,7 +48,7 @@ const S = {
   tealLine: { width: 40, height: 1, background: '#2EC4A0', margin: '0 auto' },
 }
 
-export function WrappedView({ onClose }: Props): JSX.Element {
+export function WrappedView({ onClose, onOpenSettings }: Props): JSX.Element {
   const [years, setYears] = useState<number[]>([])
   const [selectedYear, setSelectedYear] = useState<number | null>(null)
   const [data, setData] = useState<WrappedData | null>(null)
@@ -142,19 +143,21 @@ export function WrappedView({ onClose }: Props): JSX.Element {
 
       {/* Slides */}
       {data && !loading && !error && (
-        <div key={animKey} style={{ height: '100%' }}>
-          {slide === 0 && <SlideOpening data={data} />}
-          {slide === 1 && <SlideHeadline data={data} />}
-          {slide === 2 && <SlideTopBond data={data} />}
-          {slide === 3 && <SlideStreak data={data} />}
-          {slide === 4 && <SlideArc data={data} />}
-          {slide === 5 && <SlideMoment data={data} />}
-          {slide === 6 && <SlideGroups data={data} />}
-          {slide === 7 && <SlidePersonality data={data} />}
-          {slide === 8 && <SlideMonthly data={data} />}
-          {slide === 9 && <SlideEmoji data={data} />}
-          {slide === 10 && <SlideShare data={data} />}
-        </div>
+        <ProLock feature="wrapped_ai_insights" onOpenSettings={onOpenSettings}>
+          <div key={animKey} style={{ height: '100%' }}>
+            {slide === 0 && <SlideOpening data={data} />}
+            {slide === 1 && <SlideHeadline data={data} />}
+            {slide === 2 && <SlideTopBond data={data} />}
+            {slide === 3 && <SlideStreak data={data} />}
+            {slide === 4 && <SlideArc data={data} />}
+            {slide === 5 && <SlideMoment data={data} />}
+            {slide === 6 && <SlideGroups data={data} />}
+            {slide === 7 && <SlidePersonality data={data} />}
+            {slide === 8 && <SlideMonthly data={data} />}
+            {slide === 9 && <SlideEmoji data={data} />}
+            {slide === 10 && <SlideShare data={data} />}
+          </div>
+        </ProLock>
       )}
 
       {/* Bottom: year pills + slide counter */}

@@ -1,6 +1,18 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
 const api = {
+  authGetConfig: (): Promise<{ enabled: boolean; touchIdAvailable: boolean; touchIdEnabled: boolean; idleTimeoutMinutes: number; hasPassword: boolean }> => ipcRenderer.invoke('auth-get-config'),
+  authSetEnabled: (enabled: boolean): Promise<void> => ipcRenderer.invoke('auth-set-enabled', enabled),
+  authSetupPassword: (password: string): Promise<void> => ipcRenderer.invoke('auth-setup-password', password),
+  authVerifyPassword: (password: string): Promise<boolean> => ipcRenderer.invoke('auth-verify-password', password),
+  authTouchId: (): Promise<'success' | 'fallback' | 'failed'> => ipcRenderer.invoke('auth-touch-id'),
+  authUpdateActivity: (): Promise<void> => ipcRenderer.invoke('auth-update-activity'),
+  authShouldLock: (): Promise<boolean> => ipcRenderer.invoke('auth-should-lock'),
+  authSetIdleTimeout: (minutes: number): Promise<void> => ipcRenderer.invoke('auth-set-idle-timeout', minutes),
+  authSetTouchIdEnabled: (enabled: boolean): Promise<void> => ipcRenderer.invoke('auth-set-touch-id-enabled', enabled),
+  getAiEnabled: (): Promise<boolean> => ipcRenderer.invoke('get-ai-enabled'),
+  setAiEnabled: (val: boolean): Promise<void> => ipcRenderer.invoke('set-ai-enabled', val),
+  getFeatureFlags: (): Promise<{ aiEnabled: boolean; tier: 'local' | 'pro' }> => ipcRenderer.invoke('get-feature-flags'),
   checkDiskAccess: (): Promise<boolean> => ipcRenderer.invoke('check-disk-access'),
   searchAttachments: (
     query: string, filters: Record<string, string>, page?: number, limit?: number, sortOrder?: string

@@ -16,6 +16,8 @@ extraResources:
     to: contacts.swift
   - from: src/main/icloud.swift
     to: icloud.swift
+  - from: src/main/auth.swift
+    to: auth.swift
 asarUnpack:
   - resources/**
 mac:

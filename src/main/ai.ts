@@ -12,6 +12,7 @@ import { app } from 'electron'
 import { join } from 'path'
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
 import { createHash } from 'crypto'
+import { getAiEnabled } from './prefs'
 
 // ── Types ──
 
@@ -250,6 +251,7 @@ export interface TopicEraContextInput {
 }
 
 export async function enrichTopicEras(eras: TopicEraSummaryInput[]): Promise<TopicEraEnrichment[] | null> {
+  if (!getAiEnabled()) return null
   console.log('[AI] enrichTopicEras (v1 keyword-based) called, input count:', eras.length)
   if (!getAIStatus().configured) { console.log('[AI] Not configured, skipping'); return null }
   if (eras.length === 0) return null
@@ -270,6 +272,7 @@ export async function enrichTopicEras(eras: TopicEraSummaryInput[]): Promise<Top
 }
 
 export async function enrichTopicErasV2(contexts: TopicEraContextInput[]): Promise<TopicEraEnrichment[] | null> {
+  if (!getAiEnabled()) return null
   console.log('[AI] enrichTopicErasV2 (context-based) called, input count:', contexts.length)
   if (!getAIStatus().configured) { console.log('[AI] Not configured, skipping'); return null }
   if (contexts.length === 0) return null
@@ -393,6 +396,7 @@ RULES:
 }
 
 export async function enrichMemoryMoments(moments: MemoryMomentSummaryInput[]): Promise<MemoryMomentEnrichment[] | null> {
+  if (!getAiEnabled()) return null
   if (!getAIStatus().configured || moments.length === 0) return null
 
   const cached = getCached<MemoryMomentEnrichment[]>('memory-moments', moments)
@@ -427,6 +431,7 @@ export interface SearchIntent {
 }
 
 export async function interpretSearchQuery(query: string): Promise<SearchIntent | null> {
+  if (!getAiEnabled()) return null
   if (!getAIStatus().configured) return null
 
   const cached = getCached<SearchIntent>('search-intent-v2', query)
@@ -481,6 +486,7 @@ Return ONLY the JSON object, no other text.`
 // ── Conversation Summarization ──
 
 export async function summarizeConversation(chatIdentifier: string, contactName: string, messages: { recent: { body: string; is_from_me: number; sent_at: string }[]; old: { body: string; is_from_me: number; sent_at: string }[] }): Promise<{ summary: string; topics: string[]; tone: string } | null> {
+  if (!getAiEnabled()) return null
   if (!getAIStatus().configured) return null
   const cacheKey = `convo-summary:${chatIdentifier}:${messages.recent.length}`
   const cached = getCached<{ summary: string; topics: string[]; tone: string }>('convo-summary', cacheKey)
@@ -511,6 +517,7 @@ export async function generateRelationshipNarrative(chatIdentifier: string, cont
   longestStreak: number; closenessScore: number; closenessRank: number | null
   tier: string; laughCount: number; avgHeat: number; positiveRate: number
 }): Promise<{ narrative: string; headline: string } | null> {
+  if (!getAiEnabled()) return null
   if (!getAIStatus().configured) return null
   const inputHash = JSON.stringify(stats).slice(0, 50)
   const cached = getCached<{ narrative: string; headline: string }>('rel-narrative', `${chatIdentifier}:${inputHash}`)
@@ -541,6 +548,7 @@ Positive sentiment: ${stats.positiveRate}%`
 // ── Attachment Context Caption ──
 
 export async function generateAttachmentCaption(chatIdentifier: string, contactName: string, attachmentInfo: { filename: string; created_at: string; is_image: boolean }, surroundingMessages: { body: string; is_from_me: number; sent_at: string }[]): Promise<{ caption: string } | null> {
+  if (!getAiEnabled()) return null
   if (!getAIStatus().configured) return null
   const cacheKey = `${chatIdentifier}:${attachmentInfo.filename}:${attachmentInfo.created_at}`
   const cached = getCached<{ caption: string }>('att-caption', cacheKey)
@@ -572,6 +580,7 @@ export async function conversationalSearch(query: string, dataContext: {
   signalSummary: { contact: string; laughs: number; heat: number; emoji: number; sentiment: number }[]
   globalStats: { totalMessages: number; totalContacts: number; oldestMessage: string }
 }): Promise<ConversationalSearchResult | null> {
+  if (!getAiEnabled()) return null
   if (!getAIStatus().configured) return null
   const cached = getCached<ConversationalSearchResult>('convo-search', `${query}:${dataContext.topContacts.length}`)
   if (cached) return cached
@@ -604,6 +613,7 @@ export interface AIRelationshipDynamics {
 }
 
 export async function analyzeRelationshipDynamics(chatIdentifier: string, contactName: string, messageSamples: { body: string; is_from_me: number; sent_at: string }[], stats: { messageCount: number; myWords: number; theirWords: number; myQuestions: number; theirQuestions: number; myPositiveRate: number; theirPositiveRate: number }): Promise<AIRelationshipDynamics | null> {
+  if (!getAiEnabled()) return null
   if (!getAIStatus().configured) return null
   const cacheKey = `${chatIdentifier}:${stats.messageCount}`
   const cached = getCached<AIRelationshipDynamics>('rel-dynamics', cacheKey)
@@ -636,6 +646,7 @@ export async function parseSearchPlan(
   availableContacts: { name: string; identifier: string }[],
   currentDate: string
 ): Promise<SearchPlan | null> {
+  if (!getAiEnabled()) return null
   if (!getAIStatus().configured) return null
 
   const cached = getCached<SearchPlan>('search-plan-v3', query)
@@ -751,6 +762,7 @@ export async function detectProactiveItems(
   contactName: string,
   messages: { body: string; is_from_me: number; sent_at: string }[]
 ): Promise<{ items: DetectedProactiveItem[] } | null> {
+  if (!getAiEnabled()) return null
   if (!getAIStatus().configured) return null
 
   // Cooldown check
@@ -806,6 +818,7 @@ export async function searchConversationsAI(
   description: string,
   conversations: { display: string; identifier: string }[]
 ): Promise<{ error: string | null; results: string[] | null }> {
+  if (!getAiEnabled()) return { error: 'AI_DISABLED', results: null }
   const apiKey = loadApiKey()
   if (!apiKey) return { error: 'NO_KEY', results: null }
 
