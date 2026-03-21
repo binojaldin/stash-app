@@ -730,6 +730,10 @@ function setupIpc(): void {
       try {
         const plan = await parseSearchPlan(query, contacts, new Date().toISOString().slice(0, 10))
         if (plan && plan.confidence > 0.3) {
+          // Force temporal detection for "when did I first..." queries
+          if (/^(when did I|when was the|how long have I|first time I|last time I)\s/i.test(query)) {
+            plan.answerMode = 'temporal'
+          }
           return executeSearchV2(plan, localChatNameMap)
         }
       } catch (err) { console.error('[SearchV2] Plan failed:', err) }

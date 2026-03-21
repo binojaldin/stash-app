@@ -228,10 +228,10 @@ export async function executeSearchV2(
         } catch (err) { console.log('[SearchV2] FTS error:', err) }
       }
 
-      // B. Semantic expansion (lower priority, fill up to 30)
+      // B. Semantic expansion (lower priority, fill up to 30, capped at 3 terms)
       if (plan.semanticExpansions.length > 0 && results.length < 20) {
         try {
-          const expTerms = plan.semanticExpansions.map(w => `"${w.replace(/"/g, '""')}"*`).join(' OR ')
+          const expTerms = plan.semanticExpansions.slice(0, 3).map(w => `"${w.replace(/"/g, '""')}"*`).join(' OR ')
           let sql = `SELECT m.body, m.chat_name, m.is_from_me, m.sent_at
             FROM messages_fts fts JOIN messages m ON fts.rowid = m.id
             WHERE messages_fts MATCH ?`
@@ -332,7 +332,7 @@ export async function executeSearchV2(
               FROM attachments_fts afts JOIN attachments a ON afts.rowid = a.id
               WHERE attachments_fts MATCH ?
               ${whereParts.slice(1).map(w => 'AND a.' + w).join(' ')}
-              ORDER BY a.created_at DESC LIMIT 20
+              ORDER BY a.created_at DESC LIMIT 50
             `).all(ftsTerms, ...params) as typeof attachRows
           } catch {
             // FTS failed, fall back to LIKE on filename
@@ -340,14 +340,15 @@ export async function executeSearchV2(
               SELECT id, filename, chat_name, created_at, thumbnail_path, is_image, ocr_text
               FROM attachments WHERE ${whereParts.join(' AND ')}
               AND (filename LIKE ? OR ocr_text LIKE ?)
-              ORDER BY created_at DESC LIMIT 20
+              ORDER BY created_at DESC LIMIT 50
             `).all(...params, `%${allKeywords[0]}%`, `%${allKeywords[0]}%`) as typeof attachRows
           }
         } else {
+          // No keywords — return all attachments matching person/date/type filters
           attachRows = d.prepare(`
             SELECT id, filename, chat_name, created_at, thumbnail_path, is_image, ocr_text
             FROM attachments WHERE ${whereParts.join(' AND ')}
-            ORDER BY created_at DESC LIMIT 20
+            ORDER BY created_at DESC LIMIT 50
           `).all(...params) as typeof attachRows
         }
 
@@ -366,12 +367,12 @@ export async function executeSearchV2(
         }
       } catch (err) { console.log('[SearchV2] Attachment search error:', err) }
 
-      // B. Context-aware: find attachments near messages that match keywords
-      const allKw = [...plan.keywords, ...(plan.topic ? [plan.topic] : []), ...plan.semanticExpansions]
+      // B. Context-aware: find attachments near messages that match keywords (capped at 3 LIKE terms)
+      const allKw = [...plan.keywords, ...(plan.topic ? [plan.topic] : []), ...plan.semanticExpansions].slice(0, 3)
       if (allKw.length > 0 && results.length < 20) {
         try {
-          const likeClauses = allKw.slice(0, 5).map(() => 'm.body LIKE ?').join(' OR ')
-          const likeParams = allKw.slice(0, 5).map(k => `%${k}%`)
+          const likeClauses = allKw.map(() => 'm.body LIKE ?').join(' OR ')
+          const likeParams = allKw.map(k => `%${k}%`)
 
           let sql = `
             SELECT DISTINCT a.id, a.filename, a.chat_name, a.created_at,

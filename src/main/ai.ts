@@ -667,10 +667,22 @@ Given a query, extract ALL dimensions:
   "confidence": 0.0-1.0
 }
 
+CRITICAL: These words describe WHAT KIND OF CONTENT to find, NOT a topic to search for. Set the modality/attachment type, NOT the topic:
+- photos, pictures, pics, images, media → modalities: "attachments", attachmentTypes: ["image"], topic: null, keywords: []
+- videos, clips, recordings → modalities: "attachments", attachmentTypes: ["video"], topic: null, keywords: []
+- screenshots → modalities: "attachments", attachmentTypes: ["image"], topic: null, keywords: []
+- links, urls, articles → keywords: ["http"], topic: null
+- files, documents, pdfs → modalities: "attachments", attachmentTypes: ["document"], topic: null, keywords: []
+- memes → modalities: "attachments", attachmentTypes: ["image"], topic: null, keywords: []
+
+Examples:
+- "photos ash sent me this year" → people: ["Ash"], topic: null, modalities: "attachments", attachmentTypes: ["image"], speaker: "them", timeRange: this year, keywords: []
+- "links about apartments" → topic: "apartments", keywords: ["apartment", "http"], modalities: "both"
+- "videos from last summer" → topic: null, modalities: "attachments", attachmentTypes: ["video"], timeRange: last summer, keywords: []
+
 Rules:
 - Match people names FUZZY — "ash" matches "Ash", "Ashley" etc. Return the EXACT name from the available list.
 - Resolve relative dates: "last summer" → June-August of last year. "this year" → Jan 1 to today. "recently" → last 30 days.
-- If the query mentions photos/images/screenshots → set modalities to "attachments" or "both" and add attachment types.
 - semanticExpansions: add 3-5 related words. "cabo trip" → ["vacation", "beach", "flight", "hotel", "mexico"]
 - If the query is just a word/phrase with no other filters, set keywords to that phrase, everything else null/default.
 - "who did I talk to most" / "most active" / "top conversations" / "rank by" → answerMode = "ranking", keywords = [], modalities = "messages"
