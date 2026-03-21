@@ -17,6 +17,7 @@ import type { TopicEraSummaryInput, TopicEraContextInput, MemoryMomentSummaryInp
 import { getCachedAnalytics, setCachedAnalytics, getMessageCountSignal, yieldEventLoop, invalidateSignalCache, invalidateAiCaches } from './analyticsCache'
 import { getAiEnabled, setAiEnabled } from './prefs'
 import { getFeatureFlags } from './featureFlags'
+import { getAuthConfig, setAuthEnabled, setIdleTimeout, setTouchIdEnabled, setupPassword, verifyPassword, authenticateWithTouchID, updateLastActiveTime, shouldLock, compileAuthHelper } from './authManager'
 import { Worker } from 'worker_threads'
 import { copyFileSync, existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
 import { extname } from 'path'
@@ -615,6 +616,17 @@ function setupIpc(): void {
   })
   ipcMain.handle('get-feature-flags', () => getFeatureFlags())
 
+  // ── Auth / Lock Screen ──
+  ipcMain.handle('auth-get-config', () => getAuthConfig())
+  ipcMain.handle('auth-set-enabled', (_event, enabled: boolean) => setAuthEnabled(enabled))
+  ipcMain.handle('auth-setup-password', (_event, password: string) => setupPassword(password))
+  ipcMain.handle('auth-verify-password', (_event, password: string) => verifyPassword(password))
+  ipcMain.handle('auth-touch-id', () => authenticateWithTouchID())
+  ipcMain.handle('auth-update-activity', () => updateLastActiveTime())
+  ipcMain.handle('auth-should-lock', () => shouldLock())
+  ipcMain.handle('auth-set-idle-timeout', (_event, minutes: number) => setIdleTimeout(minutes))
+  ipcMain.handle('auth-set-touch-id-enabled', (_event, enabled: boolean) => setTouchIdEnabled(enabled))
+
   // ── AI service layer (centralized in ai.ts) ──
   ipcMain.handle('set-anthropic-key', (_event, key: string) => setApiKey(key))
   ipcMain.handle('get-ai-status', () => getAIStatus())
@@ -918,6 +930,9 @@ app.whenReady().then(() => {
   const t1 = Date.now()
   compileContactsHelper()
   console.log(`[PERF][BOOT] compileContactsHelper: ${Date.now()-t1}ms`)
+  const t2 = Date.now()
+  compileAuthHelper()
+  console.log(`[PERF][BOOT] compileAuthHelper: ${Date.now()-t2}ms`)
   dbReadyResolve()
 
   createMenu()
