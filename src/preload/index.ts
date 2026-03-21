@@ -160,6 +160,10 @@ const api = {
   searchMessagesAggregated: (phrase: string, chatName?: string): Promise<{
     contact: string; count: number; samples: { body: string; sent_at: string; is_from_me: number }[]
   }[]> => ipcRenderer.invoke('search-messages-aggregated', phrase, chatName),
+  executeRelationshipSearch: (query: string, chatIdentifier: string, contactName: string): Promise<{
+    answer: string; episodes: { title: string; messages: { body: string; is_from_me: boolean; sent_at: string }[]; insight: string }[]
+    evidence: { label: string; value: string }[]; suggestedFollowUps: string[]
+  } | null> => ipcRenderer.invoke('execute-relationship-search', query, chatIdentifier, contactName),
   executeSearchV2: (query: string, chatName?: string): Promise<{
     plan: {
       people: string[]; groups: string[]; peopleIdentifiers: string[]

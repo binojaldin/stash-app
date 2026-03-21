@@ -158,7 +158,7 @@ function setCache(feature: string, input: unknown, result: unknown): void {
 
 // ── Raw API call ──
 
-async function callAnthropic(system: string, userMessage: string, maxTokens = 1000): Promise<string | null> {
+export async function callAnthropic(system: string, userMessage: string, maxTokens = 1000): Promise<string | null> {
   const apiKey = loadApiKey()
   if (!apiKey) return null
 

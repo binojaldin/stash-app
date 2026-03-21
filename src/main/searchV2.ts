@@ -573,3 +573,109 @@ export async function executeSearchV2(
     searchTimeMs: Date.now() - t0
   }
 }
+
+// ── Relationship Search — AI-first engine ──
+
+export interface RelationshipSearchResult {
+  answer: string
+  episodes: {
+    title: string
+    messages: { body: string; is_from_me: boolean; sent_at: string }[]
+    insight: string
+  }[]
+  evidence: { label: string; value: string }[]
+  suggestedFollowUps: string[]
+}
+
+export async function executeRelationshipSearch(
+  query: string,
+  chatIdentifier: string,
+  contactName: string
+): Promise<RelationshipSearchResult | null> {
+  const d = initDb()
+
+  const totalMsgs = (d.prepare('SELECT COUNT(*) as c FROM messages WHERE chat_name = ?').get(chatIdentifier) as { c: number }).c
+  if (totalMsgs < 5) return null
+
+  // Step 1: Targeted sampling based on query intent
+  const recent = d.prepare(`SELECT body, is_from_me, sent_at FROM messages WHERE chat_name = ? AND body IS NOT NULL AND length(body) > 5 ORDER BY apple_date DESC LIMIT 50`).all(chatIdentifier) as { body: string; is_from_me: number; sent_at: string }[]
+  const oldest = d.prepare(`SELECT body, is_from_me, sent_at FROM messages WHERE chat_name = ? AND body IS NOT NULL AND length(body) > 5 ORDER BY apple_date ASC LIMIT 50`).all(chatIdentifier) as { body: string; is_from_me: number; sent_at: string }[]
+  const middle = d.prepare(`SELECT body, is_from_me, sent_at FROM messages WHERE chat_name = ? AND body IS NOT NULL AND length(body) > 10 ORDER BY RANDOM() LIMIT 100`).all(chatIdentifier) as { body: string; is_from_me: number; sent_at: string }[]
+
+  let targeted: typeof recent = []
+  const ql = query.toLowerCase()
+  try {
+    if (/argu|fight|conflict|confront|heated|disagree|tension/.test(ql)) {
+      targeted = d.prepare(`SELECT m.body, m.is_from_me, m.sent_at FROM messages m JOIN message_signals ms ON m.chat_name = ms.chat_identifier AND m.sent_at = ms.sent_at WHERE m.chat_name = ? AND ms.heat_score >= 5 ORDER BY ms.heat_score DESC LIMIT 50`).all(chatIdentifier) as typeof recent
+    } else if (/sweet|kind|nice|loving|romantic|support|caring/.test(ql)) {
+      targeted = d.prepare(`SELECT m.body, m.is_from_me, m.sent_at FROM messages m JOIN message_signals ms ON m.chat_name = ms.chat_identifier AND m.sent_at = ms.sent_at WHERE m.chat_name = ? AND ms.sentiment > 0 ORDER BY ms.sentiment DESC LIMIT 50`).all(chatIdentifier) as typeof recent
+    } else if (/forgot|forget|remember|promise|said.*would/.test(ql)) {
+      targeted = d.prepare(`SELECT body, is_from_me, sent_at FROM messages WHERE chat_name = ? AND is_from_me = 1 AND (body LIKE '%I will%' OR body LIKE '%I''ll%' OR body LIKE '%I promise%' OR body LIKE '%remind me%' OR body LIKE '%don''t forget%' OR body LIKE '%I need to%') ORDER BY apple_date DESC LIMIT 50`).all(chatIdentifier) as typeof recent
+    } else if (/longest|verbose|biggest/.test(ql)) {
+      targeted = d.prepare(`SELECT body, is_from_me, sent_at FROM messages WHERE chat_name = ? AND body IS NOT NULL ORDER BY length(body) DESC LIMIT 20`).all(chatIdentifier) as typeof recent
+    }
+  } catch {}
+
+  // Deduplicate and sort chronologically
+  const seen = new Set<string>()
+  const allSamples: typeof recent = []
+  for (const batch of [targeted, recent, oldest, middle]) {
+    for (const m of batch) {
+      if (!seen.has(m.sent_at)) { seen.add(m.sent_at); allSamples.push(m) }
+    }
+  }
+  allSamples.sort((a, b) => a.sent_at.localeCompare(b.sent_at))
+  const samples = allSamples.slice(0, 250)
+
+  // Step 2: AI analysis
+  const transcript = samples.map(m => {
+    const sender = m.is_from_me ? 'You' : contactName
+    const date = new Date(m.sent_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    return `[${date}] ${sender}: ${m.body.slice(0, 200)}`
+  }).join('\n')
+
+  const system = `You are analyzing a specific iMessage conversation between the user and ${contactName}.
+You have ${samples.length} message samples spanning their full conversation history (${totalMsgs} total messages).
+
+The user is asking a specific question about this relationship. Your job is to:
+1. ANSWER the question directly and specifically
+2. FIND EVIDENCE — identify specific message episodes that answer the question
+3. PROVIDE INSIGHT — what patterns do you see?
+
+Return a JSON object:
+{
+  "answer": "A direct 2-3 sentence answer. Be specific. Reference dates and quotes.",
+  "episodes": [
+    {
+      "title": "Short episode title — Month Year",
+      "messages": [
+        { "body": "exact message text from the samples", "is_from_me": true, "sent_at": "the date" }
+      ],
+      "insight": "One sentence about what this episode shows"
+    }
+  ],
+  "evidence": [
+    { "label": "Pattern name", "value": "description of a pattern you noticed" }
+  ],
+  "suggestedFollowUps": ["A follow-up question"]
+}
+
+Rules:
+- episodes: 2-5 specific episodes with ACTUAL messages from the samples
+- Each episode: 2-6 messages forming a coherent exchange
+- Only quote messages that appear in the provided samples
+- Be warm and observational, not clinical
+- If evidence is insufficient, say so honestly
+- suggestedFollowUps: 1-3 natural follow-up questions
+
+Return ONLY the JSON object.`
+
+  try {
+    const text = await callAnthropic(system, `Question: "${query}"\n\nConversation with ${contactName} (${totalMsgs} total messages, ${samples.length} sampled):\n\n${transcript}`, 2000)
+    if (!text) return null
+    return JSON.parse(text.trim().replace(/^```json?\n?/, '').replace(/\n?```$/, '')) as RelationshipSearchResult
+  } catch (err) {
+    console.error('[RelationshipSearch] AI failed:', err)
+    return null
+  }
+}
