@@ -156,7 +156,7 @@ const api = {
     }
     sections: {
       messages: { body: string; chat_name: string; contact_name: string; is_from_me: boolean; sent_at: string; matchReason: string; relevanceScore: number }[]
-      attachments: { id: number; filename: string; chat_name: string; contact_name: string; created_at: string; thumbnail_path: string | null; is_image: boolean; matchReason: string; ocrSnippet?: string }[]
+      attachments: { id: number; filename: string; chat_name: string; contact_name: string; created_at: string; thumbnail_path: string | null; original_path: string | null; is_image: boolean; matchReason: string; ocrSnippet?: string }[]
       conversations: { chat_name: string; contact_name: string; messageCount: number; matchingMessages: number; dateRange: string; preview: string }[]
       summary: string | null
     }

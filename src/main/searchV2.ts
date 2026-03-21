@@ -51,6 +51,7 @@ export interface AttachmentResult {
   contact_name: string
   created_at: string
   thumbnail_path: string | null
+  original_path: string | null
   is_image: boolean
   matchReason: string
   ocrSnippet?: string
@@ -90,6 +91,7 @@ export async function executeSearchV2(
   // Post-process: strip modality words from topic (AI sometimes gets this wrong)
   const MODALITY_WORDS = new Set(['photos','photo','pictures','picture','pics','images','image','videos','video','clips','screenshots','screenshot','links','urls','files','documents','memes','selfies','recordings','media'])
   if (plan.topic && MODALITY_WORDS.has(plan.topic.toLowerCase())) {
+    if (plan.modalities === 'both') plan.modalities = 'attachments'
     plan.topic = null
     plan.keywords = plan.keywords.filter(k => !MODALITY_WORDS.has(k.toLowerCase()))
   }
@@ -376,13 +378,13 @@ export async function executeSearchV2(
         }
 
         const allKeywords = [...plan.keywords, ...(plan.topic ? [plan.topic] : [])]
-        let attachRows: { id: number; filename: string; chat_name: string; created_at: string; thumbnail_path: string | null; is_image: number; ocr_text: string | null }[]
+        let attachRows: { id: number; filename: string; chat_name: string; created_at: string; thumbnail_path: string | null; original_path: string | null; is_image: number; ocr_text: string | null }[]
 
         if (allKeywords.length > 0) {
           try {
             const ftsTerms = allKeywords.map(w => `"${w.replace(/"/g, '""')}"*`).join(' OR ')
             attachRows = d.prepare(`
-              SELECT a.id, a.filename, a.chat_name, a.created_at, a.thumbnail_path, a.is_image, a.ocr_text
+              SELECT a.id, a.filename, a.chat_name, a.created_at, a.thumbnail_path, a.original_path, a.is_image, a.ocr_text
               FROM attachments_fts afts JOIN attachments a ON afts.rowid = a.id
               WHERE attachments_fts MATCH ?
               ${whereParts.slice(1).map(w => 'AND a.' + w).join(' ')}
@@ -391,7 +393,7 @@ export async function executeSearchV2(
           } catch {
             // FTS failed, fall back to LIKE on filename
             attachRows = d.prepare(`
-              SELECT id, filename, chat_name, created_at, thumbnail_path, is_image, ocr_text
+              SELECT id, filename, chat_name, created_at, thumbnail_path, original_path, is_image, ocr_text
               FROM attachments WHERE ${whereParts.join(' AND ')}
               AND (filename LIKE ? OR ocr_text LIKE ?)
               ORDER BY created_at DESC LIMIT 50
@@ -400,7 +402,7 @@ export async function executeSearchV2(
         } else {
           // No keywords — return all attachments matching person/date/type filters
           attachRows = d.prepare(`
-            SELECT id, filename, chat_name, created_at, thumbnail_path, is_image, ocr_text
+            SELECT id, filename, chat_name, created_at, thumbnail_path, original_path, is_image, ocr_text
             FROM attachments WHERE ${whereParts.join(' AND ')}
             ORDER BY created_at DESC LIMIT 50
           `).all(...params) as typeof attachRows
@@ -414,6 +416,7 @@ export async function executeSearchV2(
             contact_name: resolve(r.chat_name),
             created_at: r.created_at,
             thumbnail_path: r.thumbnail_path,
+            original_path: r.original_path,
             is_image: r.is_image === 1,
             matchReason: r.ocr_text && allKeywords.some(k => r.ocr_text!.toLowerCase().includes(k.toLowerCase())) ? 'OCR match' : 'metadata match',
             ocrSnippet: r.ocr_text?.slice(0, 100) || undefined
@@ -475,17 +478,17 @@ export async function executeSearchV2(
       try {
         const chatFilter = personParams.length > 0 ? ` AND chat_name IN (${personParams.map(() => '?').join(',')})` : ''
         const nearby = d.prepare(`
-          SELECT id, filename, chat_name, created_at, thumbnail_path, is_image, ocr_text
+          SELECT id, filename, chat_name, created_at, thumbnail_path, original_path, is_image, ocr_text
           FROM attachments WHERE date(created_at) = ?${chatFilter}
           LIMIT 5
-        `).all(date, ...(personParams.length > 0 ? personParams : [])) as { id: number; filename: string; chat_name: string; created_at: string; thumbnail_path: string | null; is_image: number; ocr_text: string | null }[]
+        `).all(date, ...(personParams.length > 0 ? personParams : [])) as { id: number; filename: string; chat_name: string; created_at: string; thumbnail_path: string | null; original_path: string | null; is_image: number; ocr_text: string | null }[]
         for (const r of nearby) {
           if (existingIds.has(r.id)) continue
           existingIds.add(r.id)
           attachmentResults.push({
             id: r.id, filename: r.filename || '', chat_name: r.chat_name,
             contact_name: resolve(r.chat_name), created_at: r.created_at,
-            thumbnail_path: r.thumbnail_path, is_image: r.is_image === 1,
+            thumbnail_path: r.thumbnail_path, original_path: r.original_path, is_image: r.is_image === 1,
             matchReason: 'near matching messages', ocrSnippet: r.ocr_text?.slice(0, 100) || undefined
           })
         }
