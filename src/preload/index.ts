@@ -144,6 +144,22 @@ const api = {
   searchMessagesAggregated: (phrase: string, chatName?: string): Promise<{
     contact: string; count: number; samples: { body: string; sent_at: string; is_from_me: number }[]
   }[]> => ipcRenderer.invoke('search-messages-aggregated', phrase, chatName),
+  executeSearchV2: (query: string, chatName?: string): Promise<{
+    plan: {
+      people: string[]; groups: string[]; peopleIdentifiers: string[]
+      topic: string | null; keywords: string[]; semanticExpansions: string[]
+      timeRange: { start: string | null; end: string | null; description: string } | null
+      modalities: string; attachmentTypes: string[]; speaker: string
+      sort: string; answerMode: string; confidence: number; originalQuery: string
+    }
+    sections: {
+      messages: { body: string; chat_name: string; contact_name: string; is_from_me: boolean; sent_at: string; matchReason: string; relevanceScore: number }[]
+      attachments: { id: number; filename: string; chat_name: string; contact_name: string; created_at: string; thumbnail_path: string | null; is_image: boolean; matchReason: string; ocrSnippet?: string }[]
+      conversations: { chat_name: string; contact_name: string; messageCount: number; matchingMessages: number; dateRange: string; preview: string }[]
+      summary: string | null
+    }
+    totalResults: number; searchTimeMs: number
+  }> => ipcRenderer.invoke('execute-search-v2', query, chatName),
   executeSearchIntent: (query: string, chatName?: string): Promise<{
     type: 'ranked_contacts' | 'messages' | 'aggregation' | 'timeline' | 'conversational'
     explanation: string

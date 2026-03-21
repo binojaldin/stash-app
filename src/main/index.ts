@@ -10,7 +10,9 @@ import { runMessageAnalysis, getConversationSignals, getAnalysisProgress } from 
 import { computeClosenessScores, getClosenessScores, getClosenessRank } from './closenessRank'
 import { computeSignals, getSignals, getActiveAlerts } from './signalsEngine'
 import { scanForProactiveItems, getProactiveItems, dismissProactiveItem, completeProactiveItem } from './proactiveIntel'
-import { setApiKey, getAIStatus, searchConversationsAI, enrichTopicEras, enrichTopicErasV2, enrichMemoryMoments, interpretSearchQuery, summarizeConversation, generateRelationshipNarrative, generateAttachmentCaption, analyzeRelationshipDynamics, conversationalSearch } from './ai'
+import { setApiKey, getAIStatus, searchConversationsAI, enrichTopicEras, enrichTopicErasV2, enrichMemoryMoments, interpretSearchQuery, summarizeConversation, generateRelationshipNarrative, generateAttachmentCaption, analyzeRelationshipDynamics, conversationalSearch, parseSearchPlan } from './ai'
+import { executeSearchV2 } from './searchV2'
+import type { SearchPlan } from './searchV2'
 import type { TopicEraSummaryInput, TopicEraContextInput, MemoryMomentSummaryInput } from './ai'
 import { getCachedAnalytics, setCachedAnalytics, getMessageCountSignal, yieldEventLoop, invalidateSignalCache } from './analyticsCache'
 import { Worker } from 'worker_threads'
@@ -689,6 +691,68 @@ function setupIpc(): void {
     const results = searchMessages(query, chatName, 30)
     return { type: 'messages', explanation: `Showing messages matching "${query}"`, messages: results }
   })
+  // ── Search V2: multi-axis query planning ──
+  ipcMain.handle('execute-search-v2', async (_event, query: string, chatName?: string) => {
+    const stashDb = initDb()
+
+    // Build name resolver
+    const nameRows = stashDb.prepare('SELECT chat_identifier, resolved_name FROM resolved_names').all() as { chat_identifier: string; resolved_name: string }[]
+    const localChatNameMap: Record<string, string> = {}
+    const contacts: { name: string; identifier: string }[] = []
+    for (const r of nameRows) {
+      localChatNameMap[r.chat_identifier] = r.resolved_name
+      contacts.push({ name: r.resolved_name, identifier: r.chat_identifier })
+    }
+
+    // If scoped to a person, build a targeted plan
+    if (chatName) {
+      const plan: SearchPlan = {
+        people: [localChatNameMap[chatName] || chatName],
+        groups: [],
+        peopleIdentifiers: [chatName],
+        topic: query,
+        keywords: query.split(/\s+/).filter(w => w.length > 2),
+        semanticExpansions: [],
+        timeRange: null,
+        modalities: 'both',
+        attachmentTypes: [],
+        speaker: 'both',
+        sort: 'relevance',
+        answerMode: 'results',
+        confidence: 0.8,
+        originalQuery: query
+      }
+      return executeSearchV2(plan, localChatNameMap)
+    }
+
+    // AI-powered query planning
+    if (getAIStatus().configured) {
+      try {
+        const plan = await parseSearchPlan(query, contacts, new Date().toISOString().slice(0, 10))
+        if (plan && plan.confidence > 0.3) {
+          return executeSearchV2(plan, localChatNameMap)
+        }
+      } catch (err) { console.error('[SearchV2] Plan failed:', err) }
+    }
+
+    // Fallback: simple keyword search plan
+    const fallbackPlan: SearchPlan = {
+      people: [], groups: [], peopleIdentifiers: [],
+      topic: null,
+      keywords: query.split(/\s+/).filter(w => w.length > 2),
+      semanticExpansions: [],
+      timeRange: null,
+      modalities: 'both',
+      attachmentTypes: [],
+      speaker: 'both',
+      sort: 'relevance',
+      answerMode: 'results',
+      confidence: 0.5,
+      originalQuery: query
+    }
+    return executeSearchV2(fallbackPlan, localChatNameMap)
+  })
+
   ipcMain.handle('refresh-reactions', () => { updateReactionCounts() })
   ipcMain.handle('hide-chat', (_event, chatIdentifier: string) => { hideChat(chatIdentifier) })
   ipcMain.handle('get-hidden-chats', () => getHiddenChats())

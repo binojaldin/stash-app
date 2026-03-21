@@ -1496,31 +1496,54 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
   }
   const [searchResult, setSearchResult] = useState<SearchResultData | null>(null)
 
-  const isSemanticQuery = (q: string): boolean => {
-    const lower = q.toLowerCase().trim()
-    return /^(who|what|when|where|why|how|which)\b/.test(lower) ||
-      /\b(most|least|often|first|last|ever|never|always|funniest|heated|longest|emoji)\b/.test(lower) ||
-      /\b(how many|how much|do i|did i|have i)\b/.test(lower)
+  // Search V2 state
+  type SearchResultV2Data = {
+    plan: { people: string[]; topic: string | null; keywords: string[]; timeRange: { start: string | null; end: string | null; description: string } | null; modalities: string; originalQuery: string; confidence: number }
+    sections: {
+      messages: { body: string; chat_name: string; contact_name: string; is_from_me: boolean; sent_at: string; matchReason: string; relevanceScore: number }[]
+      attachments: { id: number; filename: string; chat_name: string; contact_name: string; created_at: string; thumbnail_path: string | null; is_image: boolean; matchReason: string; ocrSnippet?: string }[]
+      conversations: { chat_name: string; contact_name: string; messageCount: number; matchingMessages: number; dateRange: string; preview: string }[]
+      summary: string | null
+    }
+    totalResults: number; searchTimeMs: number
   }
+  const [searchResultV2, setSearchResultV2] = useState<SearchResultV2Data | null>(null)
+
+  const SEARCH_EXAMPLES = [
+    'Messages with Ash about the cabo trip',
+    'Photos Tyler sent me last summer',
+    'When did I first mention Stash?',
+    'Screenshots from the apartment search',
+    'Who did I talk to most in March 2024?',
+    'Links shared about crypto',
+    'What were we planning for New Years?',
+  ]
+  const [placeholderIdx, setPlaceholderIdx] = useState(0)
+  useEffect(() => {
+    const timer = setInterval(() => setPlaceholderIdx(i => (i + 1) % SEARCH_EXAMPLES.length), 4000)
+    return () => clearInterval(timer)
+  }, [])
+
+  useEffect(() => { if (!msgQuery) { setSearchResult(null); setSearchResultV2(null); setMsgResults(null) } }, [msgQuery])
 
   const handleMsgSearch = async (): Promise<void> => {
     if (!msgQuery.trim() || msgSearching) return
     setMsgSearching(true)
     setSearchResult(null)
+    setSearchResultV2(null)
     setMsgResults(null)
 
     const query = msgQuery.trim()
 
-    if (isSemanticQuery(query)) {
-      try {
-        const result = await window.api.executeSearchIntent(query, scopedPerson || undefined)
-        if (result && ((result.ranked && result.ranked.length > 0) || (result.aggregation && result.aggregation.length > 0) || (result.messages && result.messages.length > 0) || (result.timeline && result.timeline.length > 0) || (result.type === 'conversational' && result.answer))) {
-          setSearchResult(result)
-          setMsgSearching(false)
-          return
-        }
-      } catch { /* fall through */ }
-    }
+    // Try Search V2 first
+    try {
+      const result = await window.api.executeSearchV2(query, scopedPerson || undefined)
+      if (result && result.totalResults > 0) {
+        setSearchResultV2(result)
+        setMsgSearching(false)
+        return
+      }
+    } catch (err) { console.error('[Search] V2 failed:', err) }
 
     // Fallback: literal FTS
     try { setMsgResults(await window.api.searchMessages(query, scopedPerson || undefined, 30)) }
@@ -2863,7 +2886,7 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
         {isIndexed && (
           <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
             <input type="text" value={msgQuery} onChange={e => setMsgQuery(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleMsgSearch()}
-              placeholder={scopedPerson ? `Search messages with ${resolveName(scopedPerson, chatNameMap)}…` : 'Search all messages…'}
+              placeholder={scopedPerson ? `Search messages with ${resolveName(scopedPerson, chatNameMap)}…` : SEARCH_EXAMPLES[placeholderIdx]}
               style={{ flex: 1, padding: '11px 16px', borderRadius: 10, background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', color: '#fff', fontSize: 13, outline: 'none', fontFamily: "'DM Sans'" }} />
             <button onClick={handleMsgSearch} disabled={msgSearching}
               style={{ padding: '11px 20px', borderRadius: 10, background: '#E8604A', border: 'none', color: '#fff', fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: "'DM Sans'", opacity: msgSearching ? 0.6 : 1 }}>
@@ -2989,6 +3012,109 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
                   </div>
                 )
               })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Search V2 results */}
+      {searchResultV2 && (
+        <div style={{ gridColumn: 'span 12' }}>
+          {/* Plan chips */}
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
+            {searchResultV2.plan.people.map(p => (
+              <span key={p} style={{ fontSize: 10, padding: '3px 10px', borderRadius: 12, background: 'rgba(46,196,160,0.1)', color: '#2EC4A0', fontFamily: "'DM Sans'" }}>Person: {p}</span>
+            ))}
+            {searchResultV2.plan.topic && (
+              <span style={{ fontSize: 10, padding: '3px 10px', borderRadius: 12, background: 'rgba(232,96,74,0.1)', color: '#E8604A', fontFamily: "'DM Sans'" }}>Topic: {searchResultV2.plan.topic}</span>
+            )}
+            {searchResultV2.plan.timeRange && (
+              <span style={{ fontSize: 10, padding: '3px 10px', borderRadius: 12, background: 'rgba(127,119,221,0.1)', color: '#7F77DD', fontFamily: "'DM Sans'" }}>Time: {searchResultV2.plan.timeRange.description}</span>
+            )}
+            {searchResultV2.plan.modalities !== 'both' && (
+              <span style={{ fontSize: 10, padding: '3px 10px', borderRadius: 12, background: 'rgba(186,117,23,0.1)', color: '#BA7517', fontFamily: "'DM Sans'" }}>{searchResultV2.plan.modalities === 'messages' ? 'Messages only' : 'Attachments only'}</span>
+            )}
+            <span style={{ fontSize: 10, color: '#c8c0ba', fontFamily: "'DM Sans'", alignSelf: 'center' }}>{searchResultV2.searchTimeMs}ms · {searchResultV2.totalResults} results</span>
+          </div>
+
+          {/* AI Summary */}
+          {searchResultV2.sections.summary && (
+            <div style={{ padding: '16px 20px', borderRadius: 14, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', marginBottom: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                <span style={{ fontSize: 8, padding: '2px 6px', borderRadius: 4, background: 'rgba(127,119,221,0.12)', color: '#7F77DD', fontFamily: "'DM Sans'", letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 600 }}>AI</span>
+              </div>
+              <div style={{ fontSize: 14, color: '#1A1A1A', lineHeight: 1.7, fontFamily: "'DM Sans'" }}>{searchResultV2.sections.summary}</div>
+            </div>
+          )}
+
+          {/* Conversations section */}
+          {searchResultV2.sections.conversations.length > 0 && (
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#2EC4A0', marginBottom: 8, fontFamily: "'DM Sans'", fontWeight: 600 }}>Conversations ({searchResultV2.sections.conversations.length})</div>
+              {searchResultV2.sections.conversations.map((c, i) => (
+                <div key={i} onClick={() => onSelectConversation(c.chat_name)}
+                  style={{ padding: '12px 16px', borderRadius: 12, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', cursor: 'pointer', marginBottom: 6 }}
+                  onMouseEnter={e => (e.currentTarget.style.background = '#F8F4F0')} onMouseLeave={e => (e.currentTarget.style.background = '#fff')}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ fontSize: 14, fontWeight: 600, color: '#1A1A1A', fontFamily: "'DM Sans'" }}>{c.contact_name}</span>
+                    {c.matchingMessages > 0 && <span style={{ fontSize: 12, color: '#E8604A', fontFamily: "'DM Sans'" }}>{c.matchingMessages} matches</span>}
+                  </div>
+                  <div style={{ fontSize: 11, color: '#9a948f', fontFamily: "'DM Sans'", marginTop: 2 }}>{c.messageCount.toLocaleString()} messages · {c.dateRange}</div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Messages section */}
+          {searchResultV2.sections.messages.length > 0 && (
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#E8604A', marginBottom: 8, fontFamily: "'DM Sans'", fontWeight: 600 }}>Messages ({searchResultV2.sections.messages.length})</div>
+              {searchResultV2.sections.messages.slice(0, 15).map((r, i) => (
+                <div key={i} onClick={() => onSelectConversation(r.chat_name)}
+                  style={{ padding: '12px 16px', borderRadius: 12, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', cursor: 'pointer', marginBottom: 6 }}
+                  onMouseEnter={e => (e.currentTarget.style.background = '#F8F4F0')} onMouseLeave={e => (e.currentTarget.style.background = '#fff')}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                    <span style={{ fontSize: 11, color: r.is_from_me ? '#E8604A' : '#2EC4A0', fontWeight: 500, fontFamily: "'DM Sans'" }}>
+                      {r.is_from_me ? 'You' : r.contact_name}
+                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ fontSize: 9, padding: '1px 6px', borderRadius: 4, background: 'rgba(0,0,0,0.04)', color: '#9a948f', fontFamily: "'DM Sans'" }}>{r.matchReason}</span>
+                      <span style={{ fontSize: 10, color: '#c8c0ba', fontFamily: "'DM Sans'" }}>{new Date(r.sent_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 13, color: '#4a4542', lineHeight: 1.5, fontFamily: "'DM Sans'" }}>{r.body}</div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Attachments section */}
+          {searchResultV2.sections.attachments.length > 0 && (
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#7F77DD', marginBottom: 8, fontFamily: "'DM Sans'", fontWeight: 600 }}>Attachments ({searchResultV2.sections.attachments.length})</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {searchResultV2.sections.attachments.slice(0, 12).map((a, i) => (
+                  <div key={i} onClick={() => onSelectConversation(a.chat_name)}
+                    style={{ padding: '10px 16px', borderRadius: 12, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', cursor: 'pointer', display: 'flex', gap: 12, alignItems: 'center' }}
+                    onMouseEnter={e => (e.currentTarget.style.background = '#F8F4F0')} onMouseLeave={e => (e.currentTarget.style.background = '#fff')}>
+                    <div style={{ width: 36, height: 36, borderRadius: 8, background: '#F8F4F0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 }}>{a.is_image ? '🖼' : '📎'}</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 12, color: '#1A1A1A', fontFamily: "'DM Sans'", overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.filename || 'Attachment'}</div>
+                      <div style={{ fontSize: 10, color: '#9a948f', fontFamily: "'DM Sans'" }}>{a.contact_name} · {new Date(a.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</div>
+                    </div>
+                    <span style={{ fontSize: 9, padding: '1px 6px', borderRadius: 4, background: 'rgba(0,0,0,0.04)', color: '#9a948f', fontFamily: "'DM Sans'", flexShrink: 0 }}>{a.matchReason}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Empty state */}
+          {searchResultV2.totalResults === 0 && (
+            <div style={{ textAlign: 'center', padding: 32, color: '#9a948f', fontSize: 13, fontFamily: "'DM Sans'" }}>
+              <div style={{ marginBottom: 8 }}>No results found for &ldquo;{searchResultV2.plan.originalQuery}&rdquo;</div>
+              {searchResultV2.plan.timeRange && <div style={{ fontSize: 12 }}>Try widening the date range</div>}
+              {searchResultV2.plan.people.length > 0 && <div style={{ fontSize: 12 }}>Try searching all conversations</div>}
             </div>
           )}
         </div>

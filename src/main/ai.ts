@@ -625,6 +625,93 @@ export async function analyzeRelationshipDynamics(chatIdentifier: string, contac
   } catch { return null }
 }
 
+// ── Search V2: AI Query Planner ──
+
+import type { SearchPlan } from './searchV2'
+
+const SEARCH_PLAN_CACHE_TTL = 60 * 60 * 1000 // 1 hour
+
+export async function parseSearchPlan(
+  query: string,
+  availableContacts: { name: string; identifier: string }[],
+  currentDate: string
+): Promise<SearchPlan | null> {
+  if (!getAIStatus().configured) return null
+
+  const cached = getCached<SearchPlan>('search-plan', query)
+  if (cached) return cached
+
+  const contactList = availableContacts.slice(0, 100).map(c => `- "${c.name}" → ${c.identifier}`).join('\n')
+
+  const system = `You parse natural language search queries about someone's iMessage history into a structured search plan. You are NOT answering the question — you are creating a search strategy.
+
+Available contacts (name → identifier):
+${contactList}
+
+Today's date: ${currentDate}
+
+Given a query, extract ALL dimensions:
+
+{
+  "people": ["exact contact names from the available list"],
+  "groups": ["group chat names if mentioned"],
+  "topic": "the semantic topic in 1-5 words, or null",
+  "keywords": ["specific search terms to look for in message text"],
+  "semanticExpansions": ["3-5 related words that might appear in relevant messages"],
+  "timeRange": { "start": "YYYY-MM-DD or null", "end": "YYYY-MM-DD or null", "description": "human-readable" } or null,
+  "modalities": "messages" | "attachments" | "both",
+  "attachmentTypes": [],
+  "speaker": "me" | "them" | "both",
+  "sort": "relevance" | "recent" | "oldest",
+  "answerMode": "results" | "summary" | "results+summary",
+  "confidence": 0.0-1.0
+}
+
+Rules:
+- Match people names FUZZY — "ash" matches "Ash", "Ashley" etc. Return the EXACT name from the available list.
+- Resolve relative dates: "last summer" → June-August of last year. "this year" → Jan 1 to today. "recently" → last 30 days.
+- If the query mentions photos/images/screenshots → set modalities to "attachments" or "both" and add attachment types.
+- semanticExpansions: add 3-5 related words. "cabo trip" → ["vacation", "beach", "flight", "hotel", "mexico"]
+- If the query is just a word/phrase with no other filters, set keywords to that phrase, everything else null/default.
+- "who did I talk to most" → answerMode = "summary", no keywords needed
+- confidence: 0.9+ if person and topic are clear. 0.5-0.8 if ambiguous.
+
+Return ONLY the JSON object.`
+
+  const text = await callAnthropic(system, `Query: "${query}"`, 600)
+  if (!text) return null
+
+  try {
+    const raw = JSON.parse(text.trim().replace(/^```json?\n?/, '').replace(/\n?```$/, ''))
+    const plan: SearchPlan = {
+      people: raw.people || [],
+      groups: raw.groups || [],
+      peopleIdentifiers: [], // resolved post-parse
+      topic: raw.topic || null,
+      keywords: raw.keywords || [],
+      semanticExpansions: raw.semanticExpansions || [],
+      timeRange: raw.timeRange || null,
+      modalities: raw.modalities || 'both',
+      attachmentTypes: raw.attachmentTypes || [],
+      speaker: raw.speaker || 'both',
+      sort: raw.sort || 'relevance',
+      answerMode: raw.answerMode || 'results',
+      confidence: raw.confidence || 0.5,
+      originalQuery: query
+    }
+
+    // Resolve people names to identifiers
+    const nameMap = new Map<string, string>()
+    for (const c of availableContacts) nameMap.set(c.name.toLowerCase(), c.identifier)
+    plan.peopleIdentifiers = plan.people
+      .map(p => nameMap.get(p.toLowerCase()))
+      .filter(Boolean) as string[]
+
+    setCache('search-plan', query, plan)
+    return plan
+  } catch { return null }
+}
+
 // ── Proactive Intelligence: detect commitments, plans, events ──
 
 export interface DetectedProactiveItem {
