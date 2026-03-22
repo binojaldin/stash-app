@@ -255,6 +255,16 @@ const api = {
   getProactiveItems: (): Promise<{ items: { id: number; chat_identifier: string; item_type: string; description: string; source_message: string; due_date: string | null; status: string; priority: number; contact_name: string }[] }> => ipcRenderer.invoke('get-proactive-items'),
   dismissProactiveItem: (id: number): Promise<void> => ipcRenderer.invoke('dismiss-proactive-item', id),
   completeProactiveItem: (id: number): Promise<void> => ipcRenderer.invoke('complete-proactive-item', id),
+  getConversationList: (periodYear?: number, periodMonth?: number, searchQuery?: string): Promise<{
+    chatIdentifier: string; displayName: string; lastMessageBody: string; lastMessageDate: string
+    lastMessageIsFromMe: boolean; messageCount: number; hasUnindexedAttachments: boolean
+  }[]> => ipcRenderer.invoke('get-conversation-list', periodYear, periodMonth, searchQuery),
+  getMessagesForChat: (chatIdentifier: string, limit: number, beforeRowId?: number, afterRowId?: number): Promise<{
+    messages: { rowId: number; body: string; isFromMe: boolean; sentAt: string; hasAttachment: boolean; attachmentId?: number }[]
+    hasOlder: boolean; hasNewer: boolean
+  }> => ipcRenderer.invoke('get-messages-for-chat', chatIdentifier, limit, beforeRowId, afterRowId),
+  getFirstMessageForPeriod: (chatIdentifier: string, year: number, month?: number): Promise<{ rowId: number } | null> =>
+    ipcRenderer.invoke('get-first-message-for-period', chatIdentifier, year, month),
   onAnalysisProgress: (callback: (data: { analyzed: number; total: number }) => void): (() => void) => {
     const handler = (_event: unknown, data: { analyzed: number; total: number }): void => callback(data)
     ipcRenderer.on('analysis-progress', handler)

@@ -15,6 +15,7 @@ export const PRO_FEATURES = [
   'ai_relationship_narrative',
   'ai_proactive_intel',
   'wrapped_ai_insights',
+  'conversation_view',
 ] as const
 
 export type ProFeature = typeof PRO_FEATURES[number]

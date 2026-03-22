@@ -10,7 +10,9 @@ import { AttachmentsView } from './components/AttachmentsView'
 import { WrappedView } from './components/WrappedView'
 import { SettingsPanel } from './components/SettingsPanel'
 import { LockScreen } from './components/LockScreen'
-import type { ChatSummary, Filters, IndexingProgress, Stats } from './types'
+import { ConversationView } from './components/ConversationView'
+import { MessagesHome } from './components/MessagesHome'
+import type { ChatSummary, Filters, IndexingProgress, Stats, ChatNameEntry } from './types'
 
 type AppState = 'checking' | 'loading' | 'no-access' | 'priority' | 'main'
 
@@ -19,6 +21,8 @@ type MainView =
   | { kind: 'global-attachments' }
   | { kind: 'person-insights'; person: string }
   | { kind: 'person-attachments'; person: string }
+  | { kind: 'person-conversation'; person: string }
+  | { kind: 'messages-home' }
 
 function dateRangeToBounds(range: string): { from: string | null; to: string | null } {
   const now = new Date()
@@ -122,9 +126,10 @@ export default function App(): JSX.Element {
   }, [stats.chatNames])
 
   // ── Derived ──
-  const scopedPerson = (mainView.kind === 'person-insights' || mainView.kind === 'person-attachments') ? mainView.person : null
+  const scopedPerson = (mainView.kind === 'person-insights' || mainView.kind === 'person-attachments' || mainView.kind === 'person-conversation') ? mainView.person : null
   const showInsights = mainView.kind === 'global-insights' || mainView.kind === 'person-insights'
   const showAttachments = mainView.kind === 'global-attachments' || mainView.kind === 'person-attachments'
+  const showConversation = mainView.kind === 'person-conversation'
   const isPersonScope = scopedPerson !== null
 
   const startupComplete = useRef(false)
@@ -272,67 +277,91 @@ export default function App(): JSX.Element {
       {isIndexing && showIndexing && indexingProgress.total > 0 && <IndexingOverlay progress={indexingProgress} onBrowse={() => setShowIndexing(false)} />}
 
       <IconRail mainView={mainView} onNavigate={(kind) => setMainView({ kind })}
+        onOpenMessages={() => setMainView({ kind: 'messages-home' })}
         indexProgress={isIndexing ? Math.round((indexingProgress.processed / Math.max(indexingProgress.total, 1)) * 100) : stats.total > 0 ? 100 : 0}
         attachmentCount={stats.total} hasNewInsights={stats.total > 0}
         onOpenSettings={() => setShowSettings(true)} />
 
-      <div className="flex flex-col" style={{ background: '#0F0F0F' }}>
-        {showSidebar && (
-          <Sidebar stats={stats} filters={filters}
-            onFilterChange={(f) => { setFilters(f); if (!showAttachments) setMainView(isPersonScope ? { kind: 'person-attachments', person: scopedPerson! } : { kind: 'global-attachments' }) }}
-            onManageConversations={!isIndexing ? handleManageConversations : undefined}
-            onHideChat={async (rawName) => { await window.api.hideChat(rawName); loadStats() }}
-            isIndexing={isIndexing} indexingProgress={indexingProgress}
-            onGoHome={goHome}
-            scopedPerson={scopedPerson}
-            onScopePerson={(rawName) => rawName ? scopePerson(rawName) : goHome()}
-            selectedRange={dateRange} onDateRangeChange={setDateRange}
-            availableYears={availableYears}
-            onNavigate={(view) => setMainView(view as MainView)}
-            onOpenSettings={() => setShowSettings(true)}
-          />
-        )}
-      </div>
-
-      <div className="flex-1 min-w-0 flex flex-col" style={{ background: '#F2EDE8' }}>
-        {/* Topbar */}
-        <div className="flex-shrink-0 flex items-center justify-between px-4" style={{ height: 44, borderBottom: '1px solid #EAE5DF', background: '#F6F3EF', WebkitAppRegion: 'drag' } as React.CSSProperties}>
-          <div style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
-            {isPersonScope && (
-              <div style={{ display: 'flex', background: '#EAE5DF', borderRadius: 8, padding: 2, gap: 2 }}>
-                <button onClick={() => setMainView({ kind: 'person-insights', person: scopedPerson! })}
-                  style={{ padding: '5px 14px', borderRadius: 6, fontSize: 12, background: showInsights ? '#fff' : 'transparent', color: showInsights ? '#1A1A1A' : '#9a948f', fontWeight: showInsights ? 500 : 400, border: 'none', cursor: 'pointer' }}>Insights</button>
-                <button onClick={() => setMainView({ kind: 'person-attachments', person: scopedPerson! })}
-                  style={{ padding: '5px 14px', borderRadius: 6, fontSize: 12, background: showAttachments ? '#fff' : 'transparent', color: showAttachments ? '#1A1A1A' : '#9a948f', fontWeight: showAttachments ? 500 : 400, border: 'none', cursor: 'pointer' }}>Attachments</button>
-              </div>
+      {mainView.kind === 'messages-home' ? (
+        <MessagesHome availableYears={availableYears} chatNameMap={stats.chatNameMap} stats={stats} />
+      ) : (
+        <>
+          <div className="flex flex-col" style={{ background: '#0F0F0F' }}>
+            {showSidebar && (
+              <Sidebar stats={stats} filters={filters}
+                onFilterChange={(f) => { setFilters(f); if (!showAttachments) setMainView(isPersonScope ? { kind: 'person-attachments', person: scopedPerson! } : { kind: 'global-attachments' }) }}
+                onManageConversations={!isIndexing ? handleManageConversations : undefined}
+                onHideChat={async (rawName) => { await window.api.hideChat(rawName); loadStats() }}
+                isIndexing={isIndexing} indexingProgress={indexingProgress}
+                onGoHome={goHome}
+                scopedPerson={scopedPerson}
+                onScopePerson={(rawName) => rawName ? scopePerson(rawName) : goHome()}
+                selectedRange={dateRange} onDateRangeChange={setDateRange}
+                availableYears={availableYears}
+                onNavigate={(view) => setMainView(view as MainView)}
+                onOpenSettings={() => setShowSettings(true)}
+              />
             )}
           </div>
-          {!isPersonScope && (
-            <button onClick={() => setShowWrapped(true)}
-              style={{ background: '#E8604A', color: '#FFFFFF', borderRadius: 6, padding: '5px 14px', fontSize: 11, fontWeight: 500, border: 'none', cursor: 'pointer', WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-              onMouseEnter={(e) => { e.currentTarget.style.background = '#C44A36' }} onMouseLeave={(e) => { e.currentTarget.style.background = '#E8604A' }}>
-              <Sparkles style={{ width: 12, height: 12, display: 'inline', marginRight: 4, verticalAlign: 'middle' }} /> Wrapped
-            </button>
+
+          <div className="flex-1 min-w-0 flex flex-col" style={{ background: '#F2EDE8' }}>
+            {/* Topbar */}
+            <div className="flex-shrink-0 flex items-center justify-between px-4" style={{ height: 44, borderBottom: '1px solid #EAE5DF', background: '#F6F3EF', WebkitAppRegion: 'drag' } as React.CSSProperties}>
+              <div style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+                {isPersonScope && (
+                  <div style={{ display: 'flex', background: '#EAE5DF', borderRadius: 8, padding: 2, gap: 2 }}>
+                    <button onClick={() => setMainView({ kind: 'person-insights', person: scopedPerson! })}
+                      style={{ padding: '5px 14px', borderRadius: 6, fontSize: 12, background: showInsights ? '#fff' : 'transparent', color: showInsights ? '#1A1A1A' : '#9a948f', fontWeight: showInsights ? 500 : 400, border: 'none', cursor: 'pointer' }}>Overview</button>
+                    <button onClick={() => setMainView({ kind: 'person-conversation', person: scopedPerson! })}
+                      style={{ padding: '5px 14px', borderRadius: 6, fontSize: 12, background: showConversation ? '#fff' : 'transparent', color: showConversation ? '#1A1A1A' : '#9a948f', fontWeight: showConversation ? 500 : 400, border: 'none', cursor: 'pointer' }}>Conversation</button>
+                    <button onClick={() => setMainView({ kind: 'person-attachments', person: scopedPerson! })}
+                      style={{ padding: '5px 14px', borderRadius: 6, fontSize: 12, background: showAttachments ? '#fff' : 'transparent', color: showAttachments ? '#1A1A1A' : '#9a948f', fontWeight: showAttachments ? 500 : 400, border: 'none', cursor: 'pointer' }}>Photos</button>
+                  </div>
+                )}
+              </div>
+              {!isPersonScope && (
+                <button onClick={() => setShowWrapped(true)}
+                  style={{ background: '#E8604A', color: '#FFFFFF', borderRadius: 6, padding: '5px 14px', fontSize: 11, fontWeight: 500, border: 'none', cursor: 'pointer', WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = '#C44A36' }} onMouseLeave={(e) => { e.currentTarget.style.background = '#E8604A' }}>
+                  <Sparkles style={{ width: 12, height: 12, display: 'inline', marginRight: 4, verticalAlign: 'middle' }} /> Wrapped
+                </button>
+              )}
+            </div>
+
+            {/* Main surface */}
+            {showConversation && scopedPerson ? (() => {
+              const displayName = stats.chatNameMap[scopedPerson] || scopedPerson
+              const initials = displayName.split(' ').filter(Boolean).map(w => w[0]).join('').slice(0, 2).toUpperCase() || '?'
+              return (
+                <ConversationView
+                  chatIdentifier={scopedPerson}
+                  contactName={displayName}
+                  contactColor="#2EC4A0"
+                  contactInitials={initials}
+                  availableYears={availableYears}
+                  onClose={() => setMainView({ kind: 'person-insights', person: scopedPerson })}
+                  onOpenAttachment={() => {
+                    setMainView({ kind: 'person-attachments', person: scopedPerson })
+                  }}
+                />
+              )
+            })() : showInsights ? (
+              <Dashboard stats={stats} chatNameMap={stats.chatNameMap}
+                onSelectConversation={(rawName) => setMainView({ kind: 'person-insights', person: rawName })}
+                dateRange={dateRange} scopedPerson={scopedPerson} onClearScope={goHome}
+                insightSurface={insightSurface} onSurfaceChange={setInsightSurface}
+                isStatsLoading={isStatsLoading}
+                onDrillThrough={(title, subtitle, freeStats) => setDrillThrough({ title, subtitle, freeStats })}
+                onOpenSettings={() => setShowSettings(true)} />
+            ) : (
+              <AttachmentsView mainView={mainView} dateRange={dateRange} stats={stats} chatNameMap={stats.chatNameMap} onNavigate={setMainView} />
+            )}
+          </div>
+
+          {drillThrough && (
+            <DrillThroughPanel title={drillThrough.title} subtitle={drillThrough.subtitle} freeStats={drillThrough.freeStats} onClose={() => setDrillThrough(null)} />
           )}
-        </div>
-
-
-        {/* Main surface */}
-        {showInsights ? (
-          <Dashboard stats={stats} chatNameMap={stats.chatNameMap}
-            onSelectConversation={(rawName) => setMainView({ kind: 'person-insights', person: rawName })}
-            dateRange={dateRange} scopedPerson={scopedPerson} onClearScope={goHome}
-            insightSurface={insightSurface} onSurfaceChange={setInsightSurface}
-            isStatsLoading={isStatsLoading}
-            onDrillThrough={(title, subtitle, freeStats) => setDrillThrough({ title, subtitle, freeStats })}
-            onOpenSettings={() => setShowSettings(true)} />
-        ) : (
-          <AttachmentsView mainView={mainView} dateRange={dateRange} stats={stats} chatNameMap={stats.chatNameMap} onNavigate={setMainView} />
-        )}
-      </div>
-
-      {drillThrough && (
-        <DrillThroughPanel title={drillThrough.title} subtitle={drillThrough.subtitle} freeStats={drillThrough.freeStats} onClose={() => setDrillThrough(null)} />
+        </>
       )}
     </div>
   )
