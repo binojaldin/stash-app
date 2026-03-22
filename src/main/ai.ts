@@ -683,7 +683,8 @@ Given a query, extract ALL dimensions:
   "attachmentTypes": [],
   "speaker": "me" | "them" | "both",
   "sort": "relevance" | "recent" | "oldest",
-  "answerMode": "results" | "summary" | "results+summary" | "ranking" | "temporal" | "signal_ranking",
+  "answerMode": "results" | "summary" | "results+summary" | "ranking" | "temporal" | "signal_ranking" | "time_browse",
+  "semantic": true/false,
   "confidence": 0.0-1.0
 }
 
@@ -706,6 +707,8 @@ Rules:
 - "most emoji" → answerMode = "signal_ranking", topic = "emoji"
 - "when did I first talk to..." / "when was the first time..." / "how long have I been talking to..." → answerMode = "temporal"
 - "when did we last..." / "last time I talked to..." → answerMode = "temporal"
+- "what was happening in March 2023" / "what was I doing in [month]" → answerMode = "time_browse", set timeRange to that month, keywords = []
+- "that time tyler was upset" / "when we fought about rent" → semantic: true, set topic to the concept ("upset", "fight about rent"). These need meaning-based search, not keyword matching.
 - confidence: 0.9+ if person and topic are clear. 0.5-0.8 if ambiguous.
 
 Return ONLY the JSON object.`
@@ -728,6 +731,7 @@ Return ONLY the JSON object.`
       speaker: raw.speaker || 'both',
       sort: raw.sort || 'relevance',
       answerMode: raw.answerMode || 'results',
+      semantic: raw.semantic || false,
       confidence: raw.confidence || 0.5,
       originalQuery: query
     }

@@ -2,7 +2,7 @@ import { app, shell, BrowserWindow, ipcMain, dialog, Menu, Tray, nativeImage, po
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import { checkFullDiskAccess } from './messagesReader'
-import { initDb, searchAttachments, getStats, getFastStats, getTodayInHistory, getUsageStats, getMessagingNetwork, getAttachmentById, closeDb, hideChat, getHiddenChats, getConversationStats, getRelationshipTimeline, getSocialGravity, getTopicEras, getTopicEraContext, getMemoryMoments, searchMessagesAggregated, updateReactionCounts, invalidateLaughCache, searchMessages, getMessageIndexStatus, getVocabStats, getWordOrigins, detectSignalQuery, executeSearchIntent, getMessageSamples, getAttachmentContext, getSignificantPhotos, getRelationshipDynamics, getMonthlyAverages, getMediaIntelligence, detectNicknames, getBehavioralPatterns, getMessageContext, buildConversationWindows } from './db'
+import { initDb, searchAttachments, getStats, getFastStats, getTodayInHistory, getUsageStats, getMessagingNetwork, getAttachmentById, closeDb, hideChat, getHiddenChats, getConversationStats, getRelationshipTimeline, getSocialGravity, getTopicEras, getTopicEraContext, getMemoryMoments, searchMessagesAggregated, updateReactionCounts, invalidateLaughCache, searchMessages, getMessageIndexStatus, getVocabStats, getWordOrigins, detectSignalQuery, executeSearchIntent, getMessageSamples, getAttachmentContext, getSignificantPhotos, getRelationshipDynamics, getMonthlyAverages, getMediaIntelligence, detectNicknames, getBehavioralPatterns, getMessageContext, buildConversationWindows, buildTimeIndex, getGlobalTimeHeatmap, getTopContactsForMonth, getPersonTimeline } from './db'
 import { startIndexing, getIndexingProgress, fetchChatSummaries, saveChatPriorities, getSavedPriorityChats, resetIndexing, recoverAttachment, resolveNamesInBackground } from './indexer'
 import { compileContactsHelper, resolveContact, resolveContactsBatch } from './contacts'
 import { generateWrapped, getAvailableYears } from './wrapped'
@@ -594,6 +594,10 @@ function setupIpc(): void {
     return d.prepare(`SELECT * FROM conversation_windows${filter} ORDER BY start_date DESC LIMIT ?`).all(...params)
   })
 
+  ipcMain.handle('get-global-time-heatmap', () => getGlobalTimeHeatmap())
+  ipcMain.handle('get-top-contacts-month', (_event, year: number, month: number) => getTopContactsForMonth(year, month))
+  ipcMain.handle('get-person-timeline', (_event, chatId: string) => getPersonTimeline(chatId))
+
   ipcMain.handle('get-dashboard-data', async (_event, scopedPerson?: string) => {
     const t0 = Date.now()
     const result: Record<string, unknown> = {}
@@ -781,6 +785,7 @@ function setupIpc(): void {
         speaker: 'both',
         sort: 'relevance',
         answerMode: 'results',
+        semantic: false,
         confidence: 0.8,
         originalQuery: query
       }
@@ -813,6 +818,7 @@ function setupIpc(): void {
       speaker: 'both',
       sort: 'relevance',
       answerMode: 'results',
+      semantic: false,
       confidence: 0.5,
       originalQuery: query
     }
@@ -994,6 +1000,9 @@ app.whenReady().then(() => {
 
     try { console.log('[Background] Signals...'); await computeSignals(); console.log(`[Background] Signals done (${Date.now()-t0}ms)`) }
     catch (e) { console.error('[Signals]', e) }
+
+    try { console.log('[Background] Time index...'); buildTimeIndex(); console.log(`[Background] Time index done (${Date.now()-t0}ms)`) }
+    catch (e) { console.error('[TimeIndex]', e) }
 
     // Proactive intel runs last — 20 API calls, wait at least 60s from boot
     try {

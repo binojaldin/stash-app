@@ -1634,6 +1634,17 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
     else { setMonthlyData(null); window.api.getMonthlyAverages().then(setGlobalMonthly).catch(() => {}) }
   }, [scopedPerson])
 
+  // ── Time navigation (must be before early return) ──
+  const [timeYear, setTimeYear] = useState(new Date().getFullYear())
+  const [timeMonth, setTimeMonth] = useState<number | null>(null)
+  const [heatmapData, setHeatmapData] = useState<{ year: number; month: number; total: number; contacts: number }[]>([])
+  const [monthContacts, setMonthContacts] = useState<{ chat_identifier: string; message_count: number; from_me: number; from_them: number; avg_heat: number }[]>([])
+  useEffect(() => { window.api.getGlobalTimeHeatmap().then(setHeatmapData).catch(() => {}) }, [])
+  useEffect(() => {
+    if (timeMonth !== null) window.api.getTopContactsMonth(timeYear, timeMonth).then(setMonthContacts).catch(() => {})
+    else setMonthContacts([])
+  }, [timeYear, timeMonth])
+
   // ── Relationship dynamics (must be before early return) ──
   const [dynamics, setDynamics] = useState<{ myTotalWords: number; theirTotalWords: number; effortRatio: number; myQuestions: number; theirQuestions: number; myPositiveRate: number; theirPositiveRate: number; myNegativeRate: number; theirNegativeRate: number; myAvgReplyMinutes: number; theirAvgReplyMinutes: number; monthlyVolume: { month: string; count: number }[]; trajectoryDirection: string; myInitiations: number; totalDays: number; marathonDays: number; silentGaps: number; avgDailyWhenActive: number; lateNightMessages: number; totalLateNightAcrossAll: number; lateNightExclusivity: number; myMediaCount: number; theirMediaCount: number; heatByHour: { hour: number; avgHeat: number }[]; peakHeatHour: number } | null>(null)
   useEffect(() => {
@@ -2906,6 +2917,60 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
         <PosterCard eyebrow="Your archive" number={stats.total.toLocaleString()} unit="items"
           descriptor={`Across ${chats.length.toLocaleString()} conversations — ${groups.length} group chats, ${individuals.length} one-on-one.`}
           accent="#7F77DD" bg="#1E1A2E" span={12} />
+
+        {/* Time Navigation */}
+        {heatmapData.length > 0 && (
+          <div style={{ gridColumn: 'span 12', borderRadius: 14, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', padding: '20px 24px' }}>
+            <div style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#7F77DD', marginBottom: 12, fontFamily: "'DM Sans'", fontWeight: 600 }}>Activity timeline</div>
+            <div style={{ display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap' }}>
+              {[...new Set(heatmapData.map(h => h.year))].sort().map(y => (
+                <button key={y} onClick={() => { setTimeYear(y); setTimeMonth(null) }}
+                  style={{ fontSize: 12, padding: '4px 12px', borderRadius: 6, background: y === timeYear ? '#7F77DD' : 'rgba(0,0,0,0.04)', color: y === timeYear ? '#fff' : '#9a948f', border: 'none', cursor: 'pointer', fontFamily: "'DM Sans'", fontWeight: 500 }}>
+                  {y}
+                </button>
+              ))}
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 4, marginBottom: 16 }}>
+              {Array.from({ length: 12 }, (_, i) => {
+                const m = i + 1
+                const data = heatmapData.find(h => h.year === timeYear && h.month === m)
+                const total = data?.total || 0
+                const maxMonth = Math.max(...heatmapData.filter(h => h.year === timeYear).map(h => h.total), 1)
+                const intensity = total / maxMonth
+                const isSelected = timeMonth === m
+                return (
+                  <div key={m} onClick={() => setTimeMonth(m === timeMonth ? null : m)}
+                    style={{ padding: '10px 4px', borderRadius: 8, textAlign: 'center', cursor: 'pointer',
+                      background: isSelected ? 'rgba(127,119,221,0.12)' : `rgba(127,119,221,${intensity * 0.15})`,
+                      border: isSelected ? '1.5px solid #7F77DD' : '1px solid rgba(0,0,0,0.04)', transition: 'all 0.15s' }}>
+                    <div style={{ fontSize: 9, color: '#9a948f', fontFamily: "'DM Sans'", marginBottom: 2 }}>
+                      {['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][i]}
+                    </div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: total > 0 ? '#1A1A1A' : '#ddd', fontFamily: "'DM Sans'" }}>
+                      {total > 0 ? (total > 999 ? `${(total / 1000).toFixed(1)}k` : total) : '\u2014'}
+                    </div>
+                    <div style={{ fontSize: 8, color: '#c8c0ba' }}>{data?.contacts || 0} people</div>
+                  </div>
+                )
+              })}
+            </div>
+            {timeMonth !== null && monthContacts.length > 0 && (
+              <div>
+                <div style={{ fontSize: 11, color: '#7F77DD', marginBottom: 8, fontFamily: "'DM Sans'", fontWeight: 500 }}>
+                  Top conversations · {['January','February','March','April','May','June','July','August','September','October','November','December'][timeMonth - 1]} {timeYear}
+                </div>
+                {monthContacts.filter(c => { const n = resolveName(c.chat_identifier, chatNameMap); return n !== 'Unknown' && !n.startsWith('+') }).slice(0, 10).map((c, i) => (
+                  <div key={c.chat_identifier} onClick={() => onSelectConversation(c.chat_identifier)}
+                    style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: i < 9 ? '1px solid rgba(0,0,0,0.04)' : 'none', cursor: 'pointer' }}>
+                    <span style={{ width: 18, fontSize: 11, color: i === 0 ? '#7F77DD' : '#c8c0ba', fontWeight: 600, fontFamily: "'DM Sans'" }}>{i + 1}</span>
+                    <span style={{ flex: 1, fontSize: 13, color: '#1A1A1A', fontFamily: "'DM Sans'" }}>{resolveName(c.chat_identifier, chatNameMap)}</span>
+                    <span style={{ fontSize: 11, color: '#9a948f', fontFamily: "'DM Sans'" }}>{c.message_count} msgs</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {(() => {
           const total = stats.total || 1

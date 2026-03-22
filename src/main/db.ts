@@ -260,6 +260,24 @@ export function initDb(): Database.Database {
     )`)
   } catch { /* FTS table may already exist */ }
 
+  // ── V9: time index ──
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS time_index (
+      chat_identifier TEXT NOT NULL,
+      year INTEGER NOT NULL,
+      month INTEGER NOT NULL,
+      message_count INTEGER NOT NULL,
+      from_me_count INTEGER NOT NULL,
+      from_them_count INTEGER NOT NULL,
+      first_message_date TEXT,
+      last_message_date TEXT,
+      attachment_count INTEGER DEFAULT 0,
+      avg_heat REAL DEFAULT 0,
+      PRIMARY KEY (chat_identifier, year, month)
+    );
+    CREATE INDEX IF NOT EXISTS idx_ti_ym ON time_index(year, month);
+  `)
+
   // ── V5: resolved contact names ──
   db.exec(`
     CREATE TABLE IF NOT EXISTS resolved_names (
@@ -2997,6 +3015,45 @@ export function buildConversationWindows(): void {
   try { d.exec(`INSERT INTO conversation_windows_fts(conversation_windows_fts) VALUES('rebuild')`) } catch {}
   d.prepare("INSERT OR REPLACE INTO _meta (key, value) VALUES ('windows_msg_count', ?)").run(String(currentMsgCount))
   console.log(`[Windows] Built ${totalWindows} windows from ${chats.length} chats in ${((Date.now() - t0) / 1000).toFixed(1)}s`)
+}
+
+export function buildTimeIndex(): void {
+  const d = initDb()
+  const t0 = Date.now()
+  // Skip if unchanged
+  const currentMsgCount = (d.prepare('SELECT COUNT(*) as c FROM messages').get() as { c: number }).c
+  const meta = d.prepare("SELECT value FROM _meta WHERE key = 'timeindex_msg_count'").get() as { value: string } | undefined
+  if (meta && parseInt(meta.value) === currentMsgCount) { console.log('[TimeIndex] Skipping — no new messages'); return }
+
+  d.prepare('DELETE FROM time_index').run()
+  d.exec(`INSERT INTO time_index (chat_identifier, year, month, message_count, from_me_count, from_them_count, first_message_date, last_message_date)
+    SELECT chat_name, CAST(strftime('%Y', sent_at) AS INTEGER), CAST(strftime('%m', sent_at) AS INTEGER),
+      COUNT(*), SUM(CASE WHEN is_from_me = 1 THEN 1 ELSE 0 END), SUM(CASE WHEN is_from_me = 0 THEN 1 ELSE 0 END),
+      MIN(sent_at), MAX(sent_at)
+    FROM messages WHERE sent_at IS NOT NULL AND chat_name IS NOT NULL
+    GROUP BY chat_name, CAST(strftime('%Y', sent_at) AS INTEGER), CAST(strftime('%m', sent_at) AS INTEGER)`)
+
+  try { d.exec(`UPDATE time_index SET attachment_count = COALESCE((SELECT COUNT(*) FROM attachments a WHERE a.chat_name = time_index.chat_identifier AND CAST(strftime('%Y', a.created_at) AS INTEGER) = time_index.year AND CAST(strftime('%m', a.created_at) AS INTEGER) = time_index.month), 0)`) } catch {}
+  try { d.exec(`UPDATE time_index SET avg_heat = COALESCE((SELECT AVG(ms.heat_score) FROM message_signals ms WHERE ms.chat_identifier = time_index.chat_identifier AND CAST(strftime('%Y', ms.sent_at) AS INTEGER) = time_index.year AND CAST(strftime('%m', ms.sent_at) AS INTEGER) = time_index.month), 0)`) } catch {}
+
+  d.prepare("INSERT OR REPLACE INTO _meta (key, value) VALUES ('timeindex_msg_count', ?)").run(String(currentMsgCount))
+  const total = (d.prepare('SELECT COUNT(*) as c FROM time_index').get() as { c: number }).c
+  console.log(`[TimeIndex] Built ${total} month entries in ${((Date.now() - t0) / 1000).toFixed(1)}s`)
+}
+
+export function getGlobalTimeHeatmap(): { year: number; month: number; total: number; contacts: number }[] {
+  const d = initDb()
+  return d.prepare(`SELECT year, month, SUM(message_count) as total, COUNT(DISTINCT chat_identifier) as contacts FROM time_index GROUP BY year, month ORDER BY year, month`).all() as { year: number; month: number; total: number; contacts: number }[]
+}
+
+export function getTopContactsForMonth(year: number, month: number, limit = 10): { chat_identifier: string; message_count: number; from_me: number; from_them: number; avg_heat: number }[] {
+  const d = initDb()
+  return d.prepare(`SELECT chat_identifier, message_count, from_me_count as from_me, from_them_count as from_them, avg_heat FROM time_index WHERE year = ? AND month = ? ORDER BY message_count DESC LIMIT ?`).all(year, month, limit) as { chat_identifier: string; message_count: number; from_me: number; from_them: number; avg_heat: number }[]
+}
+
+export function getPersonTimeline(chatIdentifier: string): { year: number; month: number; message_count: number; avg_heat: number }[] {
+  const d = initDb()
+  return d.prepare(`SELECT year, month, message_count, avg_heat FROM time_index WHERE chat_identifier = ? ORDER BY year, month`).all(chatIdentifier) as { year: number; month: number; message_count: number; avg_heat: number }[]
 }
 
 export function extractOCRSnippet(ocrText: string, keyword: string): string {

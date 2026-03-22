@@ -7,8 +7,8 @@
  * 3. Result fusion → scored, sectioned results
  */
 
-import { initDb, extractOCRSnippet, buildConversationWindows } from './db'
-import { callAnthropic, conversationalSearch } from './ai'
+import { initDb, extractOCRSnippet, buildConversationWindows, getTopContactsForMonth } from './db'
+import { callAnthropic, conversationalSearch, getAIStatus } from './ai'
 
 // ── Search Plan Schema ──
 
@@ -28,7 +28,8 @@ export interface SearchPlan {
   attachmentTypes: string[]
   speaker: 'me' | 'them' | 'both'
   sort: 'relevance' | 'recent' | 'oldest'
-  answerMode: 'results' | 'summary' | 'results+summary' | 'ranking' | 'temporal' | 'signal_ranking'
+  answerMode: 'results' | 'summary' | 'results+summary' | 'ranking' | 'temporal' | 'signal_ranking' | 'time_browse'
+  semantic: boolean
   confidence: number
   originalQuery: string
 }
@@ -262,6 +263,45 @@ export async function executeSearchV2(
         searchTimeMs: Date.now() - t0
       }
     } catch (err) { console.error('[SearchV2] Signal ranking error:', err) }
+  }
+
+  // RETRIEVER 0d: Time browse ("what was happening in March 2023")
+  if (plan.answerMode === 'time_browse' && plan.timeRange?.start) {
+    try {
+      const year = parseInt(plan.timeRange.start.slice(0, 4))
+      const month = parseInt(plan.timeRange.start.slice(5, 7))
+      const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December']
+      const topContacts = getTopContactsForMonth(year, month, 15).filter(r => {
+        const name = resolve(r.chat_identifier)
+        if (name === 'Unknown' || name.startsWith('+') || /^chat\d+/.test(name)) return false
+        return true
+      })
+      const windows = d.prepare(`SELECT * FROM conversation_windows WHERE strftime('%Y', start_date) = ? AND strftime('%m', start_date) = ? ORDER BY message_count DESC LIMIT 10`).all(String(year), String(month).padStart(2, '0')) as { id: number; chat_identifier: string; start_date: string; end_date: string; message_count: number; summary_text: string; top_keywords: string; has_attachments: number; attachment_count: number; avg_heat: number }[]
+
+      console.log(`[SearchV2] Time browse: ${MONTHS[month - 1]} ${year}, ${topContacts.length} contacts, ${windows.length} episodes (${Date.now() - t0}ms)`)
+      return {
+        plan,
+        sections: {
+          messages: [],
+          attachments: [],
+          conversations: topContacts.map(c => ({
+            chat_name: c.chat_identifier, contact_name: resolve(c.chat_identifier),
+            messageCount: c.message_count, matchingMessages: c.message_count,
+            dateRange: `${MONTHS[month - 1]} ${year}`,
+            preview: `${c.message_count} messages · ${c.from_me} from you, ${c.from_them} from them`
+          })),
+          windows: windows.map(w => ({
+            id: w.id, chat_identifier: w.chat_identifier, contact_name: resolve(w.chat_identifier),
+            start_date: w.start_date, end_date: w.end_date, message_count: w.message_count,
+            summary: (w.summary_text || '').slice(0, 200), keywords: JSON.parse(w.top_keywords || '[]'),
+            has_attachments: w.has_attachments === 1, attachment_count: w.attachment_count || 0, avg_heat: w.avg_heat || 0
+          })),
+          summary: `In ${MONTHS[month - 1]} ${year}, you talked to ${topContacts.length} people.${topContacts[0] ? ` Your most active conversation was with ${resolve(topContacts[0].chat_identifier)} (${topContacts[0].message_count} messages).` : ''}`
+        },
+        totalResults: topContacts.length + windows.length,
+        searchTimeMs: Date.now() - t0
+      }
+    } catch (err) { console.error('[SearchV2] Time browse error:', err) }
   }
 
   const [messageResults, attachmentResults, conversationResults, windowResults] = await Promise.all([
@@ -547,6 +587,38 @@ export async function executeSearchV2(
         }
       } catch {}
     }
+  }
+
+  // Semantic search fallback — runs when keyword search found few results and query is meaning-based
+  if ((messageResults.length < 5 || plan.semantic) && plan.topic && plan.answerMode === 'results' && getAIStatus().configured) {
+    try {
+      const candidates: { body: string; chat_name: string; is_from_me: number; sent_at: string }[] = []
+      if (personParams.length > 0) {
+        for (const ci of personParams) {
+          const rows = d.prepare(`SELECT body, chat_name, is_from_me, sent_at FROM messages WHERE chat_name = ? AND body IS NOT NULL AND length(body) > 10 ${dateStart ? `AND sent_at >= '${dateStart}'` : ''} ${dateEnd ? `AND sent_at <= '${dateEnd}'` : ''} ORDER BY RANDOM() LIMIT 200`).all(ci) as typeof candidates
+          candidates.push(...rows)
+        }
+      } else {
+        const rows = d.prepare(`SELECT body, chat_name, is_from_me, sent_at FROM messages WHERE body IS NOT NULL AND length(body) > 15 ${dateStart ? `AND sent_at >= '${dateStart}'` : ''} ${dateEnd ? `AND sent_at <= '${dateEnd}'` : ''} ORDER BY RANDOM() LIMIT 300`).all() as typeof candidates
+        candidates.push(...rows)
+      }
+      if (candidates.length > 0) {
+        const candidateList = candidates.map((c, i) => `[${i}] ${c.sent_at.slice(0, 10)} | ${c.is_from_me ? 'You' : resolve(c.chat_name)}: ${c.body.slice(0, 150)}`).join('\n')
+        const text = await callAnthropic(
+          `You are filtering iMessage search results. Given messages and a query, return indices of SEMANTICALLY relevant messages — even without exact keywords. "upset" matches "I'm so frustrated". Return ONLY a JSON array of index numbers. Max 15.`,
+          `Query: "${plan.originalQuery}"\nTopic: ${plan.topic}\n\nMessages:\n${candidateList}`, 500
+        )
+        if (text) {
+          const indices = JSON.parse(text.trim()) as number[]
+          const existingKeys = new Set(messageResults.map(m => `${m.sent_at}:${m.chat_name}`))
+          for (const idx of indices.filter(i => i >= 0 && i < candidates.length)) {
+            const c = candidates[idx]
+            if (existingKeys.has(`${c.sent_at}:${c.chat_name}`)) continue
+            messageResults.push({ body: c.body.slice(0, 300), chat_name: c.chat_name, contact_name: resolve(c.chat_name), is_from_me: c.is_from_me === 1, sent_at: c.sent_at, matchReason: 'semantic match', relevanceScore: 0.8 })
+          }
+        }
+      }
+    } catch {}
   }
 
   // AI summary (only if requested and we have message results)
