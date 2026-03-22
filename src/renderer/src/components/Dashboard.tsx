@@ -2052,34 +2052,48 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
                 <RelationshipTimelineCard events={timelineEvents} firstName={firstName} />
               )}
               {pd && <>
-                <div style={{ gridColumn: 'span 4', cursor: 'pointer', position: 'relative' }}
-                  onClick={() => onDrillThrough?.(`${firstName}'s comedy record`, `${firstName} · all time`, [
-                    { label: 'Your laugh rate', value: `${Math.round(pd.laughsGenerated / Math.max(pd.messageCount, 1) * 100)}% of messages` },
-                    { label: 'Their laugh rate', value: `${Math.round(pd.laughsReceived / Math.max(pd.messageCount, 1) * 100)}% of messages` },
-                    { label: 'Total laughs', value: `${(pd.laughsGenerated + pd.laughsReceived).toLocaleString()}` },
-                  ])}>
-                  <WinnerCard award="JesterMaxxer"
-                    name={pd.laughsGenerated > pd.laughsReceived ? 'You' : pd.laughsReceived > pd.laughsGenerated ? firstName : 'Tied'}
-                    stat={`You: ${Math.round(pd.laughsGenerated / Math.max(pd.messageCount, 1) * 100)}% · ${firstName}: ${Math.round(pd.laughsReceived / Math.max(pd.messageCount, 1) * 100)}%`}
-                    flavor={pd.laughsGenerated > pd.laughsReceived * 1.5 ? `Not even close. ${firstName} doesn't stand a chance.`
-                      : pd.laughsReceived > pd.laughsGenerated * 1.5 ? `${firstName} owns you. Accept it.`
-                      : pd.laughsGenerated > pd.laughsReceived ? 'You edge it — but they put up a fight.'
-                      : pd.laughsReceived > pd.laughsGenerated ? `${firstName} has the edge. Barely.`
-                      : 'Perfectly matched humor. Rare.'}
-                    emoji="🃏" accentColor="#2EC4A0" span={12} />
-                  <button onClick={(e) => { e.stopPropagation(); generateShareCard('JesterMaxxer', `${Math.round(pd.laughsGenerated / Math.max(pd.messageCount, 1) * 100)}%`, 'laugh rate from you', `You make ${firstName} laugh ${Math.round(pd.laughsGenerated / Math.max(pd.messageCount, 1) * 100)}% of the time.`, firstName) }}
-                    style={{ position: 'absolute', top: 10, right: 36, width: 26, height: 26, background: 'rgba(46,196,160,0.1)', border: '0.5px solid rgba(46,196,160,0.3)', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1 }}>
-                    <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><path d="M7 1l3 3-3 3M10 4H4a3 3 0 000 6h1" stroke="#2EC4A0" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                  </button>
-                  <div style={{ position: 'absolute', top: 8, right: 8, width: 18, height: 18, background: 'rgba(46,196,160,0.15)', borderRadius: 5, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
-                    <svg width="7" height="10" viewBox="0 0 7 10" fill="none"><path d="M1.5 1.5l4 3.5-4 3.5" stroke="#2EC4A0" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                  </div>
-                </div>
-                <WinnerCard award="JesterMogged"
-                  name={firstName}
-                  stat={`${Math.round(pd.laughsReceived / Math.max(pd.messageCount, 1) * 100)}% laugh rate (${pd.laughsReceived.toLocaleString()} total)`}
-                  flavor={pd.laughsReceived > 500 ? "You never stood a chance." : pd.laughsReceived > 100 ? `${firstName} has your number.` : 'They know exactly how to get you.'}
-                  emoji="💀" accentColor="#2EC4A0" span={4} />
+                {(() => {
+                  const totalLaughs = pd.laughsGenerated + pd.laughsReceived
+                  const youWin = pd.laughsGenerated > pd.laughsReceived
+                  const winner = youWin ? 'You' : pd.laughsReceived > pd.laughsGenerated ? firstName : 'Tied'
+                  const ratio = youWin
+                    ? (pd.laughsReceived > 0 ? (pd.laughsGenerated / pd.laughsReceived).toFixed(1) : '∞')
+                    : (pd.laughsGenerated > 0 ? (pd.laughsReceived / pd.laughsGenerated).toFixed(1) : '∞')
+                  const headline = youWin
+                    ? `You make ${firstName} laugh ${ratio}× more than they make you laugh`
+                    : pd.laughsReceived > pd.laughsGenerated
+                    ? `${firstName} makes you laugh ${ratio}× more than you make them`
+                    : `You and ${firstName} laugh at each other equally`
+                  return (
+                    <div style={{ gridColumn: 'span 12', cursor: 'pointer', position: 'relative' }}
+                      onClick={() => onDrillThrough?.(`${firstName}'s comedy record`, `${firstName} · all time`, [
+                        { label: `${firstName} made you laugh`, value: `${pd.laughsReceived.toLocaleString()} times` },
+                        { label: `You made ${firstName} laugh`, value: `${pd.laughsGenerated.toLocaleString()} times` },
+                        { label: 'Total laughs between you', value: totalLaughs.toLocaleString() },
+                        { label: 'That\'s roughly', value: `1 laugh every ${Math.max(1, Math.round(pd.messageCount / Math.max(totalLaughs, 1)))} messages` },
+                      ])}>
+                      <WinnerCard award="Who's funnier?"
+                        name={winner}
+                        stat={headline}
+                        flavor={totalLaughs > 1000 ? `${totalLaughs.toLocaleString()} laughs between you. That's a LOT of joy.`
+                          : totalLaughs > 200 ? `${totalLaughs.toLocaleString()} laughs and counting.`
+                          : `${totalLaughs.toLocaleString()} laughs so far.`}
+                        emoji="🃏" accentColor="#2EC4A0" span={12} />
+                      <button onClick={(e) => { e.stopPropagation(); generateShareCard('Comedy Record', totalLaughs.toLocaleString(), 'laughs between you', headline, firstName) }}
+                        style={{ position: 'absolute', top: 10, right: 36, width: 26, height: 26, background: 'rgba(46,196,160,0.1)', border: '0.5px solid rgba(46,196,160,0.3)', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1 }}>
+                        <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><path d="M7 1l3 3-3 3M10 4H4a3 3 0 000 6h1" stroke="#2EC4A0" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                      </button>
+                      <div style={{ position: 'absolute', top: 8, right: 8, width: 18, height: 18, background: 'rgba(46,196,160,0.15)', borderRadius: 5, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+                        <svg width="7" height="10" viewBox="0 0 7 10" fill="none"><path d="M1.5 1.5l4 3.5-4 3.5" stroke="#2EC4A0" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                      </div>
+                    </div>
+                  )
+                })()}
+                <WinnerCard award={`${firstName} makes you laugh`}
+                  name={pd.laughsReceived.toLocaleString()}
+                  stat={`1 laugh every ${Math.max(1, Math.round(pd.messageCount / Math.max(pd.laughsReceived, 1)))} messages`}
+                  flavor={pd.laughsReceived > pd.laughsGenerated ? `They're the funny one. You know it.` : `Not bad — but you're funnier.`}
+                  emoji="😂" accentColor="#2EC4A0" span={4} />
                 <SplitCard eyebrow="Who reaches first"
                   leftValue={`${initPct}%`} leftLabel="You initiate"
                   leftSub={initPct > 50 ? 'You keep this alive.' : initPct < 30 ? 'You wait for them.' : 'You share it.'}

@@ -19,7 +19,7 @@ import { initDb } from './db'
 const CHAT_DB_PATH = join(homedir(), 'Library/Messages/chat.db')
 const BATCH_SIZE = 500
 const AGGREGATE_INTERVAL = 5000 // recompute aggregates every N messages
-const ANALYSIS_VERSION = 1
+const ANALYSIS_VERSION = 2  // bumped: expanded laugh detection
 
 // ── Heuristic classifiers ──
 
@@ -36,8 +36,8 @@ interface MessageSignals {
   sentiment: number
 }
 
-const LAUGH_RE = /\b(lol|lmao|lmfao|rofl|hehe|omg dead|im dead|i'm dead|dying|i'm dying|im dying)\b|ha{2,}|he{2,}/i
-const LAUGH_EMOJI = /[\u{1F602}\u{1F923}\u{1F480}\u{2620}]/u
+const LAUGH_RE = /\b(lol|lmao|lmfao|rofl|hehe|haha+|baha+|ahaha*|omg dead|im dead|i'm dead|i cant|i can't|dying|i'm dying|im dying|screaming|deceased)\b|ha{2,}|he{2,}/i
+const LAUGH_EMOJI_RE = /[\u{1F602}\u{1F923}\u{1F480}\u{2620}]/gu
 const EMOJI_RE = /[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F900}-\u{1F9FF}]/u
 const POS_RE = /\b(love|great|amazing|awesome|perfect|beautiful|wonderful|fantastic|excellent|happy|glad|excited|thank|thanks|thx|appreciate|congrats|proud|best|incredible|brilliant)\b|[❤️💕😍🥰😊🎉✨👏💪🙌]/u
 const NEG_RE = /\b(hate|awful|terrible|horrible|worst|angry|furious|upset|disappointed|annoyed|frustrated|disgusted|miserable|pathetic|stupid|dumb|wtf|pissed|sick of|tired of)\b|[😡😤😢😭💔😠]/u
@@ -47,7 +47,11 @@ function analyzeMessage(text: string): MessageSignals {
   const wordCount = words.length
   const charCount = text.length
 
-  const hasLaugh = LAUGH_RE.test(text) || LAUGH_EMOJI.test(text) ? 1 : 0
+  // Expanded laugh detection: text patterns, 2+ laugh emoji, or message is only laugh emoji
+  const laughEmojiMatches = text.match(LAUGH_EMOJI_RE)
+  const laughEmojiCount = laughEmojiMatches ? laughEmojiMatches.length : 0
+  const isOnlyLaughEmoji = laughEmojiCount > 0 && text.replace(LAUGH_EMOJI_RE, '').trim().length === 0
+  const hasLaugh = LAUGH_RE.test(text) || laughEmojiCount >= 2 || isOnlyLaughEmoji ? 1 : 0
   const hasQuestion = text.includes('?') ? 1 : 0
   const hasLink = /https?:\/\//.test(text) ? 1 : 0
   const hasEmoji = EMOJI_RE.test(text) ? 1 : 0
