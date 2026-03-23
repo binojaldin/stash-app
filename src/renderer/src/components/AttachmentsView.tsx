@@ -31,6 +31,14 @@ interface AttachmentsViewProps {
 
 function dateRangeToBounds(range: string): { from: string | null; to: string | null } {
   const now = new Date()
+  if (/^\d{4}$/.test(range)) {
+    const y = parseInt(range)
+    return { from: new Date(y, 0, 1).toISOString(), to: new Date(y, 11, 31, 23, 59, 59).toISOString() }
+  }
+  if (/^\d{4}-\d{2}$/.test(range)) {
+    const [y, m] = range.split('-').map(Number)
+    return { from: new Date(y, m - 1, 1).toISOString(), to: new Date(y, m, 0, 23, 59, 59).toISOString() }
+  }
   switch (range) {
     case '7days': { const d = new Date(now); d.setDate(d.getDate() - 7); return { from: d.toISOString(), to: null } }
     case '30days': { const d = new Date(now); d.setDate(d.getDate() - 30); return { from: d.toISOString(), to: null } }

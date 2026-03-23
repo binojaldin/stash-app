@@ -205,6 +205,7 @@ export function Sidebar({ stats, filters, onFilterChange, onManageConversations,
           <div style={{ fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase', color: '#2EC4A0', marginBottom: 10 }}>Jump to</div>
           {[
             { label: 'Relationship insights', count: `${personData?.isGroup ? 4 : 5} cards`, onClick: () => onNavigate?.({ kind: 'person-insights', person: scopedPerson! }) },
+            { label: 'Conversation', count: `${compactNum(personData?.messageCount || 0)} msgs`, onClick: () => onNavigate?.({ kind: 'person-conversation', person: scopedPerson! }) },
             { label: 'Shared attachments', count: `${compactNum(personData?.attachmentCount || 0)} items`, onClick: () => onNavigate?.({ kind: 'person-attachments', person: scopedPerson! }) },
           ].map(({ label, count, onClick }) => (
             <button key={label} onClick={onClick}

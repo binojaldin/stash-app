@@ -1,7 +1,7 @@
 import { app, shell, BrowserWindow, ipcMain, dialog, Menu, Tray, nativeImage, powerSaveBlocker } from 'electron'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
-import { checkFullDiskAccess } from './messagesReader'
+import { checkFullDiskAccess, getMessagesForChat, getFirstMessageForPeriod, getConversationList } from './messagesReader'
 import { initDb, searchAttachments, getStats, getFastStats, getTodayInHistory, getUsageStats, getMessagingNetwork, getAttachmentById, closeDb, hideChat, getHiddenChats, getConversationStats, getRelationshipTimeline, getSocialGravity, getTopicEras, getTopicEraContext, getMemoryMoments, searchMessagesAggregated, updateReactionCounts, invalidateLaughCache, searchMessages, getMessageIndexStatus, getVocabStats, getWordOrigins, detectSignalQuery, executeSearchIntent, getMessageSamples, getAttachmentContext, getSignificantPhotos, getRelationshipDynamics, getMonthlyAverages, getMediaIntelligence, detectNicknames, getBehavioralPatterns, getMessageContext, buildConversationWindows } from './db'
 import { startIndexing, getIndexingProgress, fetchChatSummaries, saveChatPriorities, getSavedPriorityChats, resetIndexing, recoverAttachment, resolveNamesInBackground } from './indexer'
 import { compileContactsHelper, resolveContact, resolveContactsBatch } from './contacts'
@@ -866,6 +866,16 @@ function setupIpc(): void {
   ipcMain.handle('generate-wrapped', (_event, year: number) => generateWrapped(year))
   ipcMain.handle('get-wrapped-years', () => getAvailableYears())
   ipcMain.handle('open-imessage', (_event, handle: string) => { shell.openExternal(`imessage://${handle}`) })
+
+  ipcMain.handle('get-messages-for-chat', async (_event, chatIdentifier: string, limit: number, beforeRowId?: number, afterRowId?: number) =>
+    getMessagesForChat(chatIdentifier, limit, beforeRowId, afterRowId)
+  )
+  ipcMain.handle('get-first-message-for-period', async (_event, chatIdentifier: string, year: number, month?: number) =>
+    getFirstMessageForPeriod(chatIdentifier, year, month)
+  )
+  ipcMain.handle('get-conversation-list', async (_event, periodYear?: number, periodMonth?: number, searchQuery?: string) =>
+    getConversationList(periodYear, periodMonth, searchQuery)
+  )
 
   ipcMain.handle('confirm-reset', async () => {
     if (!mainWindow) return false

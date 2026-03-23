@@ -4,6 +4,7 @@ import { Settings } from 'lucide-react'
 interface IconRailProps {
   mainView: { kind: string }
   onNavigate: (kind: 'global-insights' | 'global-attachments') => void
+  onOpenMessages?: () => void
   indexProgress: number
   attachmentCount: number
   hasNewInsights: boolean
@@ -13,6 +14,8 @@ interface IconRailProps {
 const ICONS = [
   { id: 'index', label: 'Index', meta: (p: number) => `${p}% indexed`, color: '#E8604A', nav: 'global-insights' as const,
     path: <><rect x="2" y="2" width="5" height="5" rx="1" /><rect x="9" y="2" width="5" height="5" rx="1" /><rect x="2" y="9" width="5" height="5" rx="1" /><rect x="9" y="9" width="5" height="5" rx="1" /></> },
+  { id: 'messages', label: 'Messages', meta: () => 'Browse conversations', color: '#C8A96E', nav: 'messages-home' as const,
+    path: <><rect x="1" y="2" width="14" height="9" rx="2" /><path d="M4 14l2-3h0" /></> },
   { id: 'search', label: 'Search', meta: () => 'Coming in V2', color: '#2EC4A0', nav: null,
     path: <><circle cx="7" cy="7" r="4" /><line x1="10.5" y1="10.5" x2="14" y2="14" /></> },
   { id: 'explore', label: 'Explore', meta: (n: number) => `${n.toLocaleString()} attachments`, color: '#7F77DD', nav: 'global-attachments' as const,
@@ -54,7 +57,7 @@ function RingIcon({ ringPct, ringColor, isActive, pulse, icon, activeColor, onCl
   )
 }
 
-export function IconRail({ mainView, onNavigate, indexProgress, attachmentCount, hasNewInsights, onOpenSettings }: IconRailProps): JSX.Element {
+export function IconRail({ mainView, onNavigate, onOpenMessages, indexProgress, attachmentCount, hasNewInsights, onOpenSettings }: IconRailProps): JSX.Element {
   const [tooltip, setTooltip] = useState<{ label: string; meta: string; y: number } | null>(null)
   const [aiActive, setAiActive] = useState(false)
 
@@ -66,11 +69,13 @@ export function IconRail({ mainView, onNavigate, indexProgress, attachmentCount,
     return () => clearInterval(interval)
   }, [])
 
-  const activeId = mainView.kind === 'global-attachments' || mainView.kind === 'person-attachments' ? 'explore'
+  const activeId = mainView.kind === 'messages-home' ? 'messages'
+    : mainView.kind === 'global-attachments' || mainView.kind === 'person-attachments' ? 'explore'
     : mainView.kind === 'global-insights' || mainView.kind === 'person-insights' ? 'insights' : 'index'
 
   const ringPcts: Record<string, number> = {
     index: indexProgress,
+    messages: 0,
     search: 0,
     explore: Math.min(100, Math.round((attachmentCount / 500) * 100)),
     insights: hasNewInsights ? 60 : 0
@@ -97,7 +102,7 @@ export function IconRail({ mainView, onNavigate, indexProgress, attachmentCount,
             activeColor={icon.color}
             label={icon.label}
             meta={icon.id === 'index' ? icon.meta(indexProgress) : icon.id === 'explore' ? icon.meta(attachmentCount) : icon.meta(0)}
-            onClick={() => icon.nav && onNavigate(icon.nav)}
+            onClick={() => { if (icon.nav === 'messages-home') { onOpenMessages?.() } else if (icon.nav) { onNavigate(icon.nav) } }}
             onHover={(show, el) => {
               if (show && el) {
                 const rect = el.getBoundingClientRect()
