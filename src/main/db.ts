@@ -1522,13 +1522,18 @@ export function getTopicEras(): { chapters: TopicChapter[] } {
     const COMMON_NAMES = 'james john robert michael david william richard joseph thomas charles christopher daniel matthew anthony mark steven paul andrew joshua kenneth kevin brian george timothy ronald edward jason ryan jacob gary nicholas eric jonathan stephen larry justin scott brandon benjamin samuel raymond gregory frank alexander patrick jack dennis jerry tyler aaron adam nathan henry peter zachary douglas kyle carl jeremy keith sean austin noah jesse joe bryan billy bruce albert gabriel dylan alan ralph eugene russell bobby mason logan philip louis harry vincent wayne liam mary patricia jennifer linda barbara elizabeth susan jessica sarah karen lisa nancy betty margaret sandra ashley dorothy kimberly emily donna michelle carol amanda melissa stephanie rebecca sharon laura cynthia kathleen amy angela shirley anna brenda pamela emma nicole helen samantha katherine christine rachel carolyn catherine maria heather diane ruth julie olivia joyce virginia victoria kelly lauren christina joan evelyn megan andrea cheryl hannah jacqueline martha gloria teresa ann sara madison frances kathryn janice jean abigail alice julia judy sophia grace denise amber doris marilyn danielle beverly isabella theresa diana natalie brittany charlotte marie kayla alexis lori kelsey jude tab santa silvia cara lindsey alyssa analee pepe jenna syd axel serah bernadette lillian hunny'.split(' ')
     for (const n of COMMON_NAMES) chatNames.add(n)
 
+    const TEXTING_ARTIFACTS = new Set(['lol','omg','lmao','bruh','yeah','nah','gonna','wanna','gotta','kinda','sorta','tbh','smh','idk','imo','fwiw','btw','lmk','ngl','iirc','afaik','tysm','ily','haha','hahaha','lmfao','rofl','yolo','fomo','asap'])
+    const LABEL_BLOCKLIST = new Set(['the','and','but','for','with','from','that','this','have','been','were','they','what','when','where','which','about','just','like','know','think','want','come','make','good','time','back','over','after','also','into','some','than','really','still','much','even','well','right','here','there','going','thing','things','doing','would','could','should','getting','something','actually','probably','literally','basically','definitely','maybe','pretty','super','very','though','because','since','before','around','every','other','being','might','already','always','never','again','tonight','today','tomorrow','yesterday','tonight','morning','tonight'])
+
     const isCleanTerm = (t: string): boolean => {
       if (SYSTEM_ARTIFACTS.has(t)) return false
       if (chatNames.has(t)) return false
+      if (TEXTING_ARTIFACTS.has(t)) return false
       if (/\d/.test(t)) return false
       if (t.length < 4) return false
-      if (/(.)\1{2,}/.test(t)) return false // repeated chars ("caaaaaroll")
-      if (t.endsWith("'s")) return false // possessives ("lindsey's")
+      if (/(.)\1{2,}/.test(t)) return false
+      if (t.endsWith("'s") || t.endsWith("s'")) return false
+      if (/\.(com|org|net|io|co|me|gov|edu)$/i.test(t)) return false
       if (t.includes(' ') && t.split(' ').some(w => SYSTEM_ARTIFACTS.has(w))) return false
       return true
     }
@@ -1578,7 +1583,7 @@ export function getTopicEras(): { chapters: TopicChapter[] } {
         scored.push({ term, score: tf * idf * chatBreadth * 1000 })
       }
       scored.sort((a, b) => b.score - a.score)
-      if (scored.length >= 3) quarterScored.set(qk, scored.slice(0, 20))
+      if (scored.length >= 2) quarterScored.set(qk, scored.slice(0, 20))
     }
 
     let scoredTermsStep2 = 0
@@ -1612,40 +1617,42 @@ export function getTopicEras(): { chapters: TopicChapter[] } {
     eras.push(cur)
     console.log(`[TopicEras] Step 3: ${eras.length} candidate eras`)
 
+    // Build full chat name set ONCE for label filtering
+    const fullChatNamesSet = new Set<string>()
+    try { for (const c of d.prepare('SELECT DISTINCT chat_name FROM messages WHERE chat_name IS NOT NULL').all() as { chat_name: string }[]) fullChatNamesSet.add(c.chat_name.toLowerCase()) } catch {}
+    try { for (const r of d.prepare('SELECT resolved_name FROM resolved_names').all() as { resolved_name: string }[]) fullChatNamesSet.add(r.resolved_name.toLowerCase()) } catch {}
+
     // Step 4: Extract top keywords per era and build chapters
     for (const era of eras) {
       const start = parseQK(era.startQK)
       const end = parseQK(era.endQK)
-      // Allow single-quarter eras
-      const qSpan = (end.year - start.year) * 4 + (end.quarter - start.quarter) + 1
-      if (qSpan < 1) continue
+      const eraLabel = `${era.startQK}-${era.endQK}`
 
       // Deduplicate and rank keywords
       const kwMap = new Map<string, number>()
       for (const s of era.scored) kwMap.set(s.term, (kwMap.get(s.term) || 0) + s.score)
       let keywords = [...kwMap.entries()].sort((a, b) => b[1] - a[1]).filter(([t]) => isCleanTerm(t)).slice(0, 8).map(([t]) => t)
 
-      // Belt-and-suspenders: final cleanup of any leaked stopwords/artifacts
-      keywords = keywords.filter(kw => kw.split(' ').every(p => !TEXT_STOPWORDS.has(p) && !SYSTEM_ARTIFACTS.has(p)))
-      if (keywords.length < 2) continue
+      // Final cleanup: stopwords + artifacts + texting + label blocklist
+      keywords = keywords.filter(kw => kw.split(' ').every(p => !TEXT_STOPWORDS.has(p) && !SYSTEM_ARTIFACTS.has(p) && !LABEL_BLOCKLIST.has(p)))
+      if (keywords.length < 2) { console.log(`[TopicEras] REJECTED ${eraLabel}: only ${keywords.length} keywords after cleanup`); continue }
 
       const strength = [...kwMap.entries()].slice(0, 5).reduce((s, [, v]) => s + v, 0)
-      if (strength < 10) continue
+      if (strength < 10) { console.log(`[TopicEras] REJECTED ${eraLabel}: strength ${Math.round(strength)} < 10`); continue }
 
-      // Build full chat name set for label filtering
-      const fullChatNamesSet = new Set<string>()
-      try { for (const c of d.prepare('SELECT DISTINCT chat_name FROM messages WHERE chat_name IS NOT NULL').all() as { chat_name: string }[]) fullChatNamesSet.add(c.chat_name.toLowerCase()) } catch {}
-      try { for (const r of d.prepare('SELECT resolved_name FROM resolved_names').all() as { resolved_name: string }[]) fullChatNamesSet.add(r.resolved_name.toLowerCase()) } catch {}
-
-      // Label: skip chat names, system artifacts, and substrings of chat names
+      // Label: find best keyword that's not a name/artifact, min 4 chars, not in LABEL_BLOCKLIST
       const labelKw = keywords.find(kw => {
         const kwLower = kw.toLowerCase()
-        if (chatNames.has(kwLower) || SYSTEM_ARTIFACTS.has(kwLower)) return false
+        if (kw.length < 4) return false
+        if (chatNames.has(kwLower) || SYSTEM_ARTIFACTS.has(kwLower) || LABEL_BLOCKLIST.has(kwLower)) return false
         for (const cn of fullChatNamesSet) { if (cn.includes(kwLower) && kwLower.length >= 3) return false }
         return true
       })
-      if (!labelKw) continue
-      const label = labelKw.charAt(0).toUpperCase() + labelKw.slice(1) + ' Era'
+      // Fallback: use highest-scoring clean keyword even if imperfect
+      const fallbackLabel = !labelKw ? keywords.find(kw => kw.length >= 4 && !LABEL_BLOCKLIST.has(kw.toLowerCase())) : null
+      const chosenLabel = labelKw || fallbackLabel
+      if (!chosenLabel) { console.log(`[TopicEras] REJECTED ${eraLabel}: no suitable label from [${keywords.join(',')}]`); continue }
+      const label = chosenLabel.charAt(0).toUpperCase() + chosenLabel.slice(1) + ' Era'
 
       chapters.push({
         startYear: start.year, endYear: end.year,
@@ -1654,11 +1661,16 @@ export function getTopicEras(): { chapters: TopicChapter[] } {
       })
     }
 
-    // Cap at 8, sort chronologically
-    chapters.sort((a, b) => a.startYear - b.startYear || (a.startMonth || 0) - (b.startMonth || 0))
+    // Sort by strength, take top 8, then sort chronologically
+    chapters.sort((a, b) => b.strengthScore - a.strengthScore)
     if (chapters.length > 8) chapters.splice(8)
-    console.log(`[TopicEras] Final output: ${chapters.length} eras`)
-    for (const ch of chapters) console.log(`  ${ch.topicLabel}: [${ch.keywords.join(', ')}] (strength: ${ch.strengthScore})`)
+    chapters.sort((a, b) => a.startYear - b.startYear || (a.startMonth || 0) - (b.startMonth || 0))
+    console.log(`[TopicEras] Step 4: ${chapters.length} final eras`)
+    for (const ch of chapters) {
+      const startQ = ch.startMonth ? Math.ceil(ch.startMonth / 3) : 1
+      const endQ = ch.endMonth ? Math.ceil(ch.endMonth / 3) : 4
+      console.log(`[TopicEras] ERA: "${ch.topicLabel}" (${ch.startYear}Q${startQ}-${ch.endYear}Q${endQ}) keywords=[${ch.keywords.join(',')}] strength=${ch.strengthScore}`)
+    }
   } catch (err) { console.error('[TopicEras] Error:', err) }
   if (chapters.length > 0) {
     console.log('[TopicEras] V3 OUTPUT:')

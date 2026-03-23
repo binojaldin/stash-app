@@ -20,7 +20,7 @@ const CACHE_DIR = (): string => {
 }
 
 // Bump this when analytics logic changes to invalidate all caches
-const LOGIC_VERSION = 8  // bumped: Topic Eras chatNames fix (no group name tokens)
+const LOGIC_VERSION = 9  // bumped: Topic Eras final quality pass
 
 interface CacheMeta {
   version: number
