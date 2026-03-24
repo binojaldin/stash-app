@@ -1484,203 +1484,123 @@ export interface TopicChapter {
 
 const _TOPIC_ERAS_UNUSED = 0 // placeholder to mark old code removal
 
+// Topic Eras — AI-first approach. Samples messages from 6-month windows,
+// sends to Claude for era identification. Returns empty on first call,
+// computes async in background, cached for subsequent calls.
+let _topicErasComputeInFlight = false
+
 export function getTopicEras(): { chapters: TopicChapter[] } {
   const chapters: TopicChapter[] = []
   try {
-    console.log('[TopicEras] V3 EXECUTING — if you do not see this log, the old code is running')
     const d = initDb()
     const hasMessages = (d.prepare('SELECT COUNT(*) as c FROM messages').get() as { c: number }).c
     if (hasMessages < 200) return { chapters }
 
-    const currentYear = new Date().getFullYear()
-
-    // Step 1: Extract tokens per quarter
-    type QuarterKey = string // "2024-Q1"
-    const quarterTokens = new Map<QuarterKey, Map<string, { count: number; chats: Set<string> }>>()
-
-    const rows = d.prepare(`
-      SELECT CAST(strftime('%Y', sent_at) AS INTEGER) as year,
-        CASE WHEN CAST(strftime('%m', sent_at) AS INTEGER) <= 3 THEN 1
-             WHEN CAST(strftime('%m', sent_at) AS INTEGER) <= 6 THEN 2
-             WHEN CAST(strftime('%m', sent_at) AS INTEGER) <= 9 THEN 3
-             ELSE 4 END as quarter,
-        chat_name, body
-      FROM messages WHERE body IS NOT NULL AND length(body) > 10
-    `).all() as { year: number; quarter: number; chat_name: string; body: string }[]
-
-    // System artifacts + contact name filter
-    const SYSTEM_ARTIFACTS = new Set(['image','images','video','videos','photo','photos','render','rendered','renderedimage','renderedvideo','screen','screenshot','attachment','attachments','liked','loved','laughed','emphasized','emphasised','questioned','fullsizerender','fullsizeoutput','fullsize','img','dsc','mov','heic','jpeg','png','gif','mp4','pdf','brandlogo','brandlogoimage','tiktok','instagram','preview','sticker','wniab','tkk'])
-    const chatNames = new Set<string>()
-    // Only add resolved contact names (not group chat display names which produce false positives like "cream", "team")
+    // Check _meta for cached AI result
     try {
-      const resolved = d.prepare('SELECT resolved_name FROM resolved_names').all() as { resolved_name: string }[]
-      for (const r of resolved) {
-        for (const p of r.resolved_name.toLowerCase().split(/\s+/)) if (p.length >= 3) chatNames.add(p)
+      const cached = d.prepare("SELECT value FROM _meta WHERE key = 'topic_eras_ai'").get() as { value: string } | undefined
+      if (cached) {
+        const parsed = JSON.parse(cached.value) as { chapters: TopicChapter[]; msgCount: number }
+        if (parsed.msgCount === hasMessages) {
+          console.log(`[TopicEras] Returning ${parsed.chapters.length} cached AI eras`)
+          return { chapters: parsed.chapters }
+        }
       }
     } catch {}
-    // Common first names that are never interesting topics
-    const COMMON_NAMES = 'james john robert michael david william richard joseph thomas charles christopher daniel matthew anthony mark steven paul andrew joshua kenneth kevin brian george timothy ronald edward jason ryan jacob gary nicholas eric jonathan stephen larry justin scott brandon benjamin samuel raymond gregory frank alexander patrick jack dennis jerry tyler aaron adam nathan henry peter zachary douglas kyle carl jeremy keith sean austin noah jesse joe bryan billy bruce albert gabriel dylan alan ralph eugene russell bobby mason logan philip louis harry vincent wayne liam mary patricia jennifer linda barbara elizabeth susan jessica sarah karen lisa nancy betty margaret sandra ashley dorothy kimberly emily donna michelle carol amanda melissa stephanie rebecca sharon laura cynthia kathleen amy angela shirley anna brenda pamela emma nicole helen samantha katherine christine rachel carolyn catherine maria heather diane ruth julie olivia joyce virginia victoria kelly lauren christina joan evelyn megan andrea cheryl hannah jacqueline martha gloria teresa ann sara madison frances kathryn janice jean abigail alice julia judy sophia grace denise amber doris marilyn danielle beverly isabella theresa diana natalie brittany charlotte marie kayla alexis lori kelsey jude tab santa silvia cara lindsey alyssa analee pepe jenna syd axel serah bernadette lillian hunny'.split(' ')
-    for (const n of COMMON_NAMES) chatNames.add(n)
 
-    const TEXTING_ARTIFACTS = new Set(['lol','omg','lmao','bruh','yeah','nah','gonna','wanna','gotta','kinda','sorta','tbh','smh','idk','imo','fwiw','btw','lmk','ngl','iirc','afaik','tysm','ily','haha','hahaha','lmfao','rofl','yolo','fomo','asap'])
-    const LABEL_BLOCKLIST = new Set(['the','and','but','for','with','from','that','this','have','been','were','they','what','when','where','which','about','just','like','know','think','want','come','make','good','time','back','over','after','also','into','some','than','really','still','much','even','well','right','here','there','going','thing','things','doing','would','could','should','getting','something','actually','probably','literally','basically','definitely','maybe','pretty','super','very','though','because','since','before','around','every','other','being','might','already','always','never','again','tonight','today','tomorrow','yesterday','tonight','morning','tonight'])
-
-    const isCleanTerm = (t: string): boolean => {
-      if (SYSTEM_ARTIFACTS.has(t)) return false
-      if (chatNames.has(t)) return false
-      if (TEXTING_ARTIFACTS.has(t)) return false
-      if (/\d/.test(t)) return false
-      if (t.length < 4) return false
-      if (/(.)\1{2,}/.test(t)) return false
-      if (t.endsWith("'s") || t.endsWith("s'")) return false
-      if (/\.(com|org|net|io|co|me|gov|edu)$/i.test(t)) return false
-      if (t.includes(' ') && t.split(' ').some(w => SYSTEM_ARTIFACTS.has(w))) return false
-      return true
+    // Trigger background AI computation (fire and forget)
+    if (!_topicErasComputeInFlight) {
+      _topicErasComputeInFlight = true
+      console.log('[TopicEras] Triggering background AI computation...')
+      computeTopicErasAI(d, hasMessages).finally(() => { _topicErasComputeInFlight = false })
     }
 
-    for (const r of rows) {
-      if (r.year < 2006 || r.year > currentYear) continue
-      const qk: QuarterKey = `${r.year}-Q${r.quarter}`
-      if (!quarterTokens.has(qk)) quarterTokens.set(qk, new Map())
-      const qmap = quarterTokens.get(qk)!
-      const tokens = tokenizeWords(r.body)
-      const chat = r.chat_name || '__unknown'
-      for (const t of tokens) {
-        if (!isCleanTerm(t)) continue
-        if (!qmap.has(t)) qmap.set(t, { count: 0, chats: new Set() })
-        const entry = qmap.get(t)!
-        entry.count++
-        entry.chats.add(chat)
-      }
-    }
-
-    let totalTermsStep1 = 0
-    for (const qmap of quarterTokens.values()) totalTermsStep1 += qmap.size
-    console.log(`[TopicEras] Step 1: ${totalTermsStep1} total terms across ${quarterTokens.size} quarters`)
-
-    if (quarterTokens.size < 3) return { chapters }
-
-    // Step 2: TF-IDF scoring per quarter
-    const totalQuarters = quarterTokens.size
-    const termQuarterPresence = new Map<string, number>()
-    for (const qmap of quarterTokens.values()) {
-      for (const term of qmap.keys()) termQuarterPresence.set(term, (termQuarterPresence.get(term) || 0) + 1)
-    }
-
-    const quarterScored = new Map<QuarterKey, { term: string; score: number }[]>()
-    for (const [qk, qmap] of [...quarterTokens.entries()].sort()) {
-      const totalTokens = [...qmap.values()].reduce((s, e) => s + e.count, 0)
-      if (totalTokens < 30) continue
-      const scored: { term: string; score: number }[] = []
-      for (const [term, { count, chats }] of qmap) {
-        if (count < 3) continue
-        const tf = count / totalTokens
-        const presence = termQuarterPresence.get(term) || 1
-        // Skip terms in > 60% of quarters (too common)
-        if (presence / totalQuarters > 0.6) continue
-        const idf = Math.log((totalQuarters + 1) / presence)
-        const chatBreadth = Math.min(chats.size, 3)
-        scored.push({ term, score: tf * idf * chatBreadth * 1000 })
-      }
-      scored.sort((a, b) => b.score - a.score)
-      if (scored.length >= 2) quarterScored.set(qk, scored.slice(0, 20))
-    }
-
-    let scoredTermsStep2 = 0
-    for (const scored of quarterScored.values()) scoredTermsStep2 += scored.length
-    console.log(`[TopicEras] Step 2: ${scoredTermsStep2} scored terms across ${quarterScored.size} quarters`)
-
-    // Step 3: Group adjacent quarters into eras by topic overlap
-    const sortedQuarters = [...quarterScored.keys()].sort()
-    if (sortedQuarters.length === 0) return { chapters }
-
-    const topTerms = (qk: QuarterKey) => new Set(quarterScored.get(qk)!.slice(0, 10).map(t => t.term))
-    const parseQK = (qk: string) => { const [y, q] = qk.split('-Q'); return { year: parseInt(y), quarter: parseInt(q) } }
-    const quarterMonth = (q: number, which: 'start' | 'end') => which === 'start' ? (q - 1) * 3 + 1 : q * 3
-
-    let cur = { startQK: sortedQuarters[0], endQK: sortedQuarters[0], terms: topTerms(sortedQuarters[0]), scored: [...quarterScored.get(sortedQuarters[0])!.slice(0, 10)] }
-
-    const eras: typeof cur[] = []
-    for (let i = 1; i < sortedQuarters.length; i++) {
-      const qk = sortedQuarters[i]
-      const terms = topTerms(qk)
-      const overlap = [...terms].filter(t => cur.terms.has(t)).length
-      if (overlap >= 2) {
-        cur.endQK = qk
-        for (const t of terms) cur.terms.add(t)
-        cur.scored.push(...quarterScored.get(qk)!.slice(0, 10))
-      } else {
-        eras.push(cur)
-        cur = { startQK: qk, endQK: qk, terms: topTerms(qk), scored: [...quarterScored.get(qk)!.slice(0, 10)] }
-      }
-    }
-    eras.push(cur)
-    console.log(`[TopicEras] Step 3: ${eras.length} candidate eras`)
-
-    // Build full chat name set ONCE for label filtering
-    const fullChatNamesSet = new Set<string>()
-    try { for (const c of d.prepare('SELECT DISTINCT chat_name FROM messages WHERE chat_name IS NOT NULL').all() as { chat_name: string }[]) fullChatNamesSet.add(c.chat_name.toLowerCase()) } catch {}
-    try { for (const r of d.prepare('SELECT resolved_name FROM resolved_names').all() as { resolved_name: string }[]) fullChatNamesSet.add(r.resolved_name.toLowerCase()) } catch {}
-
-    // Step 4: Extract top keywords per era and build chapters
-    for (const era of eras) {
-      const start = parseQK(era.startQK)
-      const end = parseQK(era.endQK)
-      const eraLabel = `${era.startQK}-${era.endQK}`
-
-      // Deduplicate and rank keywords
-      const kwMap = new Map<string, number>()
-      for (const s of era.scored) kwMap.set(s.term, (kwMap.get(s.term) || 0) + s.score)
-      let keywords = [...kwMap.entries()].sort((a, b) => b[1] - a[1]).filter(([t]) => isCleanTerm(t)).slice(0, 8).map(([t]) => t)
-
-      // Final cleanup: stopwords + artifacts + texting + label blocklist
-      keywords = keywords.filter(kw => kw.split(' ').every(p => !TEXT_STOPWORDS.has(p) && !SYSTEM_ARTIFACTS.has(p) && !LABEL_BLOCKLIST.has(p)))
-      if (keywords.length < 2) { console.log(`[TopicEras] REJECTED ${eraLabel}: only ${keywords.length} keywords after cleanup`); continue }
-
-      const strength = [...kwMap.entries()].slice(0, 5).reduce((s, [, v]) => s + v, 0)
-      if (strength < 10) { console.log(`[TopicEras] REJECTED ${eraLabel}: strength ${Math.round(strength)} < 10`); continue }
-
-      // Label: find best keyword that's not a name/artifact, min 4 chars, not in LABEL_BLOCKLIST
-      const labelKw = keywords.find(kw => {
-        const kwLower = kw.toLowerCase()
-        if (kw.length < 4) return false
-        if (chatNames.has(kwLower) || SYSTEM_ARTIFACTS.has(kwLower) || LABEL_BLOCKLIST.has(kwLower)) return false
-        for (const cn of fullChatNamesSet) { if (cn.includes(kwLower) && kwLower.length >= 3) return false }
-        return true
-      })
-      // Fallback: use highest-scoring clean keyword even if imperfect
-      const fallbackLabel = !labelKw ? keywords.find(kw => kw.length >= 4 && !LABEL_BLOCKLIST.has(kw.toLowerCase())) : null
-      const chosenLabel = labelKw || fallbackLabel
-      if (!chosenLabel) { console.log(`[TopicEras] REJECTED ${eraLabel}: no suitable label from [${keywords.join(',')}]`); continue }
-      const label = chosenLabel.charAt(0).toUpperCase() + chosenLabel.slice(1) + ' Era'
-
-      chapters.push({
-        startYear: start.year, endYear: end.year,
-        startMonth: quarterMonth(start.quarter, 'start'), endMonth: quarterMonth(end.quarter, 'end'),
-        topicLabel: label, keywords: keywords.slice(0, 6), strengthScore: Math.round(strength)
-      })
-    }
-
-    // Sort by strength, take top 8, then sort chronologically
-    chapters.sort((a, b) => b.strengthScore - a.strengthScore)
-    if (chapters.length > 8) chapters.splice(8)
-    chapters.sort((a, b) => a.startYear - b.startYear || (a.startMonth || 0) - (b.startMonth || 0))
-    console.log(`[TopicEras] Step 4: ${chapters.length} final eras`)
-    for (const ch of chapters) {
-      const startQ = ch.startMonth ? Math.ceil(ch.startMonth / 3) : 1
-      const endQ = ch.endMonth ? Math.ceil(ch.endMonth / 3) : 4
-      console.log(`[TopicEras] ERA: "${ch.topicLabel}" (${ch.startYear}Q${startQ}-${ch.endYear}Q${endQ}) keywords=[${ch.keywords.join(',')}] strength=${ch.strengthScore}`)
-    }
+    return { chapters }
   } catch (err) { console.error('[TopicEras] Error:', err) }
-  if (chapters.length > 0) {
-    console.log('[TopicEras] V3 OUTPUT:')
-    for (const ch of chapters) {
-      console.log('  ' + ch.topicLabel + ': [' + ch.keywords.join(', ') + ']')
-    }
-  } else {
-    console.log('[TopicEras] V3 produced ZERO eras — filters may be too aggressive')
-  }
   return { chapters }
+}
+
+async function computeTopicErasAI(d: ReturnType<typeof initDb>, msgCount: number): Promise<void> {
+  try {
+    const { callAnthropic, getAIStatus } = require('./ai')
+    if (!getAIStatus().configured) { console.log('[TopicEras] AI not configured'); return }
+
+    const range = d.prepare(`SELECT MIN(sent_at) as first, MAX(sent_at) as last FROM messages WHERE sent_at IS NOT NULL`).get() as { first: string; last: string }
+    if (!range.first) return
+
+    const firstDate = new Date(range.first)
+    const lastDate = new Date(range.last)
+
+    // Resolve names
+    const nameMap = new Map<string, string>()
+    try { for (const r of d.prepare('SELECT chat_identifier, resolved_name FROM resolved_names').all() as { chat_identifier: string; resolved_name: string }[]) nameMap.set(r.chat_identifier, r.resolved_name) } catch {}
+    const resolve = (id: string) => nameMap.get(id) || id
+
+    // Build 6-month windows with samples
+    const windowSummaries: string[] = []
+    const cursor = new Date(firstDate.getFullYear(), Math.floor(firstDate.getMonth() / 6) * 6, 1)
+    while (cursor < lastDate) {
+      const windowStart = new Date(cursor)
+      cursor.setMonth(cursor.getMonth() + 6)
+      const windowEnd = new Date(cursor)
+      const startStr = windowStart.toISOString().slice(0, 10)
+      const endStr = windowEnd.toISOString().slice(0, 10)
+
+      const samples = d.prepare(`SELECT body, is_from_me, chat_name FROM messages WHERE sent_at >= ? AND sent_at < ? AND body IS NOT NULL AND length(body) > 15 ORDER BY RANDOM() LIMIT 100`).all(startStr, endStr) as { body: string; is_from_me: number; chat_name: string }[]
+      const contacts = d.prepare(`SELECT chat_name, COUNT(*) as cnt FROM messages WHERE sent_at >= ? AND sent_at < ? AND chat_name IS NOT NULL GROUP BY chat_name ORDER BY cnt DESC LIMIT 5`).all(startStr, endStr) as { chat_name: string; cnt: number }[]
+
+      if (samples.length >= 20) {
+        const label = `${windowStart.toLocaleString('en-US', { month: 'short', year: 'numeric' })} – ${windowEnd.toLocaleString('en-US', { month: 'short', year: 'numeric' })}`
+        const contactList = contacts.slice(0, 3).map(c => resolve(c.chat_name)).filter(n => !n.startsWith('+') && n !== 'Unknown').join(', ')
+        const sampleText = samples.slice(0, 30).map(s => `${s.is_from_me ? 'You' : resolve(s.chat_name)}: ${s.body.slice(0, 100)}`).join('\n')
+        windowSummaries.push(`--- ${label} (top contacts: ${contactList}) ---\n${sampleText}`)
+      }
+    }
+
+    if (windowSummaries.length < 2) return
+
+    const text = await callAnthropic(
+      `You analyze someone's iMessage history and identify the defining "eras" or life phases.
+
+Given message samples from different 6-month windows, identify 4-8 distinct eras. An era is a period defined by activities, life events, relationships, interests, or themes.
+
+Good eras: "Car obsession phase", "Wordle era", "NYC apartment hunt", "Post-breakup period", "Wedding planning", "Crypto deep dive", "New job at Osmind"
+Bad eras: "Reacted Era", "Thor Era", generic filler
+
+Return ONLY a JSON array:
+[{
+  "label": "Short memorable label (2-5 words, no 'Era' suffix)",
+  "startYear": 2022, "startMonth": 1, "endYear": 2022, "endMonth": 6,
+  "keywords": ["relevant", "topic", "words"],
+  "strength": 80
+}]
+
+Rules:
+- Labels should be evocative and personal, like chapter titles
+- Skip periods with nothing distinctive
+- strength: 50-100 confidence
+- keywords: 3-6 words
+- 4-8 eras max
+- Return ONLY the JSON array`,
+      `Message samples organized by 6-month windows:\n\n${windowSummaries.join('\n\n')}`,
+      2000
+    )
+
+    if (!text) return
+    const eras = JSON.parse(text.trim().replace(/^```json?\n?/, '').replace(/\n?```$/, '')) as { label: string; startYear: number; startMonth: number; endYear: number; endMonth: number; keywords: string[]; strength: number }[]
+
+    const result: TopicChapter[] = eras.map(e => ({
+      startYear: e.startYear, endYear: e.endYear,
+      startMonth: e.startMonth, endMonth: e.endMonth,
+      topicLabel: e.label, keywords: e.keywords || [], strengthScore: e.strength || 70
+    }))
+    result.sort((a, b) => a.startYear - b.startYear || (a.startMonth || 0) - (b.startMonth || 0))
+
+    // Cache in _meta table
+    d.prepare("INSERT OR REPLACE INTO _meta (key, value) VALUES ('topic_eras_ai', ?)").run(JSON.stringify({ chapters: result, msgCount }))
+    console.log(`[TopicEras] AI computed ${result.length} eras:`)
+    for (const r of result) console.log(`  "${r.topicLabel}" (${r.startYear}-${r.endYear}) [${r.keywords.join(', ')}]`)
+  } catch (err) { console.error('[TopicEras] AI computation failed:', err) }
 }
 
 // Remove old constants (keep this line to prevent search issues)

@@ -1466,6 +1466,16 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
     return () => { cancelled = true; clearTimeout(timer) }
   }, [])
 
+  // Retry topic eras after 12s if empty (AI computes in background)
+  useEffect(() => {
+    if (topicEras.length === 0) {
+      const timer = setTimeout(() => {
+        window.api.getTopicEras().then(r => { if (r.chapters.length > 0) setTopicEras(r.chapters) }).catch(() => {})
+      }, 12000)
+      return () => clearTimeout(timer)
+    }
+  }, [topicEras.length])
+
   const topFunny = byLaughsReceived[0]
   const topChat = byMessages[0]
   const topAttach = byAttachments[0]

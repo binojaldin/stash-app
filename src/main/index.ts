@@ -543,14 +543,10 @@ function setupIpc(): void {
     return result
   })
   ipcMain.handle('get-topic-eras', async () => {
-    const signal = getMessageCountSignal()
-    const cached = getCachedAnalytics<ReturnType<typeof getTopicEras>>('topicEras', signal)
-    if (cached) return cached
     await yieldEventLoop()
     const t0 = Date.now()
     const result = getTopicEras()
-    console.log(`[PERF][COMPUTE] getTopicEras: ${Date.now()-t0}ms`)
-    setCachedAnalytics('topicEras', signal, result)
+    console.log(`[PERF][COMPUTE] getTopicEras: ${Date.now()-t0}ms (${result.chapters.length} eras)`)
     return result
   })
   ipcMain.handle('get-memory-moments', async () => {
