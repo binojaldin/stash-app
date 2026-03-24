@@ -2,6 +2,7 @@ import Database from 'better-sqlite3'
 import { app } from 'electron'
 import { join } from 'path'
 import { mkdirSync } from 'fs'
+import { callAnthropic, getAIStatus } from './ai'
 
 let db: Database.Database | null = null
 let laughCacheValid = false
@@ -1522,7 +1523,7 @@ export function getTopicEras(): { chapters: TopicChapter[] } {
 
 async function computeTopicErasAI(d: ReturnType<typeof initDb>, msgCount: number): Promise<void> {
   try {
-    const { callAnthropic, getAIStatus } = require('./ai')
+    // callAnthropic and getAIStatus imported at top of file
     if (!getAIStatus().configured) { console.log('[TopicEras] AI not configured'); return }
 
     const range = d.prepare(`SELECT MIN(sent_at) as first, MAX(sent_at) as last FROM messages WHERE sent_at IS NOT NULL`).get() as { first: string; last: string }
