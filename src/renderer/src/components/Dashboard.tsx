@@ -1466,13 +1466,18 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
     return () => { cancelled = true; clearTimeout(timer) }
   }, [])
 
-  // Retry topic eras after 12s if empty (AI computes in background)
+  // Retry topic eras while empty — AI computes async in background (~20-30s)
   useEffect(() => {
     if (topicEras.length === 0) {
-      const timer = setTimeout(() => {
-        window.api.getTopicEras().then(r => { if (r.chapters.length > 0) setTopicEras(r.chapters) }).catch(() => {})
-      }, 12000)
-      return () => clearTimeout(timer)
+      let attempt = 0
+      const timer = setInterval(() => {
+        attempt++
+        if (attempt > 10) { clearInterval(timer); return } // give up after ~50s
+        window.api.getTopicEras().then(r => {
+          if (r.chapters.length > 0) { setTopicEras(r.chapters); clearInterval(timer) }
+        }).catch(() => {})
+      }, 5000)
+      return () => clearInterval(timer)
     }
   }, [topicEras.length])
 
