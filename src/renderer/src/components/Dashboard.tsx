@@ -1411,40 +1411,15 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
 
       if (cancelled) return
       const baseEras = erasResult.chapters
-      console.log('[UI] Topic Eras received from backend:', JSON.stringify(baseEras.map(e => ({ label: e.topicLabel, kw: e.keywords }))))
       setTopicEras(baseEras)
+      if (baseEras.length > 0) setAiEnrichedTopics(true) // AI eras are already enriched
       setMemoryMoments(momentsResult.moments)
-      console.log(`[PERF] Stage D deterministic: ${Date.now()-t0}ms`)
+      console.log(`[PERF] Stage D: ${Date.now()-t0}ms, ${baseEras.length} eras, ${momentsResult.moments.length} moments`)
 
-      // Stage E: AI enrichment (never blocks, runs after deterministic renders)
+      // Memory AI enrichment (topic era enrichment removed — AI eras have good labels already)
       try {
         const status = await window.api.getAIStatus()
-        if (!status.configured) { console.log(`[PERF] Total hydrate: ${Date.now()-hydrateStart.current}ms (no AI)`); return }
-
-        // Topic Eras AI enrichment
-        if (baseEras.length > 0) {
-          const t1 = Date.now()
-          console.log('[PERF] Starting Topic Eras AI enrichment...')
-          const { contexts } = await window.api.getTopicEraContext(baseEras.map(e => ({ startYear: e.startYear, endYear: e.endYear, topicLabel: e.topicLabel, keywords: e.keywords })))
-          console.log(`[PERF] getTopicEraContext: ${Date.now()-t1}ms`)
-          const t2 = Date.now()
-          const enrichments = await window.api.enrichTopicErasV2(contexts)
-          console.log(`[PERF] enrichTopicErasV2: ${Date.now()-t2}ms`)
-          if (!cancelled && enrichments && enrichments.length > 0) {
-            const enriched: TopicChapter[] = []
-            for (let i = 0; i < baseEras.length; i++) {
-              const e = enrichments[i]
-              if (!e || e.suppress) continue
-              enriched.push({ ...baseEras[i], topicLabel: e.enrichedLabel || baseEras[i].topicLabel })
-            }
-            if (enriched.length > 0 && enriched.length >= Math.floor(baseEras.length / 2)) {
-              console.log('[UI] Topic Eras ENRICHED:', JSON.stringify(enriched.map(e => ({ label: e.topicLabel, kw: e.keywords }))))
-              setTopicEras(enriched); setAiEnrichedTopics(true)
-            }
-          }
-        }
-
-        // Memory AI enrichment
+        if (!status.configured || cancelled) return
         if (momentsResult.moments.length > 0) {
           const t3 = Date.now()
           const input = momentsResult.moments.map(m => ({ type: m.type, title: m.title, subtitle: m.subtitle, dateLabel: m.dateLabel, contactName: m.chatName, metric: m.metric }))
@@ -1459,25 +1434,21 @@ export function Dashboard({ stats, chatNameMap, onSelectConversation, dateRange 
             }))
           }
         }
-
-        console.log(`[PERF] Total hydrate (with AI): ${Date.now()-hydrateStart.current}ms`)
+        console.log(`[PERF] Total hydrate: ${Date.now()-hydrateStart.current}ms`)
       } catch (err) { console.error('[PERF] AI enrichment failed:', err) }
     }, 4000)
     return () => { cancelled = true; clearTimeout(timer) }
   }, [])
 
-  // Retry topic eras while empty — AI computes async in background (~20-30s)
+  // Single retry for topic eras — first launch: AI takes ~20s, cached after that
   useEffect(() => {
     if (topicEras.length === 0) {
-      let attempt = 0
-      const timer = setInterval(() => {
-        attempt++
-        if (attempt > 10) { clearInterval(timer); return } // give up after ~50s
+      const timer = setTimeout(() => {
         window.api.getTopicEras().then(r => {
-          if (r.chapters.length > 0) { setTopicEras(r.chapters); clearInterval(timer) }
+          if (r.chapters.length > 0) { setTopicEras(r.chapters); setAiEnrichedTopics(true) }
         }).catch(() => {})
-      }, 5000)
-      return () => clearInterval(timer)
+      }, 15000)
+      return () => clearTimeout(timer)
     }
   }, [topicEras.length])
 
