@@ -2078,7 +2078,7 @@ export function getTopicEraContext(chapters: { startYear: number; endYear: numbe
         ORDER BY RANDOM() LIMIT 5000
       `).all(fromDate, toDate) as { body: string }[]
 
-      const isCleanWord = (w: string): boolean => w.length >= 3 && !TOPIC_STOPS.has(w) && !PHRASE_BLACKLIST.has(w) && !/\d/.test(w)
+      const isCleanWord = (w: string): boolean => w.length >= 3 && !TEXT_STOPWORDS.has(w) && !/\d/.test(w)
 
       for (const r of phraseMsgs) {
         const words = r.body.toLowerCase().replace(/[^a-z\s'-]/g, ' ').split(/\s+/).filter(isCleanWord)
